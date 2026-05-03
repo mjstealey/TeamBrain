@@ -6,67 +6,79 @@ Phase 0 stands up everything needed for Phase 1 to land safely: a working scratc
 
 ---
 
-## A — Repo housekeeping (do first; ~15 min)
+## A — Repo housekeeping (status: complete)
 
-### A1. Clean up the rename leftover symlink
+### A1. Symlink cleanup ✅
 
-The `team-brain → TeamBrain` symlink exists only to keep an old shell session alive. New session starts in `TeamBrain/`, so the symlink is no longer needed.
+`team-brain → TeamBrain` symlink removed. Working dir is `~/GitHub/mjstealey/TeamBrain/`.
 
-```bash
-rm /Users/stealey/GitHub/mjstealey/team-brain
-ls -la /Users/stealey/GitHub/mjstealey/ | grep -i -E "team|brain"
+### A2. License chosen: Apache-2.0 ✅
+
+`LICENSE` (Apache 2.0 with 2026 copyright) committed at repo root; `README.md` license section names it. Patent grant + permissive terms — appropriate for research/infrastructure and keeps commercial-derivative options open (the original reason for going parallel-repo over forking OB1's FSL-1.1-MIT).
+
+### A3. Git initialized + initial commit ✅
+
 ```
-
-**Done when:** only `TeamBrain/` is listed; no `team-brain` entry remains.
-
-### A2. Pick a license
-
-Decision is open. Options to consider:
-- **Apache-2.0** — permissive, patent grant, common in research/infrastructure. Recommended unless you have a reason otherwise.
-- **MIT** — minimal, permissive, no patent clause.
-- **No license / proprietary** — defaults to "all rights reserved"; only collaborators with explicit written permission can use it.
-
-Add `LICENSE` file at repo root and add a `## License` line to `README.md` with the chosen identifier.
-
-**Done when:** `LICENSE` file exists at repo root; `README.md` license section names it.
-
-### A3. Initialize git and make the first commit
-
-```bash
-cd /Users/stealey/GitHub/mjstealey/TeamBrain
 git init
-git add CLAUDE.md README.md CREDITS.md LICENSE .gitignore docs/
-git commit -m "Initial scaffold: docs, ADR 0001, deployment target"
+git branch -m main           # rename master → main
+# stage + commit handled manually by user
 ```
 
-Do **not** commit `.claude/settings.local.json` — it's already gitignored.
+Default branch is `main`. Initial commit covers `CLAUDE.md`, `README.md`, `CREDITS.md`, `LICENSE`, `.gitignore`, `docs/` (incl. `docs/adr/0001-teambrain-architecture.md`, `docs/deployment.md`, this file). `.claude/settings.local.json` correctly excluded by `.gitignore`.
 
-**Done when:** `git log` shows one commit; `git status` is clean.
+All commits are GPG-signed (global `commit.gpgsign=true`).
 
-### A4. Decide whether to push to a remote
+### A4. Remotes configured ✅
 
-Options:
-- Create a private repo at `github.com/fabric-testbed/TeamBrain` (recommended — survives developer turnover).
-- Keep local-only until Phase 1 is real.
+Two named remotes per the "two named remotes" pattern (each independent; explicit push target per remote — no surprise mirroring):
 
-**Done when:** decision made; if pushing, remote configured and initial commit pushed.
+| Remote | URL | Role |
+|---|---|---|
+| `origin` | `git@github.com:fabric-testbed/TeamBrain.git` | **Canonical** (private, org-owned — survives developer turnover) |
+| `personal` | `git@github.com:mjstealey/TeamBrain.git` | Personal mirror / WIP push target |
+
+Current branch tracks `personal/main`. To also push to the canonical org remote: `git push origin main` (one-time `-u origin main` if you want to switch the tracking branch).
+
+### A5. Stage and commit Section A doc updates (next action)
+
+Three doc edits sit unstaged in the working tree from Section A → B decision-capture work:
+
+- `CLAUDE.md` — added "Local Reference Forks" section (OB1 + supabase forks at `~/github/mjstealey/`); promoted pilot-repo decision (`fabric-core-api`) into Settled Decisions; cleared Open Decisions.
+- `docs/deployment.md` — Stack section now points at the local supabase fork as the canonical source for `docker/` artifacts.
+- `docs/phase-0-checklist.md` — D1 rewritten to copy from the local fork; B1 rewritten as "Pilot reviewer buy-in" with five sub-questions for Komal Thareja; Section A rewritten as "status: complete".
+
+Suggested commit (run manually — git operations stay user-driven per the A3 convention):
+
+```bash
+git add CLAUDE.md docs/deployment.md docs/phase-0-checklist.md
+git commit -m "Phase 0: capture pilot decision (fabric-core-api), local reference forks, Section A status"
+git push personal main
+git push origin main           # only if you also want the canonical org remote updated now
+```
+
+**Done when:** `git status` is clean; the chosen remote(s) reflect the new commit.
 
 ---
 
-## B — Pilot repo decision (can run in parallel with C and D)
+## B — Pilot reviewer buy-in (can run in parallel with C and D)
 
-### B1. Resolve the open pilot question
+### B1. Confirm Komal Thareja's participation in the fabric-core-api pilot
 
-Three candidates from `CLAUDE.md`:
-- **HotGlass** — solo-ish; validates plumbing but not the "team" part.
-- **workflow-visualizer** — real multi-contributor, but mid-blocker on anywidget MIME issue.
-- **`~/github/fabric/fabric-core-api`** — real multi-dev Python codebase, but undergoing restructuring soon.
+Pilot repo decided 2026-05-03: **`~/github/fabric/fabric-core-api`** (remote `fabric-testbed/fabric-core-api`). Refactoring will be done solo by Michael with Claude Code; Komal is the primary reviewer. The team-coordination signal being tested is multi-developer **commentary** on a single committer's changes, not multi-committer coordination. (Workflow-monitor remains an optional Phase 2 plumbing pilot before graduating to fabric-core-api for Phase 7.)
 
-For fabric-core-api specifically, sub-questions to answer:
-- When does the restructuring start? Pilot during it (high signal/high noise) or after (clean baseline)?
-- Are 2+ developers actively committing during the pilot window?
+Sub-questions to ask Komal (covers social coordination + compliance + reviewer-pool sizing — the four things that can still derail the pilot now that the repo is chosen):
 
-**Done when:** pilot repo chosen; decision recorded as a follow-up `PROJECT: TeamBrain — ` thought in Open Brain so the next session sees it.
+1. **OAuth login willingness.** Are you willing to sign in once with GitHub OAuth at `https://pr.fabric-testbed.net` so I can hand-seed your `project_members` row for the pilot? It's the same GitHub account you already use to push to `fabric-testbed/fabric-core-api`; no new credential.
+2. **Review cadence during the pilot window.** Roughly how many fabric-core-api PRs do you expect to review per week over the next 4–6 weeks (the pilot evaluation window), and at what depth — quick approvals, or substantive line-level commentary? The pilot's value test depends on review *commentary* volume, not just approvals, so a rough number helps me calibrate whether the dataset will be statistically meaningful.
+3. **Compliance / org concerns.** Any objections from FABRIC ops or compliance to a self-hosted Supabase on `pr.fabric-testbed.net` (FABRIC team-owned VM, GitHub OAuth, no third-party AI vendors in the data path) holding code-adjacent notes — review comments, debugging gotchas, decision rationale tied to fabric-core-api PRs/commits? Studio admin UI is gated behind vouch-proxy + CILogon (reuses our existing pattern); app-level auth is GitHub OAuth.
+4. **Other reviewers worth inviting.** Anyone else on the FABRIC side who reviews fabric-core-api PRs regularly (or who *should*) and would benefit from being seeded as a `project_members` row at pilot start? Larger reviewer pool = stronger signal on the "we already discussed this" miss-rate metric.
+5. **AGENTS.md surface.** Would you be willing to read a single `AGENTS.md` file at the repo root once before the pilot starts? It's the contract that tells Claude (and any other AI tool any reviewer uses) how to query / capture against TeamBrain. No ongoing reading burden — just the one-time orientation.
+
+Optional follow-ups if Komal agrees:
+- Any existing tribal knowledge about fabric-core-api that should be **seeded as initial memories** before the pilot opens (so Claude has the v1.9 → v1.10 migration context, COU semantics, role-removal history loaded from day one rather than discovering it via repeated reviewer corrections)?
+- Preferred review-comment format for capture-friendliness — does she want to keep commenting in GitHub PR threads as usual (TeamBrain pulls them via webhook in Phase 5), or is she open to a `/capture` slash command in her AI tool of choice?
+
+**Done when:** Komal answers questions 1–5; if any answer is "no", revisit (workflow-monitor as Phase 2 plumbing pilot is the obvious fallback). Update this checklist with the answers and capture them as a follow-up `PROJECT: TeamBrain — ` thought in Open Brain.
 
 ---
 
@@ -98,16 +110,18 @@ Phase 3 sync needs at minimum: `read:user`, `user:email`, `read:org`. Add `repo`
 
 Do **not** touch `pr.fabric-testbed.net` until everything in this section passes.
 
-### D1. Clone the Supabase docker-compose
+### D1. Use the local supabase fork
+
+A fork is already cloned at `~/github/mjstealey/supabase/` (read-only reference — see `CLAUDE.md` "Local Reference Forks"). Refresh it first, then copy the docker stack to a scratch working dir so the fork stays untouched:
 
 ```bash
-cd ~/scratch   # or anywhere outside the TeamBrain repo
-git clone --depth 1 https://github.com/supabase/supabase.git supabase-stack
-cd supabase-stack/docker
+gh repo sync mjstealey/supabase
+cp -R ~/github/mjstealey/supabase/docker ~/scratch/supabase-stack   # or any path outside TeamBrain
+cd ~/scratch/supabase-stack
 cp .env.example .env
 ```
 
-**Done when:** working copy of `supabase/supabase` exists locally; `.env` exists.
+**Done when:** the fork is synced, `~/scratch/supabase-stack/.env` exists, and the original fork directory is unmodified (`cd ~/github/mjstealey/supabase && git status` is clean).
 
 ### D2. Configure scratch `.env`
 

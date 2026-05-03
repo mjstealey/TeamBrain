@@ -22,12 +22,11 @@ All four major architectural decisions are locked in (see `docs/adr/0001-teambra
 2. **Repo relationship to OB1:** parallel repo with `CREDITS.md` acknowledgement, not a fork. License remains TBD (the parallel-repo choice was made specifically to keep license selection open; OB1's FSL-1.1-MIT prohibits commercial derivative works).
 3. **Stack & deploy target:** self-host the official **Supabase docker-compose** stack (Postgres+pgvector, GoTrue, PostgREST, Realtime, Storage, Edge Functions, Studio, Kong) on a FABRIC-team-owned VMware VM at `https://pr.fabric-testbed.net`.
 4. **Auth (Phase 1):** GitHub OAuth via GoTrue. `project_members` rows hand-seeded for the pilot. Phase 3 automates the sync against GitHub collaborator/org-team APIs. CILogon support deferred — GoTrue can run both providers simultaneously, so adding CILogon later is non-breaking.
+5. **Pilot repo (decided 2026-05-03):** `~/github/fabric/fabric-core-api` (remote `fabric-testbed/fabric-core-api`, branch `develop`). Phase 7 evaluation pilot — refactoring done solo by Michael with Claude Code; Komal Thareja is the primary reviewer. The team-coordination value being tested is **multi-developer commentary on a single-committer's changes**, not multi-committer coordination. Falsification target: track every review comment that triggers a "we already discussed this" response — each is a TeamBrain miss. Workflow-monitor remains an option as a low-stakes Phase 2 plumbing pilot before graduating to fabric-core-api for Phase 7. Full rationale + tradeoffs captured in Open Brain (`PROJECT: TeamBrain — Pilot repo decision`).
 
 ## Open Decisions Required Before Phase 1 Coding
 
-1. **Pilot repo.** Candidates: HotGlass (cleaner, solo-ish — validates plumbing but not the team part), workflow-visualizer (real multi-contributor pain, mid-blocker on anywidget MIME-type issue), or `~/github/fabric/fabric-core-api` (real multi-dev Python codebase, but undergoing restructuring soon — high-signal/high-noise pilot). Sub-questions for fabric-core-api: when does the restructuring start, and are 2+ developers actively committing during the pilot window?
-
-The schema migration itself can land in TeamBrain without the pilot repo decision (it is database-side). The pilot only matters for `AGENTS.md` / `.claude/CLAUDE.md` / slash-command integration in Phase 2.
+None blocking schema work. Pre-pilot social-coordination blocker: Komal's buy-in (one-time GitHub OAuth login on `pr.fabric-testbed.net`, willingness to read `AGENTS.md`, review cadence during the pilot window). Sub-questions tracked in `docs/phase-0-checklist.md` B1.
 
 ## Architecture Reference
 
@@ -56,16 +55,39 @@ The schema migration itself can land in TeamBrain without the pilot repo decisio
 
 `search_project_thoughts`, `capture_project_thought`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`. REST endpoints mirror these over the same backend handlers.
 
-## OB1 — Upstream Reference
+## Local Reference Forks
 
-A local clone lives at `~/github/mjstealey/OB1/`. Read it before writing schema or edge-function code. Files most relevant to TeamBrain (read on demand, not eagerly):
+Two upstream repos are forked into Michael's GitHub account and cloned locally as **read-only reference**. Both are kept current via `gh repo sync` (run on demand from any working dir):
+
+```bash
+gh repo sync mjstealey/OB1
+gh repo sync mjstealey/supabase
+```
+
+**Do not edit files in either fork from this project.** They exist to read patterns and known-good configs from. If a TeamBrain change requires divergence from an upstream pattern, copy the relevant snippet *into* TeamBrain (with attribution) rather than modifying the fork.
+
+### `~/github/mjstealey/OB1/` — fork of `NateBJones-Projects/OB1`
+
+Source for the two architectural patterns TeamBrain ports (RLS scopes + shared-MCP edge-function). Read before writing schema or edge-function code. Files most relevant (read on demand, not eagerly):
 
 - `~/github/mjstealey/OB1/docs/01-getting-started.md` — canonical Supabase + pgvector setup; the schema and pgvector indexing approach mirror this.
 - `~/github/mjstealey/OB1/primitives/rls/README.md` — RLS patterns to extend for `personal | project | project_private` scopes.
 - `~/github/mjstealey/OB1/primitives/shared-mcp/README.md` — pattern for scoped MCP servers; the multi-tenant TeamBrain MCP edge function generalizes this.
 - `~/github/mjstealey/OB1/integrations/kubernetes-deployment/` — alternative self-host path with Postgres+pgvector only (no Supabase services). Worth knowing exists; not the chosen path.
 
-Treat OB1 as **read-only**. Do not edit files there from this project.
+### `~/github/mjstealey/supabase/` — fork of `supabase/supabase`
+
+The official Supabase monorepo. Only the `docker/` subtree is load-bearing for TeamBrain — that is the docker-compose stack we self-host. Files most relevant:
+
+- `~/github/mjstealey/supabase/docker/docker-compose.yml` — base stack (Postgres+pgvector via supabase/postgres, GoTrue, PostgREST, Realtime, Storage, Edge Runtime, Studio, Kong, Supavisor, imgproxy, Logflare, Vector, postgres-meta).
+- `~/github/mjstealey/supabase/docker/docker-compose.caddy.yml` — **Caddy TLS overlay**; aligns with the Caddy plan in `docs/deployment.md` for `pr.fabric-testbed.net`.
+- `~/github/mjstealey/supabase/docker/docker-compose.nginx.yml` — nginx alternative if the team standardizes on nginx instead.
+- `~/github/mjstealey/supabase/docker/docker-compose.pg17.yml` — Postgres 17 variant; default base ships Postgres 15.
+- `~/github/mjstealey/supabase/docker/.env.example` — authoritative list of env vars; mirrors what `docs/deployment.md` calls "env-var contract".
+- `~/github/mjstealey/supabase/docker/versions.md` — pinned image-tag history; consult before bumping any service tag in our compose file.
+- `~/github/mjstealey/supabase/docker/volumes/db/init/` — Postgres init scripts; the `vector` extension lives here.
+
+For Phase 0 D1 (scratch stand-up), copy `docker/.env.example` → `.env` from this fork rather than re-cloning supabase/supabase.
 
 ## Open Brain Handoff Context (in MCP)
 

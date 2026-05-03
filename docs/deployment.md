@@ -11,7 +11,7 @@ This document describes the target deployment topology for TeamBrain. It is a **
 
 ## Stack
 
-The official Supabase docker-compose stack from [`github.com/supabase/supabase/tree/master/docker`](https://github.com/supabase/supabase/tree/master/docker):
+The official Supabase docker-compose stack from [`github.com/supabase/supabase/tree/master/docker`](https://github.com/supabase/supabase/tree/master/docker). A local fork is kept at `~/github/mjstealey/supabase/` (refresh with `gh repo sync mjstealey/supabase`); the `docker/` subtree is the canonical source for compose files, `.env.example`, and `versions.md`. See `CLAUDE.md` "Local Reference Forks" for the read-only-fork policy.
 
 | Service | Role | Notes |
 |---------|------|-------|
