@@ -82,113 +82,294 @@ Optional follow-ups if Komal agrees:
 
 ---
 
-## C — GitHub OAuth App (no scratch instance required; ~20 min)
+## C — GitHub OAuth Apps (status: complete)
 
-### C1. Create the OAuth App under the `fabric-testbed` GitHub org
+### C1. Two OAuth apps registered ✅
 
-Path: GitHub → `fabric-testbed` org → Settings → Developer settings → OAuth Apps → New OAuth App.
+Two separate apps (intentional — different secrets, isolated rotation, scratch-secret leak doesn't touch prod):
 
-| Field | Value |
-|-------|-------|
-| Application name | `TeamBrain` |
-| Homepage URL | `https://pr.fabric-testbed.net` |
-| Authorization callback URL | `https://pr.fabric-testbed.net/auth/v1/callback` |
+| App | Where | Homepage | Callback URL |
+|-----|-------|----------|--------------|
+| `TeamBrain` | `fabric-testbed` org | `https://pr.fabric-testbed.net` | `https://pr.fabric-testbed.net/auth/v1/callback` |
+| `TeamBrain-scratch` | (scratch — owner TBD; personal account is fine since secret is dev-only) | `https://127.0.0.1:8443` | `https://127.0.0.1:8443/auth/v1/callback` |
 
-For the **scratch instance** spike, also create a second callback or add a second OAuth App pointing at `http://localhost:8000/auth/v1/callback` so local Docker Desktop testing works.
+Note the scratch host is `127.0.0.1`, not `localhost`. GitHub does exact-string matching on callback URLs — keep this consistent everywhere downstream (Nginx `server_name`, `SITE_URL`, `API_EXTERNAL_URL`, the harness page's origin). Mixing `localhost` and `127.0.0.1` in any of those will fail OAuth even though they resolve to the same address.
 
-**Done when:** Client ID + Client Secret saved to a password manager (do not commit). Both prod and scratch callback URLs are functional or both apps exist.
+Client IDs + Client Secrets stored in password manager. Not in this repo, not in any committed file.
 
-### C2. Confirm minimum scopes for membership sync
+### C2. Minimum scopes for membership sync
 
-Phase 3 sync needs at minimum: `read:user`, `user:email`, `read:org`. Add `repo` only if the pilot repo is private (`public_repo` or no repo scope is enough for public repos).
-
-**Done when:** scope list confirmed and noted in `docs/deployment.md` (already drafted there — verify it matches the pilot repo's visibility).
+Phase 3 sync needs at minimum: `read:user`, `user:email`, `read:org`. Add `repo` only if the pilot repo is private (`public_repo` or no repo scope is enough for public repos). fabric-core-api is a public org repo — the minimum set is sufficient.
 
 ---
 
-## D — Scratch Supabase instance (Docker Desktop or throwaway VM; ~45–60 min)
+## D — Scratch Supabase instance (Nginx + mkcert HTTPS on `https://127.0.0.1:8443`; ~60–75 min)
 
 Do **not** touch `pr.fabric-testbed.net` until everything in this section passes.
 
-### D1. Use the local supabase fork
+**Topology:** browser → Nginx (TLS termination on `:8443`, mkcert local-CA cert) → Kong (`127.0.0.1:8000`) → GoTrue/PostgREST/Storage/Edge Runtime/etc. Studio is also fronted by Nginx (or accessed directly on `127.0.0.1:3000` for admin tasks). This mirrors the production topology (`pr.fabric-testbed.net` → Caddy → Kong) so issues found here translate directly.
 
-A fork is already cloned at `~/github/mjstealey/supabase/` (read-only reference — see `CLAUDE.md` "Local Reference Forks"). Refresh it first, then copy the docker stack to a scratch working dir so the fork stays untouched:
+### D1. Stage the supabase docker stack from the local fork
+
+The fork at `~/github/mjstealey/supabase/` is read-only reference. Copy the `docker/` subtree to a scratch working dir, then template the `.env`:
 
 ```bash
 gh repo sync mjstealey/supabase
-cp -R ~/github/mjstealey/supabase/docker ~/scratch/supabase-stack   # or any path outside TeamBrain
+cp -R ~/github/mjstealey/supabase/docker ~/scratch/supabase-stack   # any path outside TeamBrain works
 cd ~/scratch/supabase-stack
 cp .env.example .env
 ```
 
 **Done when:** the fork is synced, `~/scratch/supabase-stack/.env` exists, and the original fork directory is unmodified (`cd ~/github/mjstealey/supabase && git status` is clean).
 
-### D2. Configure scratch `.env`
+### D2. Provision a trusted local cert with mkcert
 
-Generate JWT secret and the anon/service-role keys per [Supabase self-host docs](https://supabase.com/docs/guides/self-hosting/docker). Set:
+`mkcert` installs a local CA into the system trust store, then issues "self-signed" certs that browsers and `curl` already trust — no per-request bypass, no pinned-cert dance.
 
-```
-POSTGRES_PASSWORD=<strong-random>
-JWT_SECRET=<generated>
-ANON_KEY=<generated>
-SERVICE_ROLE_KEY=<generated>
-SITE_URL=http://localhost:3000
-API_EXTERNAL_URL=http://localhost:8000
-SUPABASE_PUBLIC_URL=http://localhost:8000
-
-GOTRUE_EXTERNAL_GITHUB_ENABLED=true
-GOTRUE_EXTERNAL_GITHUB_CLIENT_ID=<from C1>
-GOTRUE_EXTERNAL_GITHUB_SECRET=<from C1>
-GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI=http://localhost:8000/auth/v1/callback
+```bash
+brew install mkcert nss             # nss only needed if you use Firefox
+mkcert -install                     # one-time: registers the local CA
+mkdir -p ~/scratch/tls && cd ~/scratch/tls
+mkcert 127.0.0.1 localhost ::1      # produces 127.0.0.1+2.pem and 127.0.0.1+2-key.pem
 ```
 
-**Done when:** all env vars set; no placeholder strings remain.
+**Done when:** `~/scratch/tls/127.0.0.1+2.pem` and `127.0.0.1+2-key.pem` exist; `curl https://127.0.0.1:8443/` (after D4) returns no certificate errors.
 
-### D3. Bring the stack up
+### D3. Configure the scratch `.env` (in `~/scratch/supabase-stack/.env`)
+
+The supabase `.env` lives in the scratch working dir, outside any source control. Do **not** copy it (or any of its values) into the TeamBrain repo.
+
+The supabase fork ships two scripts that handle the secret rotation for you — much safer than manual openssl + jwt.io because they sign the legacy HS256 JWTs and generate the new ES256 keypairs in one shot:
+
+```bash
+cd ~/scratch/supabase-stack
+
+# Rotates: POSTGRES_PASSWORD, JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY,
+# SECRET_KEY_BASE, VAULT_ENC_KEY, PG_META_CRYPTO_KEY,
+# LOGFLARE_PUBLIC/PRIVATE_ACCESS_TOKEN, MINIO_ROOT_PASSWORD, DASHBOARD_PASSWORD.
+# Redirect stdout to /dev/null — the script prints generated secrets there too.
+sh ./utils/generate-keys.sh --update-env >/dev/null
+
+# Generates: JWT_KEYS (EC private), JWT_JWKS (EC public), SUPABASE_PUBLISHABLE_KEY,
+# SUPABASE_SECRET_KEY (opaque API keys). Requires node >= 16 and a JWT_SECRET in .env
+# (generate-keys.sh sets that, hence the order).
+sh ./utils/add-new-auth-keys.sh --update-env >/dev/null
+```
+
+Then set the URL fields and the GitHub OAuth fields with `sed -i` (or a text editor — but `sed` keeps the secrets out of the conversation/transcript). Use the values from the password-manager entry for `TeamBrain-scratch` for `GITHUB_CLIENT_ID` / `GITHUB_SECRET`:
+
+```bash
+cd ~/scratch/supabase-stack
+sed -i.bak \
+  -e 's|^SUPABASE_PUBLIC_URL=.*|SUPABASE_PUBLIC_URL=https://127.0.0.1:8443|' \
+  -e 's|^API_EXTERNAL_URL=.*|API_EXTERNAL_URL=https://127.0.0.1:8443|' \
+  -e 's|^SITE_URL=.*|SITE_URL=https://127.0.0.1:8443|' \
+  -e 's|^POOLER_TENANT_ID=.*|POOLER_TENANT_ID=teambrain-scratch|' \
+  -e 's|^# GITHUB_ENABLED=false|GITHUB_ENABLED=true|' \
+  .env && rm -f .env.bak
+# Then edit .env manually to fill GITHUB_CLIENT_ID and GITHUB_SECRET on lines that were
+# previously "# GITHUB_CLIENT_ID=" / "# GITHUB_SECRET=" — uncomment and paste from the
+# TeamBrain-scratch password-manager entry. Do NOT echo the file or grep its values
+# afterward; use the field-name+length verification in the "Done when" block instead.
+```
+
+**Critical wiring detail.** The `.env` keys are `GITHUB_ENABLED` / `GITHUB_CLIENT_ID` / `GITHUB_SECRET`. Inside `docker-compose.yml`, those are mapped onto the GoTrue container as `GOTRUE_EXTERNAL_GITHUB_*` — but those mapping lines ship **commented out by default**. Uncomment them:
+
+```yaml
+# In docker-compose.yml, in the auth service `environment:` block, change:
+#   # GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GITHUB_ENABLED}
+#   # GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+#   # GOTRUE_EXTERNAL_GITHUB_SECRET: ${GITHUB_SECRET}
+#   # GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
+# to (drop the `# `):
+      GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GITHUB_ENABLED}
+      GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GOTRUE_EXTERNAL_GITHUB_SECRET: ${GITHUB_SECRET}
+      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
+```
+
+`GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI` is **auto-derived** from `${API_EXTERNAL_URL}/auth/v1/callback` — there is no separate `.env` field for it. Setting `API_EXTERNAL_URL=https://127.0.0.1:8443` makes the callback `https://127.0.0.1:8443/auth/v1/callback`, which must match the `TeamBrain-scratch` GitHub OAuth app callback exactly (including `127.0.0.1`, not `localhost`).
+
+**Done when** (verification masks all values — never print raw `.env` contents):
+
+```bash
+cd ~/scratch/supabase-stack
+# Field-name + length only — values stay out of the transcript
+for k in POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY SECRET_KEY_BASE \
+         VAULT_ENC_KEY PG_META_CRYPTO_KEY LOGFLARE_PUBLIC_ACCESS_TOKEN \
+         LOGFLARE_PRIVATE_ACCESS_TOKEN MINIO_ROOT_PASSWORD DASHBOARD_PASSWORD \
+         SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY JWT_KEYS JWT_JWKS \
+         GITHUB_ENABLED GITHUB_CLIENT_ID GITHUB_SECRET; do
+  v=$(grep "^$k=" .env | cut -d= -f2-)
+  if [ -z "$v" ] || [ "$v" = "REPLACE_FROM_PASSWORD_MANAGER" ]; then
+    echo "$k: UNSET"
+  else
+    echo "$k: SET (len=${#v})"
+  fi
+done
+
+# Confirm leftover placeholders are gone (intentional non-secret defaults are OK)
+grep -nE 'your-super-secret|your-tenant-id|your-32-character|your-encryption-key' .env
+# (no output = good; commented "# SAML_PRIVATE_KEY=<...>" matching `<` is harmless)
+
+# Confirm docker-compose.yml uncomment
+sed -n '197,200p' docker-compose.yml | grep -v '^[[:space:]]*#'
+# (should print 4 lines, none starting with #)
+```
+
+**S3_PROTOCOL_ACCESS_KEY_*** ships pre-randomized — the rotation scripts don't touch them. Storage isn't used in Phase 1; safe to leave as-is. **OPENAI_API_KEY=sk-proj-xxxxxxxx** is only consumed by Studio's AI Assistant and isn't a secret.
+
+### D4. Bring the stack up (Caddy in-compose, Kong on loopback)
+
+**Topology:** all proxying lives inside the compose stack. Caddy terminates TLS on the host's `127.0.0.1:8443`, then `reverse_proxy kong:8000` over the docker network. Kong is also exposed on `127.0.0.1:8000` for direct debug curls but isn't on the public-facing path. Pooler ports go to loopback too. This mirrors the production topology (`pr.fabric-testbed.net` → Caddy → Kong) so issues found here translate one-to-one.
+
+Add a `docker-compose.override.yml` next to `docker-compose.yml` (auto-merged by compose; do **not** commit to the TeamBrain repo — it's local to `~/scratch/supabase-stack/`):
+
+```yaml
+services:
+  kong:
+    ports: !override
+      - "127.0.0.1:${KONG_HTTP_PORT}:8000/tcp"
+
+  supavisor:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION}:6543"
+
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: supabase-caddy
+    restart: unless-stopped
+    depends_on:
+      kong:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${HOME}/scratch/tls/127.0.0.1+2.pem:/tls/cert.pem:ro
+      - ${HOME}/scratch/tls/127.0.0.1+2-key.pem:/tls/key.pem:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+And a `Caddyfile` next to it:
+
+```caddyfile
+{
+    auto_https off
+    log { level WARN }
+}
+
+:8443 {
+    tls /tls/cert.pem /tls/key.pem
+    reverse_proxy kong:8000
+}
+```
+
+Caddy auto-sets `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For` and handles WebSocket upgrades by default — no manual headers needed. `auto_https off` is critical: without it Caddy will try to provision Let's Encrypt certs and fail on `127.0.0.1`.
+
+Bring it all up:
 
 ```bash
 docker compose up -d
 docker compose ps
 ```
 
-**Done when:** every service shows `running (healthy)` (allow ~60s for first start). If any service is unhealthy, check `docker compose logs <service>` before continuing.
-
-### D4. Verify pgvector is available
+**Done when:** every service shows `Up ... (healthy)` (allow ~60s for first start). HTTPS path responds:
 
 ```bash
-docker compose exec db psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector; SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';"
+# WORKS — Python uses OpenSSL with the mkcert CA explicitly
+ANON=$(grep "^ANON_KEY=" .env | cut -d= -f2-)
+CAROOT=$(mkcert -CAROOT)
+python3 -c "
+import ssl, urllib.request, json
+ctx = ssl.create_default_context(cafile='$CAROOT/rootCA.pem')
+req = urllib.request.Request('https://127.0.0.1:8443/auth/v1/settings', headers={'apikey': '$ANON'})
+with urllib.request.urlopen(req, context=ctx) as r:
+    print('status:', r.status, 'github:', json.load(r).get('external',{}).get('github'))
+"
+# Expect: status: 200 github: True
 ```
 
-**Done when:** the row for `vector` is returned.
+**macOS LibreSSL gotcha.** `/usr/bin/curl` on macOS ships with LibreSSL 3.3.6 and a static CA bundle at `/etc/ssl/cert.pem` that does **not** include the mkcert local CA — even though Keychain does. System curl will fail TLS handshake against `127.0.0.1:8443` with `error:06FFF064:digital envelope routines:CRYPTO_internal:bad decrypt`. Browsers (Secure Transport via Keychain) and Python/Node (OpenSSL) work fine. For command-line testing, either `brew install curl` (puts an OpenSSL-backed curl at `/opt/homebrew/opt/curl/bin/curl`) or use the Python snippet above.
 
-### D5. Verify Studio loads
+### D5. Verify pgvector is available (in the `extensions` schema)
 
-Open `http://localhost:3000` in a browser. Default login is from `.env` (`STUDIO_DEFAULT_*` or basic auth depending on config).
+Supabase's convention is that **all extensions live in the dedicated `extensions` schema**, not in `public`. The `extensions` schema is pre-created by the supabase docker image, and `search_path` is set to `"$user", public, extensions` so unqualified references (`vector(1536)`) resolve transparently. Putting extensions in `public` triggers Studio's Security Advisor "Extension in Public" warning and pollutes the auto-generated PostgREST OpenAPI surface.
 
-**Done when:** Studio dashboard renders, can browse `auth.users` (empty), can run a SQL query (`SELECT now();`) successfully.
+```bash
+docker compose exec db psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions; SELECT n.nspname AS schema, e.extname, e.extversion FROM pg_extension e JOIN pg_namespace n ON e.extnamespace=n.oid WHERE e.extname='vector';"
+```
 
-### D6. Verify GitHub OAuth round-trip
+**If vector is already installed in the wrong schema** (e.g., from an earlier `CREATE EXTENSION` without `WITH SCHEMA`):
 
-The simplest harness: use a tiny static HTML page that calls `supabase.auth.signInWithOAuth({ provider: 'github' })` via the JS client, served from `localhost:3000` or any local port whose origin is in `ADDITIONAL_REDIRECT_URLS`.
+```bash
+docker compose exec db psql -U postgres -c "ALTER EXTENSION vector SET SCHEMA extensions;"
+```
+
+`ALTER EXTENSION ... SET SCHEMA` is non-destructive — it moves the extension's objects (the `vector` type, distance functions, indexes) and any dependent objects atomically.
+
+**Done when:** the row shows `schema=extensions, extname=vector, extversion=0.8.0` (or newer); `'[1,2,3]'::vector(3)` evaluates without a schema-qualifier.
+
+### D6. Verify Studio loads
+
+Studio defaults to plain HTTP on `:3000`. Two acceptable patterns:
+
+- **Direct admin access** (simplest): open `http://127.0.0.1:3000`. Bind it to loopback only in compose (`127.0.0.1:3000:3000`) so it's not reachable from elsewhere.
+- **Behind Nginx** at a separate hostname (`https://studio.127.0.0.1.nip.io:8443`-style trick won't work with mkcert SAN; use a separate `server` block with the same cert if you really want HTTPS to Studio).
+
+Pick the first for the spike — Studio is admin-only and the loopback bind is sufficient.
+
+**Done when:** Studio dashboard renders, can browse `auth.users` (empty), can run `SELECT now();` in SQL editor.
+
+### D7. Verify GitHub OAuth round-trip
+
+The simplest harness: a tiny static `index.html` served over HTTPS from the same `https://127.0.0.1:8443` origin (so post-login redirect lands on a trusted-cert origin without origin warnings). Either drop it under Nginx's `root` for the `:8443` server, or stand up a second Nginx server block (or use a Vite dev server with HTTPS pointing at the mkcert files).
+
+```html
+<!doctype html>
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+  const supabase = createClient('https://127.0.0.1:8443', '<ANON_KEY from .env>')
+  window.signIn = () => supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: 'https://127.0.0.1:8443/' }
+  })
+  supabase.auth.onAuthStateChange((evt, session) => console.log(evt, session))
+</script>
+<button onclick="signIn()">Sign in with GitHub</button>
+```
 
 Walk through:
 1. Click "Sign in with GitHub" in the harness.
-2. Redirect to GitHub → authorize the OAuth App.
-3. Redirect back → Studio's `auth.users` table should now have one row with the GitHub identity.
-4. The session JWT should decode (use jwt.io) to show `sub` matching the new `auth.users.id`.
+2. Redirect to GitHub → authorize the `TeamBrain-scratch` OAuth App (first time only).
+3. Redirect back to `https://127.0.0.1:8443/auth/v1/callback?code=...` → GoTrue exchanges code with GitHub → sets session cookies → final redirect to harness.
+4. Studio's `auth.users` table now has one row with `provider=github`.
+5. Decode the session JWT (jwt.io or `console.log(session.access_token)` + paste) — `sub` matches `auth.users.id`.
 
-**Done when:** a row exists in `auth.users` with `provider=github`; the JWT contains the correct `sub`.
+**Done when:** a row exists in `auth.users` with `provider=github`; the JWT contains the correct `sub`; no browser cert warnings appeared.
 
-### D7. Verify `auth.uid()` works in SQL with that user's JWT
+### D8. Verify `auth.uid()` works in SQL with that user's JWT
 
-In Studio's SQL editor, switch the role to `authenticated` and set the JWT:
+In Studio's SQL editor, create a quick `whoami` helper and call it through the authenticated client:
 
 ```sql
-SET request.jwt.claims = '<paste decoded JSON or use the raw JWT via Supabase client>';
-SELECT auth.uid();
+create function public.whoami() returns uuid language sql security invoker as $$
+  select auth.uid();
+$$;
 ```
 
-(Easier alternative: use the JS client with the session and run `supabase.rpc('whoami')` against a stored function `create function whoami() returns uuid language sql as $$ select auth.uid(); $$;`.)
+From the harness page (still signed in):
+
+```js
+const { data, error } = await supabase.rpc('whoami')
+console.log('auth.uid() →', data)   // should match auth.users.id
+```
 
 **Done when:** `auth.uid()` returns the same UUID as `auth.users.id` for the GitHub-authenticated user.
 
@@ -198,12 +379,12 @@ SELECT auth.uid();
 
 Before moving to Phase 1, confirm:
 
-- [ ] A1–A3 complete (clean repo, license, initial commit)
-- [ ] B1 complete (pilot repo chosen, captured to Open Brain)
-- [ ] C1 complete (OAuth App created in `fabric-testbed` org)
-- [ ] D3–D7 all green on scratch instance
+- [x] A1–A4 complete (clean repo, Apache-2.0, initial commit, remotes configured)
+- [x] B1 — pilot repo decided (fabric-core-api); Komal's buy-in answers still pending but not blocking schema work
+- [x] C1–C2 complete (both OAuth apps registered: `TeamBrain` for prod, `TeamBrain-scratch` for `https://127.0.0.1:8443`)
+- [ ] D1–D8 all green on scratch instance
 
-If all five are checked, Phase 1 schema work can begin against the scratch Supabase. The first Phase 1 deliverables (per `CLAUDE.md`) are:
+If all four are checked, Phase 1 schema work can begin against the scratch Supabase. The first Phase 1 deliverables (per `CLAUDE.md`) are:
 
 1. `migrations/0001_init.sql`
 2. `migrations/0002_rls.sql`
