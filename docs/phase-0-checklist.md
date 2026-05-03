@@ -93,7 +93,7 @@ Two separate apps (intentional — different secrets, isolated rotation, scratch
 | `TeamBrain` | `fabric-testbed` org | `https://pr.fabric-testbed.net` | `https://pr.fabric-testbed.net/auth/v1/callback` |
 | `TeamBrain-scratch` | (scratch — owner TBD; personal account is fine since secret is dev-only) | `https://127.0.0.1:8443` | `https://127.0.0.1:8443/auth/v1/callback` |
 
-Note the scratch host is `127.0.0.1`, not `localhost`. GitHub does exact-string matching on callback URLs — keep this consistent everywhere downstream (Nginx `server_name`, `SITE_URL`, `API_EXTERNAL_URL`, the harness page's origin). Mixing `localhost` and `127.0.0.1` in any of those will fail OAuth even though they resolve to the same address.
+Note the scratch host is `127.0.0.1`, not `localhost`. GitHub does exact-string matching on callback URLs — keep this consistent everywhere downstream (Caddyfile site addresses, mkcert SANs, `SITE_URL`, `API_EXTERNAL_URL`, the OAuth-test page's `redirectTo`). Mixing `localhost` and `127.0.0.1` in any of those will fail OAuth even though they resolve to the same address.
 
 Client IDs + Client Secrets stored in password manager. Not in this repo, not in any committed file.
 
@@ -227,6 +227,14 @@ Add a `docker-compose.override.yml` next to `docker-compose.yml` (auto-merged by
 
 ```yaml
 services:
+  # Postgres 17 (multi-arch; folds in the upstream docker-compose.pg17.yml).
+  # `platform: linux/arm64` is required on Colima/Apple Silicon — the manifest
+  # resolver defaults to amd64 and runs under Rosetta otherwise. Verify with
+  # `docker compose exec -T db uname -m` (must return aarch64, not x86_64).
+  db:
+    image: supabase/postgres:17.6.1.084
+    platform: linux/arm64
+
   kong:
     ports: !override
       - "127.0.0.1:${KONG_HTTP_PORT}:8000/tcp"
@@ -247,6 +255,7 @@ services:
       - "127.0.0.1:8443:8443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./oauth-test:/srv/oauth-test:ro
       - ${HOME}/scratch/tls/127.0.0.1+2.pem:/tls/cert.pem:ro
       - ${HOME}/scratch/tls/127.0.0.1+2-key.pem:/tls/key.pem:ro
       - caddy_data:/data
@@ -329,49 +338,81 @@ Pick the first for the spike — Studio is admin-only and the loopback bind is s
 
 ### D7. Verify GitHub OAuth round-trip
 
-The simplest harness: a tiny static `index.html` served over HTTPS from the same `https://127.0.0.1:8443` origin (so post-login redirect lands on a trusted-cert origin without origin warnings). Either drop it under Nginx's `root` for the `:8443` server, or stand up a second Nginx server block (or use a Vite dev server with HTTPS pointing at the mkcert files).
+A static OAuth-test page served by Caddy from `https://127.0.0.1:8443/oauth-test/` (same origin as the API, so cookies and redirect_to land on a trusted-cert origin without cross-origin hops). Add a `handle_path` to the Caddyfile and mount the directory into the Caddy container; the override.yml shown in D4 already includes `./oauth-test:/srv/oauth-test:ro`. Caddyfile fragment:
 
-```html
-<!doctype html>
-<script type="module">
-  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-  const supabase = createClient('https://127.0.0.1:8443', '<ANON_KEY from .env>')
-  window.signIn = () => supabase.auth.signInWithOAuth({
-    provider: 'github',
-    options: { redirectTo: 'https://127.0.0.1:8443/' }
-  })
-  supabase.auth.onAuthStateChange((evt, session) => console.log(evt, session))
-</script>
-<button onclick="signIn()">Sign in with GitHub</button>
+```caddyfile
+:8443 {
+    tls /tls/cert.pem /tls/key.pem
+
+    handle_path /oauth-test/* {
+        root * /srv/oauth-test
+        file_server
+    }
+
+    handle {
+        reverse_proxy kong:8000
+    }
+}
 ```
 
-Walk through:
-1. Click "Sign in with GitHub" in the harness.
-2. Redirect to GitHub → authorize the `TeamBrain-scratch` OAuth App (first time only).
-3. Redirect back to `https://127.0.0.1:8443/auth/v1/callback?code=...` → GoTrue exchanges code with GitHub → sets session cookies → final redirect to harness.
-4. Studio's `auth.users` table now has one row with `provider=github`.
-5. Decode the session JWT (jwt.io or `console.log(session.access_token)` + paste) — `sub` matches `auth.users.id`.
+The `~/scratch/supabase-stack/oauth-test/index.html` page contains the test rig: a "Sign in with GitHub" button, a session/JWT inspector, and a "Run whoami() RPC" button (used in D8). Bake the `ANON_KEY` from `.env` into the page once with a Python templating step (avoids leaking the value through shell quoting):
 
-**Done when:** a row exists in `auth.users` with `provider=github`; the JWT contains the correct `sub`; no browser cert warnings appeared.
+```bash
+cd ~/scratch/supabase-stack
+python3 -c "
+import os
+with open('.env') as f:
+    for line in f:
+        if line.startswith('ANON_KEY='):
+            anon = line.split('=', 1)[1].strip()
+            break
+with open('oauth-test/index.html') as f: c = f.read()
+c = c.replace('__ANON_KEY__', anon)
+with open('oauth-test/index.html', 'w') as f: f.write(c)
+"
+docker compose up -d caddy --force-recreate
+```
+
+(`ANON_KEY` is intentionally a public client-side key per Supabase's design — it's safe in browser JS — but the Python step keeps it out of shell history and the conversation transcript.)
+
+Walk through:
+1. Open `https://127.0.0.1:8443/oauth-test/` in the same browser session you used for Studio (so mkcert trust is already in place).
+2. Click **"Sign in with GitHub"**.
+3. Redirect to GitHub → authorize the `TeamBrain-scratch` OAuth App (first time only).
+4. Redirect back to `https://127.0.0.1:8443/auth/v1/callback?code=...` → GoTrue exchanges code with GitHub → sets session cookies → final redirect to the OAuth-test page.
+5. Status badge flips to "Signed in as `<github_handle>`"; **Session summary** + **JWT claims** panes populate.
+6. Studio's `auth.users` table now has one row with `provider=github`.
+7. The JWT's `sub` claim matches `auth.users.id`.
+
+**Done when:** a row exists in `auth.users` with `provider=github`; the JWT contains the correct `sub`; no browser cert warnings appeared. The OAuth-test page is Phase 0 verification scaffold only — it has no production analog (real clients are MCP and REST, not browsers).
 
 ### D8. Verify `auth.uid()` works in SQL with that user's JWT
 
-In Studio's SQL editor, create a quick `whoami` helper and call it through the authenticated client:
+In **Studio's SQL editor** (not `psql -U postgres` — that role isn't a superuser in self-hosted Supabase and can't own functions in `public`), create a `whoami` helper and call it through the authenticated client. The `set search_path = ''` clause is required — without it, Studio's Security Advisor flags the function for "Function Search Path Mutable":
 
 ```sql
-create function public.whoami() returns uuid language sql security invoker as $$
+create or replace function public.whoami()
+returns uuid
+language sql
+security invoker
+set search_path = ''
+as $$
   select auth.uid();
 $$;
+
+grant execute on function public.whoami() to anon, authenticated;
 ```
 
-From the harness page (still signed in):
+`security invoker` runs the function as the calling role (so `auth.uid()` derives from the *caller's* JWT, not the function's owner). `set search_path = ''` forces all references inside to be fully schema-qualified — `auth.uid` already is, so nothing else needs to change.
+
+From the OAuth-test page (still signed in), click **"Run whoami() RPC"** (or run the equivalent in console):
 
 ```js
 const { data, error } = await supabase.rpc('whoami')
 console.log('auth.uid() →', data)   // should match auth.users.id
 ```
 
-**Done when:** `auth.uid()` returns the same UUID as `auth.users.id` for the GitHub-authenticated user.
+**Done when:** `auth.uid()` returns the same UUID as `auth.users.id` for the GitHub-authenticated user; Studio Security Advisor shows zero issues.
 
 ---
 
