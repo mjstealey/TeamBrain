@@ -110,3 +110,38 @@ Stand up the docker-compose stack on **a scratch host** (developer Docker Deskto
 4. The user's JWT exposes `auth.uid()` correctly to Postgres in a sample SQL query.
 
 Only after this spike succeeds do we touch `pr.fabric-testbed.net`.
+
+## Phase 1 — applying migrations
+
+Phase 1 ships four files in `migrations/`:
+
+| File | Role |
+|---|---|
+| `0001_init.sql` | Tables, ENUMs, indexes, `updated_at` trigger, base grants. RLS deliberately not enabled here. |
+| `0002_rls.sql` | Enables RLS on all 3 tables; revokes `anon`; defines 3 SECURITY DEFINER helpers in the `app` schema; creates 8 policies (4 on `thoughts`, 2 on `projects`, 1 on `project_members`). |
+| `0003_disable_graphql.sql` | `drop extension pg_graphql`. TeamBrain transports are MCP + REST; GraphQL is not in the architecture and its introspection trips lints we cannot otherwise clear without revoking `authenticated` SELECT. |
+| `seed.sql` | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. |
+
+### How to apply (scratch instance)
+
+The self-hosted `postgres` role is **not a superuser** on the supabase docker stack — it cannot own functions in `public` and DDL applied via `psql -U postgres` will fail in confusing ways. **Apply migrations through Studio's SQL editor** (Studio runs as `supabase_admin`, which is the correct DDL identity).
+
+1. Open Studio at `http://127.0.0.1:3000`, click **SQL Editor → New query**.
+2. For each file in order — `0001`, `0002`, `0003`, `seed` — paste the entire file contents, click **Run**.
+3. Studio will warn for `0001` ("New tables will not have RLS enabled") — click **"Run without RLS"**. RLS is enabled in `0002`.
+4. Studio will warn for `0002` ("Query has destructive operations") because of the `drop policy if exists` re-runnability lines — expected, click through.
+5. After each file, run the verification queries in `docs/phase-1-checklist.md` (sections B2, C2, C3, D1).
+
+### Acceptance gate (Phase 1 → Phase 2)
+
+After all four files apply cleanly:
+
+- **Database → Advisors → Security Advisor:** 0 errors, 0 warnings.
+- **Database → Advisors → Performance Advisor:** 0 issues.
+- **RLS isolation matrix** (E3 in the Phase 1 checklist) — five SQL queries impersonating `authenticated` via `set local request.jwt.claims`. The two load-bearing checks: a non-member sees zero rows (`select count(*) from public.thoughts where ...` returns 0) and a non-member's insert raises `42501: new row violates row-level security policy for table "thoughts"`.
+
+If all three are green, Phase 2 (porting OB1's `shared-mcp` edge function to multi-tenant TeamBrain) can begin. If anything else surfaces, capture and triage before proceeding.
+
+### Applying to `pr.fabric-testbed.net`
+
+Same procedure as scratch — open the production Studio, paste each file in order. The `seed.sql` file is environment-agnostic (uses GitHub handles, not UUIDs, so it resolves correctly against whichever `auth.users` exists in the target instance). **Do not apply to production until the scratch acceptance gate above is fully green for the same migration set.**
