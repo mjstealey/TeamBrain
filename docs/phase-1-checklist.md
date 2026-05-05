@@ -214,7 +214,7 @@ from pilot_users
 on conflict (project_id, user_id) do update set role = excluded.role;
 ```
 
-(Komal's GitHub handle will need confirmation in B1 of Phase 0 — `kthare10` is a placeholder that needs to be checked against `https://github.com/kthare10` before this file is applied.)
+(Komal's GitHub handle was confirmed as `kthare10` against `https://github.com/kthare10` on 2026-05-05.)
 
 **Done when:** `migrations/seed.sql` exists; applies cleanly; `select gh_handle, role from public.project_members pm join auth.users u on u.id = pm.user_id ...` returns at least Michael's row.
 

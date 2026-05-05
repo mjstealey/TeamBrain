@@ -29,10 +29,8 @@
 --
 -- Pilot dev list (update as Phase 0 B1 confirms additional reviewers):
 --   * mjstealey  — Michael (admin, primary committer, also the seeder)
---   * kthare10   — Komal Thareja (contributor, primary reviewer; PLACEHOLDER:
---                                 verify against https://github.com/kthare10
---                                 before applying — the GitHub handle was
---                                 not yet confirmed at file authoring time)
+--   * kthare10   — Komal Thareja (contributor, primary reviewer; handle
+--                                 confirmed against https://github.com/kthare10)
 
 begin;
 
@@ -67,7 +65,7 @@ on conflict (id) do nothing;
 with desired_members (gh_handle, role) as (
   values
     ('mjstealey', 'admin'),
-    ('kthare10',  'contributor')   -- PLACEHOLDER handle; verify before apply.
+    ('kthare10',  'contributor')   -- Komal Thareja, handle confirmed.
 ),
 resolved as (
   select u.id as user_id, dm.role
