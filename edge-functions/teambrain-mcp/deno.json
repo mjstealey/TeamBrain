@@ -1,0 +1,13 @@
+{
+  "imports": {
+    "hono":                                          "npm:hono@^4.6.0",
+    "@hono/mcp":                                     "npm:@hono/mcp@^0.1.0",
+    "@modelcontextprotocol/sdk/server/mcp.js":       "npm:@modelcontextprotocol/sdk@^1.0.0/server/mcp.js",
+    "zod":                                           "npm:zod@^3.23.0",
+    "@supabase/supabase-js":                         "npm:@supabase/supabase-js@^2.45.0"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.ns"],
+    "strict": true
+  }
+}

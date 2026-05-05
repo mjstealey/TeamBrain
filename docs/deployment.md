@@ -145,3 +145,60 @@ If all three are green, Phase 2 (porting OB1's `shared-mcp` edge function to mul
 ### Applying to `pr.fabric-testbed.net`
 
 Same procedure as scratch — open the production Studio, paste each file in order. The `seed.sql` file is environment-agnostic (uses GitHub handles, not UUIDs, so it resolves correctly against whichever `auth.users` exists in the target instance). **Do not apply to production until the scratch acceptance gate above is fully green for the same migration set.**
+
+## Phase 2 — applying the MCP edge function migration + deploying the edge function
+
+Phase 2 adds **one more migration** (`migrations/0004_match_thoughts.sql` — the SECURITY INVOKER semantic-search RPC) and **one new artifact**: the multi-tenant MCP edge function under `edge-functions/teambrain-mcp/`.
+
+### Apply the migration (Studio)
+
+Apply `0004_match_thoughts.sql` the same way as the Phase 1 migrations — paste into Studio SQL editor, run. Verify:
+
+```sql
+select pg_get_function_identity_arguments('public.match_thoughts'::regproc);
+-- expect: query_embedding vector, match_count integer, match_threshold double precision,
+--         filter_project_id uuid, filter_scopes thought_scope[]
+```
+
+### Deploy the edge function to scratch
+
+Source-of-truth lives in `edge-functions/teambrain-mcp/` in this repo. The Edge Runtime container reads from `~/scratch/supabase-stack/volumes/functions/teambrain-mcp/` (the supabase docker convention: function directory name = URL function name). Sync source → runtime mount with `rsync`:
+
+```bash
+rsync -av --delete \
+  ~/GitHub/mjstealey/TeamBrain/edge-functions/teambrain-mcp/ \
+  ~/scratch/supabase-stack/volumes/functions/teambrain-mcp/
+```
+
+### Required env in the functions container
+
+The stock supabase `docker-compose.yml` `functions:` service forwards only its hard-coded list of env vars. TeamBrain needs two more — add to your scratch-local `docker-compose.override.yml` (gitignored, never copied into this repo):
+
+```yaml
+services:
+  functions:
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      TEAMBRAIN_DEFAULT_PROJECT_SLUG: ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}
+```
+
+`OPENAI_API_KEY` must be a real key with billing enabled — `text-embedding-3-small` is consumed on every capture and search; cost is ~$0.02 per 1M tokens (effectively free for pilot scale).
+
+`TEAMBRAIN_DEFAULT_PROJECT_SLUG` is optional; tools accept `project_slug` directly in args. Setting it lets a single-pilot deployment omit the param.
+
+After editing the override, recreate the container so the new env lands:
+
+```bash
+cd ~/scratch/supabase-stack
+docker compose up -d functions
+docker compose exec functions env | grep -E 'OPENAI_API_KEY|TEAMBRAIN_DEFAULT_PROJECT_SLUG' | sed 's/=.*/=<set>/'
+# expect both lines to appear (values masked)
+```
+
+### Acceptance gate (Phase 2 → Phase 3)
+
+The Phase 2 checklist's curl matrix passing is sufficient — see `docs/phase-2-checklist.md` § I. The 5 tools (`ping`, `capture_project_thought`, `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`) each return well-formed responses for a real GoTrue-issued JWT, and Phase 1 § E3 transitively proves non-member denial at the MCP layer.
+
+### Applying to `pr.fabric-testbed.net`
+
+The migration applies the same way (Studio SQL editor, paste + run). The edge function deploys differently in production: the production stack rsyncs from the same `edge-functions/teambrain-mcp/` repo path into its own `volumes/functions/` mount, with production env vars (`OPENAI_API_KEY` from a production secret store, `TEAMBRAIN_DEFAULT_PROJECT_SLUG` set per pilot project) wired through the production override. **Do not deploy to production until scratch passes the Phase 2 curl matrix on the same source.**
