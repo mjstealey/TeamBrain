@@ -1,0 +1,95 @@
+# docker-compose.override.yml.example — reference fragments for the two
+# supported embedding-provider deployments. Each TeamBrain instance picks
+# ONE; do not enable both at once.
+#
+# This file is shipped in-repo as documentation. It is NOT auto-merged
+# by docker compose — copy the fragment you want into your scratch or
+# production `docker-compose.override.yml` next to the supabase
+# `docker-compose.yml`. The override file itself is gitignored at the
+# deployment site (it carries env passthrough, ports, TLS volume mounts,
+# etc. that are environment-specific).
+#
+# See ADR 0001 § Decision 5 and docs/deployment.md § "Phase 2".
+
+# ===========================================================================
+# Variant 1 — OpenAI (default; vector(1536); applies on top of 0001_init.sql)
+# ===========================================================================
+#
+# Use this for scratch / dev / teams choosing OpenAI. The functions
+# container needs OPENAI_API_KEY and an EMBEDDING_PROVIDER=openai signal
+# (default if unset, but explicit is clearer in production).
+
+# services:
+#   functions:
+#     environment:
+#       EMBEDDING_PROVIDER:               openai
+#       EMBEDDING_DIMS:                   "1536"
+#       OPENAI_API_KEY:                   ${OPENAI_API_KEY}
+#       OPENAI_EMBEDDING_MODEL:           text-embedding-3-small
+#       TEAMBRAIN_DEFAULT_PROJECT_SLUG:   ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}
+
+# ===========================================================================
+# Variant 2 — ollama / nomic-embed-text (vector(768); requires 0005 migration)
+# ===========================================================================
+#
+# Use this for pr.fabric-testbed.net production and for any deployment
+# preferring zero third-party data egress. Apply
+# migrations/0005_resize_embedding_768.sql BEFORE the first thought is
+# captured (or accept re-embedding all existing thoughts after applying).
+
+# services:
+#   functions:
+#     environment:
+#       EMBEDDING_PROVIDER:               ollama
+#       EMBEDDING_DIMS:                   "768"
+#       OLLAMA_URL:                       http://ollama:11434
+#       OLLAMA_EMBEDDING_MODEL:           nomic-embed-text
+#       TEAMBRAIN_DEFAULT_PROJECT_SLUG:   ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}
+#     depends_on:
+#       ollama:
+#         condition: service_healthy
+#
+#   ollama:
+#     image: ollama/ollama:latest
+#     container_name: supabase-ollama
+#     restart: unless-stopped
+#     # No public port — only the functions container reaches it via the
+#     # docker network. Add `ports: ["127.0.0.1:11434:11434"]` only if you
+#     # need to debug from the host.
+#     volumes:
+#       - ollama_data:/root/.ollama
+#     # Pull the embedding model on first start. The healthcheck blocks
+#     # the functions container from booting until the model is pulled
+#     # and ready to serve embeddings.
+#     entrypoint: ["/bin/sh", "-c"]
+#     command:
+#       - |
+#         /bin/ollama serve &
+#         pid=$!
+#         until /bin/ollama list >/dev/null 2>&1; do sleep 1; done
+#         /bin/ollama pull nomic-embed-text
+#         wait $pid
+#     healthcheck:
+#       test: ["CMD-SHELL", "ollama list | grep -q nomic-embed-text"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 30
+#       start_period: 60s
+#
+# volumes:
+#   ollama_data:
+
+# ===========================================================================
+# Variant 3 — other dim providers (Cohere 1024, Voyage 512, Mistral 1024…)
+# ===========================================================================
+#
+# Not shipped in-repo. To add a new provider:
+#   1. Write a new dispatch arm in edge-functions/teambrain-mcp/embedding.ts
+#      following the embedOpenAI / embedOllama patterns.
+#   2. Write migrations/0005_resize_embedding_<NNN>.sql by copying the
+#      768 variant and editing the three dim literals (alter column,
+#      match_thoughts param type, grant arg type).
+#   3. Add an `environment:` fragment for the functions service mirroring
+#      the variants above.
+#
+# Each TeamBrain deployment picks one — there is no runtime dim switching.

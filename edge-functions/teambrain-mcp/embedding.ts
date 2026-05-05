@@ -1,18 +1,33 @@
-// embedding.ts — OpenAI text-embedding-3-small wrapper.
+// embedding.ts — pluggable embedding provider.
 //
-// Decision (Phase 2 § A1): text-embedding-3-small produces 1536-dim
-// vectors which match `public.thoughts.embedding vector(1536)` exactly.
-// Switching models to a different dimension would require a schema
-// migration (alter column type) plus a backfill — defer until OpenAI
-// access becomes a constraint.
+// ADR 0001 § Decision 5: TeamBrain supports multiple embedding backends,
+// chosen at deploy time via the EMBEDDING_PROVIDER env var. Each
+// deployment picks one and lives with it — pgvector column dimension
+// is fixed at table-create time, so the schema must match the provider's
+// output dim. See `migrations/0001_init.sql` (default 1536) and
+// `migrations/0005_resize_embedding_768.sql` (optional 768-dim variant
+// for ollama / nomic-embed-text-style self-hosted deployments).
 //
-// OPENAI_API_KEY is supplied via the supabase-stack `.env` file; the
-// dispatcher in `main/index.ts` passes the entire env through to every
-// worker (`envVars` argument to `EdgeRuntime.userWorkers.create`).
+// Required env vars:
+//   EMBEDDING_PROVIDER  — 'openai' (default) | 'ollama'
+//   EMBEDDING_DIMS      — expected output dim, used as runtime sanity check
+//                         (must match the column type in the deployed schema)
+// Provider-specific:
+//   openai: OPENAI_API_KEY, optional OPENAI_EMBEDDING_MODEL (default
+//           'text-embedding-3-small')
+//   ollama: OLLAMA_URL (e.g. 'http://ollama:11434'), optional
+//           OLLAMA_EMBEDDING_MODEL (default 'nomic-embed-text')
+//
+// Adding a new provider: add a case to the switch in `embed()` and a
+// matching `embedFooBar()` implementation. Schema migration is the
+// deploying team's responsibility; this file does not own that.
 
-const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
-const EMBEDDING_MODEL       = 'text-embedding-3-small';
-const EMBEDDING_DIMS        = 1536;
+const PROVIDER       = (Deno.env.get('EMBEDDING_PROVIDER') ?? 'openai').toLowerCase();
+const EXPECTED_DIMS  = Number(Deno.env.get('EMBEDDING_DIMS') ?? '1536');
+
+if (!Number.isFinite(EXPECTED_DIMS) || EXPECTED_DIMS <= 0) {
+  console.error(`embedding: EMBEDDING_DIMS=${Deno.env.get('EMBEDDING_DIMS')} is not a positive integer`);
+}
 
 export class EmbeddingError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -22,19 +37,52 @@ export class EmbeddingError extends Error {
 }
 
 export async function embed(text: string): Promise<number[]> {
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    throw new EmbeddingError(
-      'OPENAI_API_KEY is not set on the Edge Runtime container; ' +
-      'add it to ~/scratch/supabase-stack/.env and `docker compose up -d` to apply.',
-    );
-  }
-
-  // OpenAI's API rejects empty input. The MCP tool layer also enforces
-  // this via zod (.min(1)) — guard here too as a defense in depth.
   if (!text || !text.trim()) {
     throw new EmbeddingError('embedding input must be non-empty');
   }
+
+  let vec: number[];
+  switch (PROVIDER) {
+    case 'openai': vec = await embedOpenAI(text); break;
+    case 'ollama': vec = await embedOllama(text); break;
+    default:
+      throw new EmbeddingError(
+        `unknown EMBEDDING_PROVIDER='${PROVIDER}'; supported: 'openai' | 'ollama'`,
+      );
+  }
+
+  if (vec.length !== EXPECTED_DIMS) {
+    throw new EmbeddingError(
+      `embedding provider '${PROVIDER}' returned ${vec.length} dims, ` +
+      `but EMBEDDING_DIMS=${EXPECTED_DIMS} (the schema's vector column type). ` +
+      `Either the wrong provider/model is configured, or the schema does not ` +
+      `match — fix one or the other before captures will succeed.`,
+    );
+  }
+
+  return vec;
+}
+
+export function vectorLiteral(vec: number[]): string {
+  return '[' + vec.join(',') + ']';
+}
+
+// ---------------------------------------------------------------------------
+// Provider: OpenAI
+// ---------------------------------------------------------------------------
+
+const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
+
+async function embedOpenAI(text: string): Promise<number[]> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    throw new EmbeddingError(
+      'OPENAI_API_KEY is not set on the Edge Runtime container. ' +
+      'Add it to your docker-compose.override.yml functions environment, ' +
+      'or switch EMBEDDING_PROVIDER to a self-hosted backend.',
+    );
+  }
+  const model = Deno.env.get('OPENAI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
 
   const res = await fetch(OPENAI_EMBEDDINGS_URL, {
     method: 'POST',
@@ -42,10 +90,7 @@ export async function embed(text: string): Promise<number[]> {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type':  'application/json',
     },
-    body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      input: text,
-    }),
+    body: JSON.stringify({ model, input: text }),
   });
 
   if (!res.ok) {
@@ -56,25 +101,53 @@ export async function embed(text: string): Promise<number[]> {
     );
   }
 
-  const json = await res.json() as {
-    data?: Array<{ embedding?: number[] }>;
-  };
-
+  const json = await res.json() as { data?: Array<{ embedding?: number[] }> };
   const vec = json.data?.[0]?.embedding;
-  if (!vec || vec.length !== EMBEDDING_DIMS) {
-    throw new EmbeddingError(
-      `OpenAI embeddings API returned unexpected shape: ` +
-      `data[0].embedding.length=${vec?.length ?? 'undefined'}, expected ${EMBEDDING_DIMS}`,
-    );
+  if (!vec) {
+    throw new EmbeddingError('OpenAI embeddings API returned no data[0].embedding');
   }
-
   return vec;
 }
 
-// pgvector accepts a JSON-array-of-floats string when inserting via
-// PostgREST: `'[0.1, 0.2, ...]'::vector`. supabase-js will auto-cast
-// when the column type is vector, so we serialize once on the client
-// rather than letting JS implicit serialization pick a representation.
-export function vectorLiteral(vec: number[]): string {
-  return '[' + vec.join(',') + ']';
+// ---------------------------------------------------------------------------
+// Provider: ollama (self-hosted)
+// ---------------------------------------------------------------------------
+
+async function embedOllama(text: string): Promise<number[]> {
+  const baseUrl = Deno.env.get('OLLAMA_URL');
+  if (!baseUrl) {
+    throw new EmbeddingError(
+      'OLLAMA_URL is not set on the Edge Runtime container. ' +
+      'Expected something like http://ollama:11434 (the docker-compose ' +
+      'service name + default ollama port). See ' +
+      'docs/deployment.md § "Phase 2 — applying the MCP edge function" ' +
+      'and the ollama section in docker-compose.override.yml.example.',
+    );
+  }
+  const model = Deno.env.get('OLLAMA_EMBEDDING_MODEL') ?? 'nomic-embed-text';
+
+  // ollama exposes /api/embeddings; payload shape is { model, prompt }.
+  // Newer ollama versions also support /api/embed with batch support;
+  // we use the original endpoint for max compatibility with installed
+  // versions in research-infra environments.
+  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/embeddings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, prompt: text }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '<no body>');
+    throw new EmbeddingError(
+      `ollama embeddings API at ${baseUrl} returned HTTP ${res.status}: ${detail}. ` +
+      `Verify the model '${model}' is pulled (\`docker compose exec ollama ollama pull ${model}\`).`,
+      res.status,
+    );
+  }
+
+  const json = await res.json() as { embedding?: number[] };
+  if (!json.embedding) {
+    throw new EmbeddingError('ollama embeddings API returned no `embedding` field');
+  }
+  return json.embedding;
 }

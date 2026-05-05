@@ -170,29 +170,65 @@ rsync -av --delete \
   ~/scratch/supabase-stack/volumes/functions/teambrain-mcp/
 ```
 
+### Choose an embedding provider (deploy-time)
+
+ADR 0001 § Decision 5 makes the embedding provider pluggable. Each deployment picks one of two shipped variants and applies the matching schema. The choice is fixed for the life of the deployment — switching post-data requires re-embedding every thought.
+
+| Variant | Use for | Schema | Provider config |
+|---|---|---|---|
+| **OpenAI** (`vector(1536)`) | scratch / dev / teams choosing OpenAI | apply `0001_init.sql` only | `EMBEDDING_PROVIDER=openai`, `OPENAI_API_KEY=...` |
+| **ollama / self-host** (`vector(768)`) | `pr.fabric-testbed.net` production; teams preferring zero third-party data egress | apply `0001_init.sql` **then** `0005_resize_embedding_768.sql` | `EMBEDDING_PROVIDER=ollama`, `OLLAMA_URL=http://ollama:11434`, plus an ollama sidecar in compose |
+
+Other dim variants (Cohere 1024, Voyage 512, etc.) are supported by writing a new dispatch arm in `embedding.ts` and a copy-and-edit of `0005_resize_embedding_768.sql` for the new dim — TeamBrain does not ship every variant in-repo.
+
+Reference fragments for both shipped variants live in `edge-functions/teambrain-mcp/docker-compose.override.yml.example` — copy the relevant block into your scratch or production `docker-compose.override.yml`.
+
 ### Required env in the functions container
 
-The stock supabase `docker-compose.yml` `functions:` service forwards only its hard-coded list of env vars. TeamBrain needs two more — add to your scratch-local `docker-compose.override.yml` (gitignored, never copied into this repo):
+The stock supabase `docker-compose.yml` `functions:` service forwards only its hard-coded list of env vars. TeamBrain needs additional env passthrough; the exact set depends on the variant. Add to your scratch-local `docker-compose.override.yml` (gitignored, never copied into this repo):
+
+**OpenAI variant:**
 
 ```yaml
 services:
   functions:
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      EMBEDDING_PROVIDER:             openai
+      EMBEDDING_DIMS:                 "1536"
+      OPENAI_API_KEY:                 ${OPENAI_API_KEY}
+      OPENAI_EMBEDDING_MODEL:         text-embedding-3-small
       TEAMBRAIN_DEFAULT_PROJECT_SLUG: ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}
 ```
 
 `OPENAI_API_KEY` must be a real key with billing enabled — `text-embedding-3-small` is consumed on every capture and search; cost is ~$0.02 per 1M tokens (effectively free for pilot scale).
 
-`TEAMBRAIN_DEFAULT_PROJECT_SLUG` is optional; tools accept `project_slug` directly in args. Setting it lets a single-pilot deployment omit the param.
+**ollama variant** (see the override.yml.example file for the full ollama service definition; healthcheck blocks the functions container from booting until the model is pulled):
+
+```yaml
+services:
+  functions:
+    environment:
+      EMBEDDING_PROVIDER:             ollama
+      EMBEDDING_DIMS:                 "768"
+      OLLAMA_URL:                     http://ollama:11434
+      OLLAMA_EMBEDDING_MODEL:         nomic-embed-text
+      TEAMBRAIN_DEFAULT_PROJECT_SLUG: ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}
+    depends_on:
+      ollama:
+        condition: service_healthy
+```
+
+`TEAMBRAIN_DEFAULT_PROJECT_SLUG` is optional in either variant; tools accept `project_slug` directly in args. Setting it lets a single-pilot deployment omit the param.
 
 After editing the override, recreate the container so the new env lands:
 
 ```bash
 cd ~/scratch/supabase-stack
-docker compose up -d functions
-docker compose exec functions env | grep -E 'OPENAI_API_KEY|TEAMBRAIN_DEFAULT_PROJECT_SLUG' | sed 's/=.*/=<set>/'
-# expect both lines to appear (values masked)
+docker compose up -d functions   # plus `ollama` if running the self-host variant
+docker compose exec functions env \
+  | grep -E 'EMBEDDING_PROVIDER|EMBEDDING_DIMS|OPENAI_API_KEY|OLLAMA_URL|TEAMBRAIN_DEFAULT_PROJECT_SLUG' \
+  | sed 's/=.*/=<set>/'
+# expect a line per variable that's set; values masked
 ```
 
 ### Acceptance gate (Phase 2 → Phase 3)
@@ -201,4 +237,13 @@ The Phase 2 checklist's curl matrix passing is sufficient — see `docs/phase-2-
 
 ### Applying to `pr.fabric-testbed.net`
 
-The migration applies the same way (Studio SQL editor, paste + run). The edge function deploys differently in production: the production stack rsyncs from the same `edge-functions/teambrain-mcp/` repo path into its own `volumes/functions/` mount, with production env vars (`OPENAI_API_KEY` from a production secret store, `TEAMBRAIN_DEFAULT_PROJECT_SLUG` set per pilot project) wired through the production override. **Do not deploy to production until scratch passes the Phase 2 curl matrix on the same source.**
+Production deploys the **ollama / self-host variant** per ADR 0001 § Decision 5. Procedure:
+
+1. Apply `0001_init.sql` through `0004_match_thoughts.sql` (Studio SQL editor) — same as scratch.
+2. Apply `0005_resize_embedding_768.sql` **before** any thoughts are captured.
+3. rsync `edge-functions/teambrain-mcp/` from this repo into the production stack's `volumes/functions/` mount.
+4. Wire production `docker-compose.override.yml` with the ollama variant fragment (see `docker-compose.override.yml.example`).
+5. `docker compose up -d ollama functions` — ollama's healthcheck blocks the functions container until `nomic-embed-text` is pulled and ready.
+6. Run the Phase 2 curl matrix against the production URL. All five tools should pass identically to scratch; the only observable difference is `embedding_dims=768` in capture responses (vs. 1536 on the OpenAI scratch variant).
+
+**Do not deploy to production until scratch passes the Phase 2 curl matrix on the same source** *and* a separate scratch run validates the ollama variant end-to-end (recommended: spin up a second scratch instance for the ollama smoke test before going to `pr.fabric-testbed.net`).

@@ -112,6 +112,36 @@ The Phase 3 membership sync edge function reads collaborator/org-team membership
 
 For Phase 1 pilot, `project_members` rows are hand-seeded — auth stays GitHub OAuth from day one, but membership is hand-maintained. This matches the original Phase 1 plan ("manual user seeding") and lets Phase 1 stay schema-focused.
 
+## Decision 5 — Pluggable embedding provider; OpenAI default, self-host as deploy-time variant
+
+(Resolved 2026-05-05. Replaces an "Open Decision" entry that was open for ~hours during the same Phase 2 review session.)
+
+### Context
+
+Phase 2's MCP edge function originally hard-coded OpenAI `text-embedding-3-small` (1536 dims, matching the `thoughts.embedding vector(1536)` column inherited from OB1). Once the Phase 2 build made that implicit choice visible, three problems with it were obvious for a multi-tenant team service: a personal-account API key paying for team-wide usage, every captured thought's content transiting a third-party vendor's servers (a compliance posture mismatch with FABRIC's existing research-infra norms), and TeamBrain availability coupling to OpenAI rate limits and uptime.
+
+But a forced switch to self-hosted embeddings was not the right answer either: other teams adopting TeamBrain may have legitimate reasons to pay for OpenAI quality (its embeddings are still state-of-the-art for many domains), and forcing them onto a smaller open model would be presumptuous.
+
+### Decision
+
+The embedding provider is **pluggable at deploy time** via an `EMBEDDING_PROVIDER` environment variable consumed by the edge function. Two providers are shipped in-repo; teams can add more by writing a new dispatch arm:
+
+| `EMBEDDING_PROVIDER` value | Backend | Dim | Default for |
+|---|---|---|---|
+| `openai`                   | `https://api.openai.com/v1/embeddings`, model `text-embedding-3-small` | 1536 | scratch / dev / teams choosing OpenAI |
+| `ollama`                   | sidecar ollama container, model `nomic-embed-text`                      | 768  | `pr.fabric-testbed.net` production |
+
+The pgvector column dimension is fixed at `create table` time and cannot vary per row. Each TeamBrain *deployment* therefore picks one provider and applies the matching schema variant before any thoughts are captured. `migrations/0001_init.sql` ships with the `vector(1536)` default; `migrations/0005_resize_embedding_768.sql` is an optional one-shot for deployments choosing ollama (or any other 768-dim provider). Mixing providers within one deployment is not supported.
+
+Switching providers post-data requires re-embedding every existing thought against the new model. This is a documented operational cost, not a code feature — the design deliberately makes it visible rather than papering over it with provider-shim layers that quietly produce subtly wrong rankings.
+
+### Consequences
+
+- The FABRIC production deployment runs ollama, paying zero per-request cost and keeping all captured-thought content inside the FABRIC perimeter.
+- Other teams adopting TeamBrain pick at deploy time; the README and `docs/deployment.md` document both paths symmetrically.
+- The migration set is asymmetric (no `0005` for the OpenAI path; one `0005` for the ollama / 768-dim path) but this matches reality: most teams pick the default and never see migration `0005`.
+- Future providers (Cohere 1024, Voyage 512, etc.) are added by a deploying team writing their own resize migration following the `0005_resize_embedding_768.sql` template — no per-provider shipped variant needed for completeness.
+
 ## Consequences
 
 - The repo is a clean parallel repo. No upstream sync to track. Selectively port from OB1 by reading, not by `git pull`.
