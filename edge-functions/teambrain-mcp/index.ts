@@ -166,13 +166,18 @@ app.post('*', async (c) => {
       // No args. zod-empty schema is required by the SDK contract.
     },
     async () => {
-      const { userClient } = getAuthContext(authHeader);
+      const { userClient, userId } = getAuthContext(authHeader);
 
-      // public.whoami() was created in Phase 0 D8: returns auth.uid() as
-      // uuid, security invoker, set search_path = ''. Reuse rather than
-      // re-issuing a `select auth.uid()` here so the wiring test exercises
-      // the same RPC path the real tools will use.
-      const { data, error } = await userClient.rpc('whoami');
+      // Round-trip a query against `thoughts` so we exercise the same
+      // PostgREST + RLS path the real tools use. The result contents
+      // don't matter for diagnostics — what matters is whether the
+      // request succeeds (chain healthy) or errors (chain broken). The
+      // local `userId` from jwtSub() supplies the UID without needing
+      // a custom RPC like whoami() that would have to live in a
+      // migration just to support this one diagnostic.
+      const { error, count } = await userClient
+        .from('thoughts')
+        .select('id', { count: 'exact', head: true });
 
       if (error) {
         return {
@@ -188,10 +193,11 @@ app.post('*', async (c) => {
         content: [{
           type: 'text',
           text: JSON.stringify({
-            uid:        data,
-            service:    'teambrain-mcp',
-            version:    '0.1.0',
-            checked_at: new Date().toISOString(),
+            uid:                 userId,
+            visible_thought_rows: count ?? 0,
+            service:             'teambrain-mcp',
+            version:             '0.1.0',
+            checked_at:          new Date().toISOString(),
           }, null, 2),
         }],
       };
