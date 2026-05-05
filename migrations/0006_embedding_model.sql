@@ -28,9 +28,7 @@ alter table public.thoughts
   add column if not exists embedding_model text;
 
 comment on column public.thoughts.embedding_model is
-  '<provider>:<model> tag identifying the embedding pipeline that produced ' ||
-  'the vector in `embedding`. NULL = pre-tagging-era row; re-embed to identify. ' ||
-  'See ADR 0001 Decision 5 + feedback_pgvector_model_tag.md.';
+  '<provider>:<model> tag identifying the embedding pipeline that produced the vector in `embedding`. NULL = pre-tagging-era row; re-embed to identify. See ADR 0001 Decision 5 + feedback_pgvector_model_tag.md.';
 
 -- Partial index for diagnostic queries like:
 --   select embedding_model, count(*)
