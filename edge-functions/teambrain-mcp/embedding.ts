@@ -67,6 +67,21 @@ export function vectorLiteral(vec: number[]): string {
   return '[' + vec.join(',') + ']';
 }
 
+// `<provider>:<model>` tag for the row's embedding_model column. Derived
+// from the same env vars that drive embed(), so the tag is always in sync
+// with whatever just produced the vector. See migrations/0006_embedding_model.sql
+// and ADR 0001 Decision 5.
+export function currentEmbeddingModelTag(): string {
+  switch (PROVIDER) {
+    case 'openai':
+      return `openai:${Deno.env.get('OPENAI_EMBEDDING_MODEL') ?? 'text-embedding-3-small'}`;
+    case 'ollama':
+      return `ollama:${Deno.env.get('OLLAMA_EMBEDDING_MODEL') ?? 'nomic-embed-text'}`;
+    default:
+      return `${PROVIDER}:unknown`;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Provider: OpenAI
 // ---------------------------------------------------------------------------

@@ -141,6 +141,7 @@ Switching providers post-data requires re-embedding every existing thought again
 - Other teams adopting TeamBrain pick at deploy time; the README and `docs/deployment.md` document both paths symmetrically.
 - The migration set is asymmetric (no `0005` for the OpenAI path; one `0005` for the ollama / 768-dim path) but this matches reality: most teams pick the default and never see migration `0005`.
 - Future providers (Cohere 1024, Voyage 512, etc.) are added by a deploying team writing their own resize migration following the `0005_resize_embedding_768.sql` template — no per-provider shipped variant needed for completeness.
+- Migration `0006_embedding_model.sql` (applied by every deployment, regardless of variant) adds a `thoughts.embedding_model` column tagged `<provider>:<model>` on every capture. The tag is the load-bearing complement to the pluggable provider — without it, a future provider or model swap leaves Old vs. New vectors mixed in the same column with no way to identify which is which, and search results just feel "off" with no clean diagnostic path. With it, re-embed passes are scoped (`update ... where embedding_model != $current_model`) and the mix is observable (`select embedding_model, count(*) from thoughts group by 1`). The tag is set by the edge function's capture path from the same env vars that drive `embed()`, so it cannot drift from the pipeline that just produced the vector.
 
 ## Consequences
 

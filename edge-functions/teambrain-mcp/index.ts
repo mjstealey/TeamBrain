@@ -32,7 +32,7 @@ import { McpServer }               from 'npm:@modelcontextprotocol/sdk@^1.0.0/se
 import { z }                       from 'npm:zod@^3.23.0';
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@^2.45.0';
 
-import { embed, vectorLiteral }    from './embedding.ts';
+import { embed, vectorLiteral, currentEmbeddingModelTag } from './embedding.ts';
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -277,13 +277,14 @@ app.post('*', async (c) => {
           project_id:        projectId,
           author_user_id:    userId,
           embedding:         vectorLiteral(embedding),
+          embedding_model:   currentEmbeddingModelTag(),
           tags:              args.tags,
           paths:             args.paths,
           linked_commit_sha: args.linked_commit_sha ?? null,
           linked_pr_url:     args.linked_pr_url     ?? null,
           linked_issue_url:  args.linked_issue_url  ?? null,
         })
-        .select('id, scope, type, project_id, created_at')
+        .select('id, scope, type, project_id, created_at, embedding_model')
         .single();
 
       if (error) {
@@ -301,14 +302,15 @@ app.post('*', async (c) => {
           type: 'text',
           text: JSON.stringify({
             captured: {
-              id:            (data as { id: string }).id,
-              scope:         (data as { scope: string }).scope,
-              type:          (data as { type: string | null }).type,
-              project_slug:  resolvedSlug,
-              project_id:    (data as { project_id: string | null }).project_id,
-              created_at:    (data as { created_at: string }).created_at,
-              content_chars: args.content.length,
-              embedding_dims: embedding.length,
+              id:               (data as { id: string }).id,
+              scope:            (data as { scope: string }).scope,
+              type:             (data as { type: string | null }).type,
+              project_slug:     resolvedSlug,
+              project_id:       (data as { project_id: string | null }).project_id,
+              created_at:       (data as { created_at: string }).created_at,
+              content_chars:    args.content.length,
+              embedding_dims:   embedding.length,
+              embedding_model:  (data as { embedding_model: string | null }).embedding_model,
             },
           }, null, 2),
         }],

@@ -148,7 +148,11 @@ Same procedure as scratch — open the production Studio, paste each file in ord
 
 ## Phase 2 — applying the MCP edge function migration + deploying the edge function
 
-Phase 2 adds **one more migration** (`migrations/0004_match_thoughts.sql` — the SECURITY INVOKER semantic-search RPC) and **one new artifact**: the multi-tenant MCP edge function under `edge-functions/teambrain-mcp/`.
+Phase 2 adds the multi-tenant MCP edge function under `edge-functions/teambrain-mcp/` plus three migrations:
+
+- `0004_match_thoughts.sql` — SECURITY INVOKER semantic-search RPC.
+- `0005_resize_embedding_768.sql` — **optional**, only for deployments choosing a 768-dim embedding provider (see "Choose an embedding provider" below).
+- `0006_embedding_model.sql` — adds `thoughts.embedding_model` column. Apply on every deployment regardless of variant; the column is the operational complement to the pluggable embedding provider (see ADR 0001 § Decision 5).
 
 ### Apply the migration (Studio)
 
@@ -230,6 +234,20 @@ docker compose exec functions env \
   | sed 's/=.*/=<set>/'
 # expect a line per variable that's set; values masked
 ```
+
+### Diagnostic — confirm embedding model tagging
+
+After capturing at least one thought via the MCP edge function, verify the model tag is being recorded:
+
+```sql
+select embedding_model, count(*) as n
+from public.thoughts
+where embedding is not null
+group by embedding_model
+order by n desc;
+```
+
+Expected: a single non-null tag (`openai:text-embedding-3-small` or `ollama:nomic-embed-text` depending on variant) for newly-captured rows. NULL rows are pre-`0006` captures or rows captured against an older edge function version; re-embed them when convenient. **More than one non-null tag is a signal that the provider config drifted mid-deployment** — investigate before further captures.
 
 ### Acceptance gate (Phase 2 → Phase 3)
 
