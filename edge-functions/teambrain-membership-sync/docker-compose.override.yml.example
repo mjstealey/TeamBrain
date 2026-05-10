@@ -1,0 +1,42 @@
+# docker-compose.override.yml.example — env passthrough for the
+# Phase 3 membership-sync edge function.
+#
+# This file is shipped in-repo as documentation. It is NOT auto-merged
+# by docker compose — copy the fragment into your deployment's
+# `docker-compose.override.yml` (the same file the embedding-provider
+# variant lives in). Both functions run in the same `functions`
+# container, so their env blocks merge.
+#
+# See `docs/phase-3-checklist.md` and `docs/deployment.md` § "Phase 3".
+
+# services:
+#   functions:
+#     environment:
+#       # GitHub App credentials — minted in fabric-testbed org admin UI.
+#       # The private key is a multi-line PEM; docker compose interprets
+#       # ${VAR} from the .env file losslessly. Quote the value in .env
+#       # if it spans newlines, or store the literal `\n` sequences and
+#       # let github.ts un-escape them at boot (it does).
+#       TEAMBRAIN_GITHUB_APP_ID:           ${TEAMBRAIN_GITHUB_APP_ID}
+#       TEAMBRAIN_GITHUB_APP_PRIVATE_KEY:  ${TEAMBRAIN_GITHUB_APP_PRIVATE_KEY}
+#       TEAMBRAIN_GITHUB_INSTALLATION_ID:  ${TEAMBRAIN_GITHUB_INSTALLATION_ID}
+
+# Sample .env entries (gitignored):
+#
+#   TEAMBRAIN_GITHUB_APP_ID=1234567
+#   TEAMBRAIN_GITHUB_INSTALLATION_ID=89012345
+#   TEAMBRAIN_GITHUB_APP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv…\n-----END PRIVATE KEY-----\n"
+#
+# After editing the override:
+#
+#   docker compose up -d functions
+#
+# to recreate the container with the new env.
+#
+# Production-only: also set the pg_cron GUCs (one-time) so 0010 can
+# reach this function on schedule:
+#
+#   alter database postgres set app.teambrain_sync_url =
+#     'http://kong:8000/functions/v1/teambrain-membership-sync/sync-all';
+#   alter database postgres set app.teambrain_service_role_key =
+#     '<paste SERVICE_ROLE_KEY from .env>';

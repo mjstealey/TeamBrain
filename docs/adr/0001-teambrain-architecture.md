@@ -143,6 +143,44 @@ Switching providers post-data requires re-embedding every existing thought again
 - Future providers (Cohere 1024, Voyage 512, etc.) are added by a deploying team writing their own resize migration following the `0005_resize_embedding_768.sql` template — no per-provider shipped variant needed for completeness.
 - Migration `0006_embedding_model.sql` (applied by every deployment, regardless of variant) adds a `thoughts.embedding_model` column tagged `<provider>:<model>` on every capture. The tag is the load-bearing complement to the pluggable provider — without it, a future provider or model swap leaves Old vs. New vectors mixed in the same column with no way to identify which is which, and search results just feel "off" with no clean diagnostic path. With it, re-embed passes are scoped (`update ... where embedding_model != $current_model`) and the mix is observable (`select embedding_model, count(*) from thoughts group by 1`). The tag is set by the edge function's capture path from the same env vars that drive `embed()`, so it cannot drift from the pipeline that just produced the vector.
 
+## Decision 6 — Phase 3 membership sync: GitHub App, soft-delete, team-as-policy
+
+(Resolved 2026-05-09 / 2026-05-10. Replaces the original Phase 3 sketch in `docs/phase-3-checklist.md` § A1/A4/A5, where the membership source was described as a *union* of direct collaborators and team members. The shipped policy is meaningfully different.)
+
+### Context
+
+Phase 3 replaces `seed.sql`'s hand-seeded `project_members` rows with an edge function (`teambrain-membership-sync`) that reconciles membership against GitHub. The original design left three sub-decisions deferred until implementation made the tradeoffs visible: how to authenticate against the GitHub API, what to do when a member is removed, and whose roster counts as the source of truth.
+
+Smoke-testing on the FABRIC scratch instance against `fabric-testbed/fabric-core-api` clarified each:
+
+1. The repo has **no explicit direct collaborators** in the GitHub sense (`affiliation=direct` returns zero). All 15 effective collaborators access via a combination of org-default permission and team-derived grants.
+2. The org *does* have a named team — `SystemServicesTeam` — that is the natural curated subset of "people who should have TeamBrain access" (a 5-person superset of the pilot).
+3. The original "union" model would have over-included the 10 non-team collaborators (org-default-permission grants), turning the sync into an over-broad "everyone in the org" pull rather than a curated team membership.
+
+### Decision
+
+Three coupled choices encoded in `edge-functions/teambrain-membership-sync/` and migrations `0007`–`0010`:
+
+**GitHub App (not a PAT) for authentication.** Installation tokens are minted per-sync from a short-lived (~9 min) RS256-signed app JWT. Installation tokens TTL ~1 h; cached in worker memory and refreshed 5 min before expiry. The private key lives only in the runtime container's env, scoped to a single installation against a specific repo set. The dev/scratch and production stacks each register their own App against the same org so a laptop compromise does not grant prod access (`docs/deployment.md` § "Scratch vs production").
+
+**Soft-delete via `removed_at timestamptz` (not DELETE).** Migration `0008_project_members_soft_delete.sql` adds the column; the three `app.is_project_*` RLS helpers absorb the tombstone filter, so existing policies stay untouched. The sync sets `removed_at = now()` when GitHub says someone is no longer a member, and clears it on re-add (reported as `restored` in the diff). Rollback from a bad sync is always an UPDATE — no audit-history loss, no row-recovery procedure to document. The blast-radius-containment value justifies the column for the lifetime of the table.
+
+**C-plus eligibility: team membership ∪ explicit direct grants.** The shipped policy:
+
+- If `projects.github_team_slugs` is empty → eligibility = `affiliation=all` collaborators (the original behavior, suitable for projects without a curated team).
+- If `projects.github_team_slugs` is non-empty → eligibility = (team members ∪ `affiliation=direct` collaborators). Default-org-permission access alone does *not* confer TeamBrain membership.
+- Role for an eligible user is always the *effective* repo permission from `affiliation=all` (so role mapping reflects what GitHub actually grants, not a guessed default tied to team-repo grants).
+
+The semantic is "explicit GitHub action required" — onboarding to TeamBrain means either being added to a named team or being granted direct repo access. Default org permission, which often grants every org member read on every repo, is intentionally insufficient. This degrades cleanly to "team-only" when no direct grants exist (today's FABRIC state), but does not require a code change the first time a one-off external contributor is added directly to the repo.
+
+### Consequences
+
+- `fabric-testbed/fabric-core-api` is configured `github_team_slugs = {systemservicesteam}`. Membership tracks the 5 (now 4, after smoke-test cleanup of an inactive member) SystemServicesTeam members.
+- The `app.is_project_*` helpers each filter `removed_at IS NULL`. Any future RLS-touching code that introduces a *new* membership predicate must remember to do the same — captured as a "things to know" hazard for anyone editing `migrations/0002_rls.sql` or `0008_project_members_soft_delete.sql`.
+- Two GitHub Apps must be registered per pilot org (dev + prod), each installed separately. Operationally simple but doubles the App-management surface.
+- Sync invocations are audit-logged in `public.sync_runs` (jsonb `report`, admin-scoped RLS). Step 7 of the Phase 3 smoke matrix (pg_cron scheduled run) is production-only; everything else is verified on scratch (`docs/phase-3-checklist.md` § G).
+- The original checklist's "union" model is superseded — `docs/phase-3-checklist.md` § A1 reflects the C-plus shape. The original union semantics are recoverable for any project that wants them by leaving `github_team_slugs` empty.
+
 ## Consequences
 
 - The repo is a clean parallel repo. No upstream sync to track. Selectively port from OB1 by reading, not by `git pull`.
@@ -150,6 +188,7 @@ Switching providers post-data requires re-embedding every existing thought again
 - We own backups, TLS, upgrades, monitoring, and capacity planning for the Supabase stack on `pr.fabric-testbed.net`.
 - Phase 1 schema and RLS work depends on a working GitHub OAuth flow on a scratch instance — Phase 0 includes that spike.
 - CILogon support is a future addition, not a Phase 1 dependency. The repo structure (GoTrue config, RLS policies keyed off `auth.uid()`) accommodates either provider without rework.
+- Issue-tracker integration (Plane, GitHub Issues, or other) is deliberately **not** a pre-pilot deliverable. The Phase 7 pilot is the falsifier for whether time-based staleness signals (`last_verified_at`, `expires_at`, `confidence`, commit-triggered webhook in Phase 6) are sufficient on their own. Integrating an issue-tracker oracle before that evidence exists would presuppose the answer. Phase 6 staleness work designs the signal interface to be pluggable so a future integration can drop in as a Phase 8 candidate without refactoring.
 
 ## References
 

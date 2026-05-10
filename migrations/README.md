@@ -12,15 +12,21 @@ Numbered SQL files that, applied in order via Studio's SQL editor, produce a wor
 | 0004 | `0004_match_thoughts.sql`    | 2   | SECURITY INVOKER semantic-search RPC (`public.match_thoughts(...)`). RLS-aware (filters during the call rather than bypassing). | always |
 | 0005 | `0005_resize_embedding_768.sql` | 2.5 | **Optional.** Resizes `thoughts.embedding` from `vector(1536)` to `vector(768)` for deployments choosing a self-hosted 768-dim provider (e.g. ollama + nomic-embed-text). Drops + recreates the HNSW index and `match_thoughts` for the new dim. | **Only for non-1536 providers** |
 | 0006 | `0006_embedding_model.sql`   | 2.5 | Adds `thoughts.embedding_model text` + partial index. Operational complement to ADR 0001 § Decision 5: makes embedding-pipeline provenance observable so future provider/model swaps can scope re-embed passes. | always |
-| —   | `seed.sql`                   | 1   | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. | always (apply last) |
+| 0007 | `0007_projects_github_teams.sql`        | 3   | Adds `projects.github_team_slugs text[]` so the Phase 3 sync function can UNION direct collaborators with org-team members. Empty default = "direct collaborators only". | always |
+| 0008 | `0008_project_members_soft_delete.sql`  | 3   | Adds `project_members.removed_at timestamptz`; patches the three `app.is_project_*` helpers to filter tombstones; tightens select policy. RLS surface unchanged (helpers absorb the filter). | always |
+| 0009 | `0009_sync_runs.sql`                    | 3   | `public.sync_runs` audit log for every membership-sync invocation (jsonb `report`). RLS scoped to project admins; service_role writes. Required for the scheduled sync to be observable. | always |
+| 0010 | `0010_pg_cron_membership_sync.sql`      | 3   | `pg_cron` schedule (`*/15 * * * *`) calling `/sync-all` via `pg_net`. Reads service-role bearer + URL from GUCs (`alter database … set app.X = …`) so secrets stay out of `cron.job`. | **Production only** (scratch can use on-demand `POST /sync`) |
+| —   | `seed.sql`                   | 1   | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. Phase 3's sync function takes over once deployed; `seed.sql` remains useful for fresh deploys before the first sync. | always (apply last) |
 
 ## Apply order
 
 ```
-0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql
+0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]
 ```
 
 `0005` and `0006` can be reordered between themselves (both apply on top of 0004) but the canonical order is `0005` first so anyone tracing the file numbers reads them in the same sequence they apply in.
+
+`seed.sql` is sandwiched between Phase 1 and Phase 3 schema migrations on purpose: 0007/0008 only **add** columns to `projects` / `project_members` with safe defaults, so seeding before or after them is equivalent. Apply seed before 0007/0008 so a fresh pilot deploy reaches "membership exists" sooner; the Phase 3 sync then takes over write authority once its edge function is deployed.
 
 ## Conventions enforced across all files
 

@@ -265,3 +265,176 @@ Production deploys the **ollama / self-host variant** per ADR 0001 § Decision 5
 6. Run the Phase 2 curl matrix against the production URL. All five tools should pass identically to scratch; the only observable difference is `embedding_dims=768` in capture responses (vs. 1536 on the OpenAI scratch variant).
 
 **Do not deploy to production until scratch passes the Phase 2 curl matrix on the same source** *and* a separate scratch run validates the ollama variant end-to-end (recommended: spin up a second scratch instance for the ollama smoke test before going to `pr.fabric-testbed.net`).
+
+## Phase 3 — automated GitHub-collaborator membership sync
+
+Phase 3 replaces `seed.sql`'s hand-seeded `project_members` rows with an edge function that reconciles membership against GitHub. Inputs: direct repo collaborators ∪ org-team members. Output: insert/update/tombstone of `project_members` via `service_role`. See `docs/phase-3-checklist.md` for full rationale; this section is the deploy procedure.
+
+Phase 3 ships four migrations and one edge function:
+
+| File | Role | Apply scope |
+|---|---|---|
+| `migrations/0007_projects_github_teams.sql` | Adds `projects.github_team_slugs text[]` so the sync can UNION direct collaborators with org-team members. | Always |
+| `migrations/0008_project_members_soft_delete.sql` | Adds `project_members.removed_at`; patches the three `app.is_project_*` helpers to filter tombstones. | Always |
+| `migrations/0009_sync_runs.sql` | `public.sync_runs` audit log; admin-scoped RLS; service_role writes. | Always |
+| `migrations/0010_pg_cron_membership_sync.sql` | `pg_cron` schedule (`*/15 * * * *`) calling `/sync-all` via `pg_net`. Reads bearer + URL from GUCs. | **Production only** |
+| `edge-functions/teambrain-membership-sync/` | Hono+Deno function. `POST /sync?project_slug=…` (one project) and `POST /sync-all` (every project). Both gated on `role=service_role`. | Always |
+
+### Apply migrations (Studio)
+
+Same procedure as Phase 1/2. Open Studio SQL editor, paste each file in order: `0007` → `0008` → `0009`. Studio will warn for `0008` ("Query has destructive operations") because of the `drop policy if exists` on `project_members_select_self_or_admin` — expected, click through. Verification queries are inline at the bottom of each file.
+
+`0010` (pg_cron) is deferred until **after** the edge function is deployed and reachable, and after the operator-side GUCs are set (see "Production: pg_cron GUCs" below).
+
+### Register the GitHub App
+
+#### Scratch vs production: register two Apps
+
+TeamBrain runs in (at least) two stacks — a developer scratch instance and the production stack on `pr.fabric-testbed.net`. Both pull collaborator/team data from the **same** real GitHub repo, but they should not share an App registration:
+
+- **Two separate Apps** (`TeamBrain Sync (dev) — fabric-testbed` and `TeamBrain Sync — fabric-testbed`) each get their own App ID, private key, and installation ID. Same `fabric-testbed` org, same target repos, identical permission set.
+- The dev App's private key only ever lives in a developer's laptop `.env`; the prod App's private key only ever lives on `pr.fabric-testbed.net`. A laptop compromise does not grant prod-stack access. Rotating either is independent.
+- The org's audit log distinguishes the two installations, so it's obvious which stack hit GitHub for any given event.
+
+The procedure below applies to both registrations — only the App name varies. Wire the dev App first; only register the prod App once scratch passes the Phase 3 § G smoke matrix on the same source.
+
+#### Procedure
+
+Create the app under the **`fabric-testbed`** GitHub org (same place as the Phase 1 OAuth app, but a separate registration — GitHub Apps and OAuth Apps are distinct surfaces).
+
+- **App name:** `TeamBrain Sync`
+- **Homepage URL:** `https://pr.fabric-testbed.net`
+- **Webhook:** disabled (we poll, not webhook-driven; revisit in Phase 3.5 follow-up if first-login latency becomes a problem)
+- **Repository permissions:**
+  - **Metadata:** Read — covers `GET /repos/{owner}/{repo}/collaborators` and `GET /repos/{owner}/{repo}/teams`. (`Members` is not a Repository scope; it only exists at the Organization level.)
+- **Organization permissions:**
+  - **Members:** Read — required for `GET /orgs/{org}/teams/{team_slug}/members`. Skip only if `github_team_slugs` will stay empty for every project (direct-collaborators-only).
+
+After creating the app:
+
+1. Click **Generate a private key** — a `.pem` file downloads. Capture the contents.
+2. **Install the app** on the `fabric-testbed` org. Choose "Only select repositories" and pick `fabric-core-api` (and any others the pilot expands to). Capture the installation ID from the install URL: `https://github.com/organizations/fabric-testbed/settings/installations/<ID>`.
+3. Note the **App ID** from the app settings page (numeric, e.g. `1234567`).
+
+### Wire env vars into the functions container
+
+Add to `docker-compose.override.yml` (gitignored). The fragment template lives at `edge-functions/teambrain-membership-sync/docker-compose.override.yml.example`.
+
+```yaml
+services:
+  functions:
+    environment:
+      TEAMBRAIN_GITHUB_APP_ID:           ${TEAMBRAIN_GITHUB_APP_ID}
+      TEAMBRAIN_GITHUB_APP_PRIVATE_KEY:  ${TEAMBRAIN_GITHUB_APP_PRIVATE_KEY}
+      TEAMBRAIN_GITHUB_INSTALLATION_ID:  ${TEAMBRAIN_GITHUB_INSTALLATION_ID}
+```
+
+Sample `.env` entries (gitignored). The PEM may be stored with literal `\n` sequences; `github.ts` un-escapes them at boot:
+
+```
+TEAMBRAIN_GITHUB_APP_ID=1234567
+TEAMBRAIN_GITHUB_INSTALLATION_ID=89012345
+TEAMBRAIN_GITHUB_APP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv…\n-----END PRIVATE KEY-----\n"
+```
+
+### Deploy the edge function
+
+```bash
+rsync -av --delete \
+  ~/GitHub/mjstealey/TeamBrain/edge-functions/teambrain-membership-sync/ \
+  ~/scratch/supabase-stack/volumes/functions/teambrain-membership-sync/
+
+cd ~/scratch/supabase-stack
+docker compose up -d functions
+docker compose exec functions env \
+  | grep -E 'TEAMBRAIN_GITHUB_' \
+  | sed 's/=.*/=<set>/'
+# expect three lines: APP_ID, APP_PRIVATE_KEY, INSTALLATION_ID
+```
+
+### Populate the project's `github_team_slugs` (optional)
+
+If `fabric-testbed/fabric-core-api` grants access to an org team rather than only direct collaborators, populate the column. Empty array (the default) is fine when access is direct-only.
+
+```sql
+update public.projects
+set github_team_slugs = array['<the-team-slug>']
+where repo_slug = 'fabric-testbed/fabric-core-api';
+```
+
+### Smoke test (on-demand /sync)
+
+```bash
+SERVICE_KEY=$(grep '^SERVICE_ROLE_KEY=' ~/scratch/supabase-stack/.env | cut -d= -f2)
+
+curl -sS -X POST \
+  -H "Authorization: Bearer $SERVICE_KEY" \
+  -H "Content-Type: application/json" \
+  "http://127.0.0.1:8000/functions/v1/teambrain-membership-sync/sync?project_slug=fabric-testbed/fabric-core-api" \
+  | python3 -m json.tool
+```
+
+Expected on a no-change run: empty `added`/`updated`/`removed`/`restored`; non-empty `skipped_no_auth_row` only for collaborators who haven't logged in yet. Then verify the audit row landed:
+
+```sql
+select started_at, ok, jsonb_pretty(report) as report
+from public.sync_runs
+order by started_at desc
+limit 1;
+```
+
+The full smoke matrix (steps 1-7) is in `docs/phase-3-checklist.md` § G.
+
+### Production: pg_cron GUCs (one-time setup)
+
+Two database-scoped GUCs feed the `0010` cron schedule. Set them once via Studio SQL editor (or `psql -U supabase_admin`) before applying `0010`:
+
+```sql
+alter database postgres set app.teambrain_sync_url =
+  'http://kong:8000/functions/v1/teambrain-membership-sync/sync-all';
+
+alter database postgres set app.teambrain_service_role_key =
+  '<paste SERVICE_ROLE_KEY from .env>';
+```
+
+Then apply `0010_pg_cron_membership_sync.sql` and verify:
+
+```sql
+select jobid, schedule, jobname
+from cron.job
+where jobname = 'teambrain-membership-sync';
+-- expect 1 row, schedule = '*/15 * * * *'
+
+-- After the next quarter-hour boundary:
+select start_time, status, return_message
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'teambrain-membership-sync')
+order by start_time desc
+limit 5;
+
+select started_at, ok
+from public.sync_runs
+order by started_at desc
+limit 5;
+```
+
+### Acceptance gate (Phase 3 → Phase 4)
+
+- [ ] 0007–0009 applied; `select column_name from information_schema.columns where table_name='projects' and column_name='github_team_slugs'` returns the row.
+- [ ] Edge function `teambrain-membership-sync` responds 200 to `POST /sync?project_slug=…` with a real service-role bearer; rejects 403 on `authenticated` JWTs and 401 on missing/malformed JWTs.
+- [ ] `public.sync_runs` accumulates one row per invocation; admins (`select` via PostgREST) see runs scoped to their projects.
+- [ ] Phase 3 § G smoke matrix steps 1-6 pass on scratch (step 7 — scheduled run — is production-only).
+- [ ] Production only: `0010` applied, `cron.job_run_details` shows successful `*/15 * * * *` invocations, `public.sync_runs` shows aggregate (`project_id IS NULL`) rows landing on schedule.
+
+If green, Phase 4 (REST + OpenAPI surface mirroring the MCP tools) can begin.
+
+### Rollback
+
+If the sync produces wrong diffs (e.g. a misconfigured GitHub App over-privileges users), the soft-delete model contains the blast radius:
+
+1. Halt the schedule: `select cron.unschedule('teambrain-membership-sync');`
+2. Inspect: `select * from public.sync_runs order by started_at desc limit 10;` — find the offending run's `report`.
+3. Revert role: `update public.project_members set role = '<old>' where project_id = '…' and user_id = '…';`
+4. Restore tombstoned: `update public.project_members set removed_at = null where ...;`
+
+No DELETE — every change is a soft-delete or role swap, so revert is always an UPDATE.
