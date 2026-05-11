@@ -1,6 +1,8 @@
 # Deployment
 
-This document describes the target deployment topology for TeamBrain. It is a **skeleton** — concrete versions, exact env var values, and tested commands will be filled in as Phase 0 lands.
+This document describes the target deployment **topology** for TeamBrain and walks through phase-by-phase setup against a scratch instance (developer laptop).
+
+**For the production deploy procedure** (assembling upstream Supabase + the TeamBrain customizations into a working stack on `pr.fabric-testbed.net`), see `deploy/production/README.md` — the step-by-step runbook with verification commands and troubleshooting. This file is the conceptual reference; that one is the operational checklist.
 
 ## Target
 

@@ -1,0 +1,120 @@
+# deploy/production/docker-compose.override.yml — TeamBrain-specific
+# overrides for the production self-hosted Supabase stack on
+# pr.fabric-testbed.net.
+#
+# This file is COPIED (not symlinked) into /opt/supabase-stack/ during
+# the production deploy, where it auto-merges with upstream's
+# docker-compose.yml and docker-compose.caddy.yml. Compose merge
+# precedence: docker-compose.yml → caddy overlay (-f) → this override
+# (auto-discovered). Our override wins for any conflicting key.
+#
+# What this file changes vs. stock supabase:
+#   1. functions container — env passthrough for every TeamBrain edge
+#      function. The stock functions service hard-codes a minimal env
+#      list; arbitrary new vars (OPENAI_API_KEY, EMBEDDING_*,
+#      TEAMBRAIN_*, etc.) must be listed here or they will not reach
+#      the Deno workers.
+#   2. db container — pin Postgres 17 image for parity with scratch.
+#      Stock supabase docker-compose.yml uses an older default; we run
+#      the same major version on scratch and production so
+#      migration/RLS testing translates.
+#   3. kong container — add a loopback-only host bind so on-VM
+#      `curl http://127.0.0.1:8000/...` works for smoke tests and
+#      debugging. Caddy already proxies public traffic; the loopback
+#      bind is reachable only from the VM itself.
+#
+# What this file does NOT do:
+#   * No Caddy block. Upstream's docker-compose.caddy.yml handles TLS
+#     termination, Let's Encrypt registration via $CERTBOT_EMAIL, and
+#     Studio basic-auth gating. See ../README.md for the compose
+#     invocation that loads both overlays.
+#   * No ollama sidecar. Uncomment the `ollama:` block below if this
+#     deployment chose the self-host embedding variant (ADR 0001
+#     § Decision 5 / docs/deployment.md § "Choose an embedding
+#     provider"). If you do, also apply migrations/0005 BEFORE any
+#     thoughts are captured.
+
+services:
+
+  # ---- Postgres major-version pin -----------------------------------------
+  db:
+    image: supabase/postgres:17.6.1.084
+    # Production VMs are x86_64; do NOT set `platform:` (omitting lets
+    # compose pick the right manifest variant for the host). On Apple
+    # Silicon scratch we pin linux/arm64 to avoid Rosetta emulation;
+    # not relevant here.
+
+  # ---- API gateway: loopback bind for on-VM debugging ---------------------
+  #
+  # Upstream's caddy overlay does `kong.ports: !reset []` to clear the
+  # public bind so only Caddy exposes Kong. Our override re-adds a
+  # loopback bind (only reachable from inside the VM) so SSH-tunneling
+  # and on-VM curl can hit the API without going through Caddy /
+  # public TLS.
+  kong:
+    ports:
+      - "127.0.0.1:8000:8000/tcp"
+
+  # ---- Edge Functions: TeamBrain env passthrough --------------------------
+  #
+  # Every Deno worker under volumes/functions/ inherits this env block.
+  # Add new keys here when a new function or feature needs them.
+  functions:
+    environment:
+      # --- Embedding provider (ADR 0001 § Decision 5) ---
+      # OpenAI default. Switch to ollama by:
+      #   1. Uncomment the `ollama:` service block at the bottom.
+      #   2. Set EMBEDDING_PROVIDER=ollama, EMBEDDING_DIMS="768",
+      #      OLLAMA_URL=http://ollama:11434, OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+      #      and remove the OPENAI_* lines here.
+      #   3. Apply migrations/0005_resize_embedding_768.sql BEFORE any
+      #      thoughts are captured (or accept re-embedding every existing
+      #      row after switching).
+      EMBEDDING_PROVIDER:               openai
+      EMBEDDING_DIMS:                   "1536"
+      OPENAI_API_KEY:                   ${OPENAI_API_KEY}
+      OPENAI_EMBEDDING_MODEL:           text-embedding-3-small
+
+      # --- TeamBrain MCP function defaults ---
+      # Lets clients omit project_slug in single-pilot deployments.
+      TEAMBRAIN_DEFAULT_PROJECT_SLUG:   ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}
+
+      # --- Phase 3 GitHub membership-sync App credentials ---
+      # Production app (distinct from the scratch / dev app — see
+      # docs/deployment.md § "Scratch vs production: register two
+      # Apps"). The PEM must be PKCS#8 (`-----BEGIN PRIVATE KEY-----`,
+      # no "RSA"); convert with `openssl pkcs8 -topk8 ...` if GitHub
+      # gave you PKCS#1.
+      TEAMBRAIN_GITHUB_APP_ID:          ${TEAMBRAIN_GITHUB_APP_ID}
+      TEAMBRAIN_GITHUB_INSTALLATION_ID: ${TEAMBRAIN_GITHUB_INSTALLATION_ID}
+      TEAMBRAIN_GITHUB_APP_PRIVATE_KEY: ${TEAMBRAIN_GITHUB_APP_PRIVATE_KEY}
+
+  # ---- (Optional) ollama sidecar for self-host embedding variant ----------
+  #
+  # Uncomment this entire block AND change the functions.environment
+  # block above to point at OLLAMA_URL. See ADR 0001 § Decision 5 for
+  # when this variant is appropriate.
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: supabase-ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   entrypoint: ["/bin/sh", "-c"]
+  #   command:
+  #     - |
+  #       /bin/ollama serve &
+  #       pid=$!
+  #       until /bin/ollama list >/dev/null 2>&1; do sleep 1; done
+  #       /bin/ollama pull nomic-embed-text
+  #       wait $pid
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "ollama list | grep -q nomic-embed-text"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 30
+  #     start_period: 120s
+
+# volumes:
+#   ollama_data:
