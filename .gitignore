@@ -36,6 +36,10 @@ node_modules/
 # Local Claude Code state
 .claude/settings.local.json
 
+# Local Codex state
+.codex/
+/AGENTS.md
+
 # Logs
 *.log
 logs/

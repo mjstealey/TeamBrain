@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository State
 
-This repo is in **pre-Phase-1 bootstrap state**: scaffolding only (`CLAUDE.md`, `README.md`, `CREDITS.md`, `.gitignore`, `docs/adr/0001-teambrain-architecture.md`, `docs/deployment.md`, `docs/phase-0-checklist.md`, `.claude/settings.local.json`). No application code, migrations, or edge functions yet. Build/lint/test commands do not exist yet — they will be added as Phase 1 lands. Do not invent commands; if something is asked for that doesn't exist yet, say so.
+**Phases 0 → 3 complete (as of 2026-05-11).** Working artifacts on `main`:
 
-**Next session entry point:** read [`docs/phase-0-checklist.md`](docs/phase-0-checklist.md). It contains the ordered, concrete tasks to complete Phase 0 (repo housekeeping → pilot decision → GitHub OAuth App → scratch Supabase spike), each with a "Done when" acceptance criterion.
+- `migrations/0001_init.sql` … `0010_pg_cron_membership_sync.sql` + `seed.sql` — multi-tenant schema, RLS for `personal | project | project_private`, pgvector with model-tagged embeddings (768-dim), GitHub team mapping, soft-delete on `project_members`, `sync_runs` audit table, pg_cron membership sync.
+- `edge-functions/` — multi-tenant MCP edge function with 5 tools, smoke-tested via curl; pluggable embedding provider (OpenAI default, Ollama variant).
+- `deploy/production/` — docker-compose overlay + env template + README for `pr.fabric-testbed.net`.
+- Per-phase checklists under `docs/phase-{0,1,2,3}-checklist.md`.
+
+**Next phase: Phase 4 — REST + OpenAPI surface.** Thin REST handlers over the same backend logic (PostgREST covers some; custom edge functions cover the rest), publish OpenAPI spec, example clients (OpenAI function calling, curl, GitHub Actions). See Phased Roadmap below.
+
+Build/lint/test commands still do not exist as a unified suite. SQL migrations apply via Studio or `psql`; edge functions deploy via the Supabase CLI / docker exec. Do not invent commands; ask if uncertain.
 
 ## What TeamBrain Is
 
@@ -24,9 +31,11 @@ All four major architectural decisions are locked in (see `docs/adr/0001-teambra
 4. **Auth (Phase 1):** GitHub OAuth via GoTrue. `project_members` rows hand-seeded for the pilot. Phase 3 automates the sync against GitHub collaborator/org-team APIs. CILogon support deferred — GoTrue can run both providers simultaneously, so adding CILogon later is non-breaking.
 5. **Pilot repo (decided 2026-05-03):** `~/github/fabric/fabric-core-api` (remote `fabric-testbed/fabric-core-api`, branch `develop`). Phase 7 evaluation pilot — refactoring done solo by Michael with Claude Code; Komal Thareja is the primary reviewer. The team-coordination value being tested is **multi-developer commentary on a single-committer's changes**, not multi-committer coordination. Falsification target: track every review comment that triggers a "we already discussed this" response — each is a TeamBrain miss. Workflow-monitor remains an option as a low-stakes Phase 2 plumbing pilot before graduating to fabric-core-api for Phase 7. Full rationale + tradeoffs captured in Open Brain (`PROJECT: TeamBrain — Pilot repo decision`).
 
-## Open Decisions Required Before Phase 1 Coding
+## Open Decisions / Active Blockers
 
-None blocking schema work. Pre-pilot social-coordination blocker: Komal's buy-in (one-time GitHub OAuth login on `pr.fabric-testbed.net`, willingness to read `AGENTS.md`, review cadence during the pilot window). Sub-questions tracked in `docs/phase-0-checklist.md` B1.
+Pre-pilot social-coordination blocker still open: Komal's buy-in (one-time GitHub OAuth login on `pr.fabric-testbed.net`, willingness to read `AGENTS.md`, review cadence during the pilot window). Sub-questions tracked in `docs/phase-0-checklist.md` B1. Confirmed her GitHub handle is `kthare10` (seed commit `4d079e2`).
+
+Phase 4 has no architectural blockers — proceed when ready.
 
 ## Architecture Reference
 
@@ -103,15 +112,13 @@ Capture decisions and blockers back to Open Brain with the prefix `PROJECT: Team
 - **No credentials, API keys, or secrets in any committed file.** Use `.env` (gitignored) and document required vars in `.env.template`.
 - **No `DROP TABLE`, `DROP DATABASE`, `TRUNCATE`, or unqualified `DELETE FROM`** in SQL files.
 
-## Phase 1 — Suggested First Deliverables
+## Phase 4 — Suggested Next Deliverables
 
-When the pilot repo decision unblocks (or if pursuing schema-only work that is independent of it):
-
-1. `migrations/0001_init.sql` — `projects` + `project_members` tables, the `thoughts` table extended with the columns listed above, pgvector index, `updated_at` trigger.
-2. `migrations/0002_rls.sql` — RLS policies for `personal | project | project_private` scopes with **inline comments explaining each policy's intent**.
-3. `migrations/seed.sql` — manual `project_members` seed rows for the pilot devs.
-4. Local docker-compose stand-up instructions in `docs/deployment.md` (already scaffolded).
-5. End-to-end smoke test: GitHub OAuth login → seeded user can read/write their own and project-scoped thoughts → user not in `project_members` cannot.
+1. Inventory which planned tool-equivalents PostgREST already gives us for free against the current schema, vs. which need custom edge-function handlers.
+2. Author `edge-functions/teambrain-rest/` (or extend the existing MCP function) covering the gaps — at minimum the equivalents of `capture_project_thought`, `search_project_thoughts` (vector similarity is not a PostgREST primitive), `mark_stale`, and `promote_to_docs`.
+3. Publish an OpenAPI 3.1 spec at a stable path (e.g. `/openapi.yaml`) describing the unified surface (PostgREST-generated + custom).
+4. Example clients under `examples/`: curl recipes, an OpenAI function-calling snippet, and a GitHub Actions workflow that captures a thought from a merged-PR title.
+5. Smoke test parity: every MCP tool's behavior reproducible through REST with the same GitHub-OAuth JWT.
 
 ## Phased Roadmap
 
