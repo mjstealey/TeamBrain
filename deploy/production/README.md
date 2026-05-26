@@ -15,17 +15,42 @@ The procedure below assembles these in order. Each step has an explicit verifica
 
 ---
 
+## TLS termination: choose a path
+
+TeamBrain's production deploy supports two TLS-termination strategies. Both are equally supported; the choice is a property of the VM and the operating environment, not of TeamBrain itself.
+
+| | **Path A — Caddy (managed Let's Encrypt)** | **Path B — Host nginx + institutional cert** |
+|---|---|---|
+| Cert source | Caddy mints from Let's Encrypt via HTTP-01 at first boot | Issued out-of-band (e.g. UNC InCommon, internal CA) and placed on disk before deploy |
+| Cert lifecycle | Auto-renewed by Caddy every ~60d | Renewed by whoever issues the cert; you copy in the new file and reload |
+| Outbound :80 to ACME | Required | Not required |
+| Inbound :80 / :443 | Bound by Caddy container | Bound by an *already-running* host nginx container; Caddy is NOT deployed |
+| Studio gating | Caddy basic-auth (`DASHBOARD_PASSWORD`) | nginx `allow 127.0.0.1; deny all;` + SSH-tunnel until vouch-proxy + CILogon is layered in |
+| Compose invocation | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` | `docker compose up -d` (no caddy overlay) |
+| Typical fit | Cloud / DigitalOcean / Hetzner / Linode VMs where you control the network and ACME works freely | Institutional / on-prem VMs that already have a managed cert and a host reverse-proxy parked on :80/:443 (e.g. `pr.fabric-testbed.net`) |
+
+**`pr.fabric-testbed.net` uses Path B.** The VM has an institutional FABRIC SAN cert at `/root/cert/fabric-other-services_fabric-testbed_net.pem` and a host nginx container already binding `:80`/`:443` with that cert mounted at `/etc/letsencrypt`. Bringing up Caddy on this box would conflict for ports, duplicate cert acquisition, and ignore the institutional cert.
+
+Steps 1–5 and 8–13 below are identical for both paths. Steps 6 (first boot), 7 (Studio access), and the auth note inside step 11 split by path — each has explicit "Path A" / "Path B" subsections.
+
+---
+
 ## 0. Prerequisites
 
 Before SSHing to the VM, confirm:
 
+- [ ] **TLS path chosen** (see § "TLS termination: choose a path" above). The rest of this checklist branches by choice.
 - [ ] **VM provisioned.** Target spec: 4 vCPU / 8 GB RAM / 50 GB disk. Modern Linux (Ubuntu 22.04 LTS, 24.04 LTS, or Rocky/RHEL 9 all work).
-- [ ] **DNS.** `pr.fabric-testbed.net` A/AAAA records point at the VM's public IP. Verify externally: `dig +short pr.fabric-testbed.net` returns the right IP. Let's Encrypt's HTTP-01 challenge fails without correct DNS *before* the first `up -d`.
-- [ ] **Firewall.** Ports 80/tcp and 443/tcp (and 443/udp for HTTP/3) open to the world. Port 22 open to your admin source. All other ports closed.
-- [ ] **GitHub OAuth App (production).** Registered under `fabric-testbed` org with `Authorization callback URL = https://pr.fabric-testbed.net/auth/v1/callback`. App name `TeamBrain (production)`. Client ID + secret captured. Distinct from the scratch OAuth App. See `docs/deployment.md` § "GitHub OAuth App".
+- [ ] **DNS.** Public hostname A/AAAA records point at the VM's public IP. Verify externally: `dig +short <hostname>` returns the right IP. *Path A only:* Let's Encrypt's HTTP-01 challenge fails without correct DNS *before* the first `up -d`. *Path B:* DNS still needs to be right for clients and OAuth callbacks, but ACME is not in the loop.
+- [ ] **Firewall.**
+   - *Path A:* Ports 80/tcp and 443/tcp (and 443/udp for HTTP/3) open to the world for Caddy + LE. Port 22 open to your admin source.
+   - *Path B:* Ports 80/tcp and 443/tcp open to whoever needs the API. Port 22 open to your admin source. Outbound 80 to ACME servers not required.
+- [ ] **TLS cert in place** (*Path B only*). Institutional cert + key on disk at a path the existing host nginx container can read. On `pr.fabric-testbed.net` that's `/root/cert/fabric-other-services_fabric-testbed_net.pem` + `/root/cert/fabric-other-services.key`, bind-mounted into the nginx container at `/etc/letsencrypt`. SAN must cover the public hostname. Verify with `openssl x509 -in <cert> -noout -text | grep -A1 'Subject Alternative Name'`.
+- [ ] **Host nginx container running** (*Path B only*). Already binds `:80` and `:443` and is in the `docker` group's view: `docker ps | grep nginx`. Confirm how the container's `/etc/nginx/conf.d/` is sourced (host bind mount vs. baked into the image) — that determines how you'll add the TeamBrain server block in Step 6b.
+- [ ] **GitHub OAuth App (production).** Registered under `fabric-testbed` org with `Authorization callback URL = https://<hostname>/auth/v1/callback`. App name `TeamBrain (production)`. Client ID + secret captured. Distinct from the scratch OAuth App. The callback URL is the same for both paths — it resolves via whichever reverse-proxy is fronting `:443`. See `docs/deployment.md` § "GitHub OAuth App".
 - [ ] **GitHub Sync App (production).** Registered as `TeamBrain Sync — fabric-testbed` (no `(dev)` suffix). Permissions: Repository → Metadata: Read; Organization → Members: Read. Webhook disabled. Installed on the org with the pilot repo selected. App ID + installation ID + PKCS#8-converted private key captured. Distinct from the scratch Sync App per `docs/deployment.md` § "Scratch vs production: register two Apps".
 - [ ] **OpenAI API key** (production-billed; not a personal account) **or** decision to run the ollama embedding variant.
-- [ ] **DNS for `pr.fabric-testbed.net`** has propagated. (You can `dig` from a non-VM host to verify before deploying.)
+- [ ] **DNS for the public hostname** has propagated. (You can `dig` from a non-VM host to verify before deploying.)
 
 If any precondition fails, fix it before proceeding — production install is not the place to debug DNS.
 
@@ -120,16 +145,16 @@ grep -E '^(JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY)=' .env | \
 
 Open `/opt/supabase-stack/.env` and set the values documented in `/opt/teambrain/deploy/production/env.template`. The short list:
 
-| Key | Value | Source |
-|---|---|---|
-| `PROXY_DOMAIN` | `pr.fabric-testbed.net` | DNS |
-| `SUPABASE_PUBLIC_URL` | `https://pr.fabric-testbed.net` | derived |
-| `API_EXTERNAL_URL` | `https://pr.fabric-testbed.net` | derived |
-| `SITE_URL` | `https://pr.fabric-testbed.net` | derived |
-| `CERTBOT_EMAIL` | a monitored email | Let's Encrypt registration |
-| `GITHUB_CLIENT_ID` | from the production OAuth App | Prerequisites |
-| `GITHUB_SECRET` | from the production OAuth App | Prerequisites |
-| `OPENAI_API_KEY` | production-billed OpenAI key | Prerequisites |
+| Key | Value | Source | Path |
+|---|---|---|---|
+| `PROXY_DOMAIN` | `pr.fabric-testbed.net` | DNS | A only (Caddy reads this) |
+| `SUPABASE_PUBLIC_URL` | `https://pr.fabric-testbed.net` | derived | A + B |
+| `API_EXTERNAL_URL` | `https://pr.fabric-testbed.net` | derived | A + B |
+| `SITE_URL` | `https://pr.fabric-testbed.net` | derived | A + B |
+| `CERTBOT_EMAIL` | a monitored email | Let's Encrypt registration | A only |
+| `GITHUB_CLIENT_ID` | from the production OAuth App | Prerequisites | A + B |
+| `GITHUB_SECRET` | from the production OAuth App | Prerequisites | A + B |
+| `OPENAI_API_KEY` | production-billed OpenAI key | Prerequisites | A + B |
 
 Then **append** the TeamBrain Phase 3 block (it is not in upstream's `.env.example`):
 
@@ -160,6 +185,8 @@ grep -E '^(PROXY_DOMAIN|CERTBOT_EMAIL|GITHUB_CLIENT_ID|GITHUB_SECRET|OPENAI_API_
 
 ## 6. First boot
 
+### Path A — Caddy
+
 ```bash
 cd /opt/supabase-stack
 
@@ -189,17 +216,127 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://pr.fabric-testbed.net/auth/v1/
 # expect: 200
 ```
 
+### Path B — host nginx
+
+The supabase stack comes up *without* the caddy overlay; our `docker-compose.override.yml` already binds Kong to `127.0.0.1:8000`, which is exactly the upstream the host nginx will reverse-proxy to.
+
+```bash
+cd /opt/supabase-stack
+
+# No caddy overlay. docker-compose.override.yml auto-merges last and wins.
+docker compose up -d
+docker compose ps
+# expect every service Healthy or Started. There is no caddy container.
+```
+
+On-VM smoke (before fronting with nginx):
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/auth/v1/health
+# expect: 200 — proves Kong + GoTrue are up on the loopback bind.
+```
+
+Now write the nginx server block. Create a file on the host (e.g. `/etc/nginx-pr/conf.d/pr.fabric-testbed.net.conf` if you bind-mount that, or a temp file otherwise) with:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name pr.fabric-testbed.net;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name pr.fabric-testbed.net;
+
+    # Cert paths are inside the container — the host's /root/cert is
+    # bind-mounted to /etc/letsencrypt in the existing nginx setup.
+    ssl_certificate     /etc/letsencrypt/fabric-other-services_fabric-testbed_net.pem;
+    ssl_certificate_key /etc/letsencrypt/fabric-other-services.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    # Edge functions can return sizable payloads; bump the default 1m.
+    client_max_body_size 50m;
+
+    # Public-facing Supabase API paths (Kong routes each subpath to the
+    # right backend internally — GoTrue, PostgREST, Realtime, Storage,
+    # Edge Functions).
+    location ~ ^/(auth|rest|functions|storage|realtime)/ {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+
+    # Studio is NOT publicly exposed in Path B until vouch-proxy +
+    # CILogon gating is layered in (see ADR 0001 § "Studio admin").
+    # Until then, admins SSH-tunnel to Kong directly:
+    #   ssh -L 3000:127.0.0.1:8000 nrig-service@pr.fabric-testbed.net
+    #   open http://localhost:3000   # Kong forwards / → Studio
+    location / {
+        return 404;
+    }
+}
+```
+
+Install the file into the nginx container's `/etc/nginx/conf.d/` — the exact mechanism depends on how that container was originally set up. Two common patterns:
+
+```bash
+# (a) If /etc/nginx/conf.d/ is bind-mounted from the host, just drop
+#     the file in and reload:
+sudo install -m 0644 pr.fabric-testbed.net.conf /path/to/host/conf.d/
+docker exec nginx nginx -t          # syntax-check
+docker exec nginx nginx -s reload   # apply
+
+# (b) If /etc/nginx/conf.d/ lives inside the image (no bind), copy in:
+docker cp pr.fabric-testbed.net.conf nginx:/etc/nginx/conf.d/
+docker exec nginx nginx -t
+docker exec nginx nginx -s reload
+# NB: docker cp does not survive `docker rm`; if the container is ever
+# recreated, the config disappears. Long-term, recreate the nginx
+# container with a host bind mount for /etc/nginx/conf.d.
+```
+
+External smoke:
+
+```bash
+# From off-VM:
+curl -sSv https://pr.fabric-testbed.net/auth/v1/health 2>&1 | grep -E '^< HTTP|subject:|issuer:'
+# expect: HTTP/2 200, subject containing pr.fabric-testbed.net,
+#         issuer matching your institutional CA.
+```
+
 ---
 
 ## 7. Apply Phase 1–2 migrations via Studio
 
-Studio is gated behind Caddy basic-auth (username `supabase`, password = `DASHBOARD_PASSWORD` you saved in step 4). Visit:
+Studio access depends on TLS path:
 
-```
-https://pr.fabric-testbed.net
+### Path A — Caddy basic-auth
+
+Visit `https://pr.fabric-testbed.net` and authenticate with username `supabase` + the `DASHBOARD_PASSWORD` you saved in step 4. You should see Studio's project view.
+
+### Path B — SSH tunnel to Kong
+
+Studio is not publicly exposed. From your laptop:
+
+```bash
+ssh -L 3000:127.0.0.1:8000 nrig-service@pr.fabric-testbed.net
+# leave that session open, then in your browser:
+open http://localhost:3000
 ```
 
-Authenticate with the basic-auth credentials. You should see Studio's project view.
+Kong's `/` route forwards to Studio internally, so the tunnel to Kong gives you Studio. No basic-auth is presented — the only access control is "you have SSH to the VM." When vouch-proxy + CILogon lands later, this gets replaced with a public `/studio/` location gated by `auth_request`.
+
+### Both paths — apply migrations
 
 In **SQL Editor → New query**, paste each migration's full contents from `/opt/teambrain/migrations/` and click **Run**. Apply in this order:
 
@@ -315,16 +452,7 @@ curl -sS -X POST \
 #   skipped_no_auth_row: [{login: ibaldin}, {login: kthare10}, {login: yaxue1123}]
 ```
 
-The 127.0.0.1 bind on Kong is for on-VM-only testing. If you'd rather go through Caddy + basic auth:
-
-```bash
-curl -sS -u "supabase:$DASHBOARD_PASSWORD" -X POST \
-  -H "Authorization: Bearer $SERVICE_KEY" \
-  -H "Content-Type: application/json" \
-  "https://pr.fabric-testbed.net/functions/v1/teambrain-membership-sync/sync?project_slug=fabric-testbed/fabric-core-api"
-```
-
-Wait — actually `/functions/v1/*` is in upstream's Caddyfile `@supabase_api` matcher and is NOT basic-auth'd. The basic auth only fronts Studio. The internal curl works directly:
+The `127.0.0.1:8000` bind on Kong is for on-VM-only testing. The same call works through the public hostname on both TLS paths — basic-auth only fronts Studio in Path A; `/functions/v1/*` is unauthenticated at the proxy layer in both paths (the function itself enforces JWT role):
 
 ```bash
 curl -sS -X POST \
@@ -478,12 +606,26 @@ If the new key fails, the old key still works during step 4 since key revocation
 
 ## Troubleshooting
 
-### Caddy keeps restarting / no cert obtained
+### (Path A) Caddy keeps restarting / no cert obtained
 
 - Check `docker compose logs caddy --tail 100`.
 - `dig +short pr.fabric-testbed.net` — must return the VM IP from an *external* host. ACME challenge originates from Let's Encrypt's servers, not from inside the VM.
 - Firewall: `nc -zv pr.fabric-testbed.net 80` from outside the VM must succeed.
 - Rate limit: Let's Encrypt allows 5 cert attempts per hostname per week. If you've been retrying, wait or use `--staging` via the `LEGO_CA_SYSTEM_CERT_POOL` / `CADDY_ACME_CA` envs (consult upstream caddy overlay docs).
+
+### (Path B) nginx returns 502 Bad Gateway
+
+- Kong is not actually listening on `127.0.0.1:8000`. Verify from the VM: `ss -tlnp | grep :8000` — expect a docker-proxy LISTEN line. If absent, `docker compose -f docker-compose.yml up -d` from `/opt/supabase-stack` and re-check. The loopback bind is supplied by our `docker-compose.override.yml`.
+- SELinux denying nginx → loopback. On RHEL/Rocky, the nginx container's host-side socket access to `127.0.0.1:8000` may be blocked. Check `getenforce` and `ausearch -m AVC -ts recent | grep nginx`. If that's the cause, the policy fix is environment-specific — coordinate with the VM owner.
+
+### (Path B) Browser shows TLS error / wrong certificate
+
+- The new `pr.fabric-testbed.net.conf` server block isn't loaded. `docker exec nginx nginx -T | grep -E 'server_name|ssl_certificate'` — confirm both your server_name and your cert path appear. If they don't, the file isn't in `/etc/nginx/conf.d/` inside the container (Path B step 6b options a/b).
+- The cert doesn't cover this hostname. `openssl s_client -connect pr.fabric-testbed.net:443 -servername pr.fabric-testbed.net </dev/null 2>/dev/null | openssl x509 -noout -text | grep -A1 'Subject Alternative Name'` — the SAN list must include `pr.fabric-testbed.net` (or a wildcard that does).
+
+### (Path B) `docker exec nginx nginx -s reload` exits non-zero
+
+- Run `docker exec nginx nginx -t` for the actual syntax error. Common causes: copy-paste smart-quotes in the conf file; cert/key path typo; duplicate `server_name` clashing with the stock `default.conf` (rename the stock file's `server_name` to `_` if needed).
 
 ### `Authorization` header rejected by edge function
 
