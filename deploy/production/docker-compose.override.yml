@@ -66,12 +66,14 @@ services:
   # and is consumed by TWO services:
   #   (a) the db container — as Postgres's internal listen port (must
   #       be numeric; `127.0.0.1:5432` makes PG refuse to start), and
-  #   (b) the pooler container — as the host-side bind for session-mode
-  #       pooling on 5432.
+  #   (b) the supavisor container — as the host-side bind for
+  #       session-mode pooling on 5432.
   # The double-binding means we can't loopback-prefix POSTGRES_PORT in
   # .env without breaking PG. Instead we leave POSTGRES_PORT=5432 and
-  # !reset the pooler's port list here.
-  pooler:
+  # !reset the supavisor port list here. Note: service key in the base
+  # compose is `supavisor` (the container_name is `supabase-pooler`,
+  # which is what shows up in `docker ps`).
+  supavisor:
     ports: !reset
       - "127.0.0.1:5432:5432/tcp"
       - "127.0.0.1:6543:6543/tcp"
