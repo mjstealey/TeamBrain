@@ -21,17 +21,17 @@ The procedure below assembles these in order. Each step has an explicit verifica
 
 TeamBrain's production deploy supports two TLS-termination strategies. Both are equally supported; the choice is a property of the VM and the operating environment, not of TeamBrain itself.
 
-| | **Path A — Caddy (managed Let's Encrypt)** | **Path B — Host nginx + institutional cert** |
+| | **Path A — Caddy (managed Let's Encrypt)** | **Path B — Compose-managed nginx + institutional cert** |
 |---|---|---|
 | Cert source | Caddy mints from Let's Encrypt via HTTP-01 at first boot | Issued out-of-band (e.g. UNC InCommon, internal CA) and placed on disk before deploy |
-| Cert lifecycle | Auto-renewed by Caddy every ~60d | Renewed by whoever issues the cert; you copy in the new file and reload |
+| Cert lifecycle | Auto-renewed by Caddy every ~60d | Renewed by whoever issues the cert; you replace the file on disk and reload nginx |
 | Outbound :80 to ACME | Required | Not required |
-| Inbound :80 / :443 | Bound by Caddy container | Bound by an *already-running* host nginx container; Caddy is NOT deployed |
-| Studio gating | Caddy basic-auth (`DASHBOARD_PASSWORD`) | nginx `allow 127.0.0.1; deny all;` + SSH-tunnel until vouch-proxy + CILogon is layered in |
-| Compose invocation | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` | `docker compose up -d` (no caddy overlay) |
-| Typical fit | Cloud / DigitalOcean / Hetzner / Linode VMs where you control the network and ACME works freely | Institutional / on-prem VMs that already have a managed cert and a host reverse-proxy parked on :80/:443 (e.g. `pr.fabric-testbed.net`) |
+| Inbound :80 / :443 | Bound by Caddy container | Bound by an `nginx` service from `docker-compose.nginx.yml` (this repo); Caddy is NOT deployed |
+| Studio gating | Caddy basic-auth (`DASHBOARD_PASSWORD`) | SSH-tunnel to Kong's loopback bind until vouch-proxy + CILogon is layered in |
+| Compose invocation | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` | `docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d` |
+| Typical fit | Cloud / DigitalOcean / Hetzner / Linode VMs where you control the network and ACME works freely | Institutional / on-prem VMs that already hold a managed cert and don't want to delegate cert issuance to Let's Encrypt (e.g. `pr.fabric-testbed.net`) |
 
-**`pr.fabric-testbed.net` uses Path B.** The VM has an institutional FABRIC SAN cert at `/root/cert/fabric-other-services_fabric-testbed_net.pem` and a host nginx container already binding `:80`/`:443` with that cert mounted at `/etc/letsencrypt`. Bringing up Caddy on this box would conflict for ports, duplicate cert acquisition, and ignore the institutional cert.
+**`pr.fabric-testbed.net` uses Path B.** The VM has an institutional FABRIC SAN cert at `/root/cert/fabric-other-services_fabric-testbed_net.pem` (renewed out-of-band by the VM owner). The stack's own `nginx` service bind-mounts that cert read-only and terminates TLS for the public hostname — no Let's Encrypt, no separate host-side reverse-proxy to coordinate with.
 
 Steps 1–5 and 8–13 below are identical for both paths. Steps 6 (first boot), 7 (Studio access), and the auth note inside step 11 split by path — each has explicit "Path A" / "Path B" subsections.
 
@@ -47,8 +47,8 @@ Before SSHing to the VM, confirm:
 - [ ] **Firewall.**
    - *Path A:* Ports 80/tcp and 443/tcp (and 443/udp for HTTP/3) open to the world for Caddy + LE. Port 22 open to your admin source.
    - *Path B:* Ports 80/tcp and 443/tcp open to whoever needs the API. Port 22 open to your admin source. Outbound 80 to ACME servers not required.
-- [ ] **TLS cert in place** (*Path B only*). Institutional cert + key on disk at a path the existing host nginx container can read. On `pr.fabric-testbed.net` that's `/root/cert/fabric-other-services_fabric-testbed_net.pem` + `/root/cert/fabric-other-services.key`, bind-mounted into the nginx container at `/etc/letsencrypt`. SAN must cover the public hostname. Verify with `openssl x509 -in <cert> -noout -text | grep -A1 'Subject Alternative Name'`.
-- [ ] **Host nginx container running** (*Path B only*). Already binds `:80` and `:443` and is in the `docker` group's view: `docker ps | grep nginx`. Confirm how the container's `/etc/nginx/conf.d/` is sourced (host bind mount vs. baked into the image) — that determines how you'll add the TeamBrain server block in Step 6b.
+- [ ] **TLS cert in place** (*Path B only*). Institutional cert + key on disk at `/root/cert/` (or wherever you choose to place them — the bind path is hard-coded to `/root/cert` in `docker-compose.nginx.yml`; change it there if you put the cert elsewhere). On `pr.fabric-testbed.net` that's `/root/cert/fabric-other-services_fabric-testbed_net.pem` + `/root/cert/fabric-other-services.key`. SAN must cover the public hostname. Verify with `openssl x509 -in <cert> -noout -text | grep -A1 'Subject Alternative Name'`. If your cert filenames differ from the FABRIC defaults, update the `ssl_certificate` / `ssl_certificate_key` lines in `deploy/production/nginx/conf.d/pr.fabric-testbed.net.conf` to match.
+- [ ] **Host :80 and :443 are free** (*Path B only*). `ss -tlnp '( sport = :80 or sport = :443 )'` from the VM returns no listeners. The compose-managed `nginx` service publishes both ports; anything else parked on them will refuse the bind. (On `pr.fabric-testbed.net` an earlier placeholder nginx container previously held these — it has since been removed.)
 - [ ] **GitHub OAuth App (production).** Registered under `fabric-testbed` org with `Authorization callback URL = https://<hostname>/auth/v1/callback`. App name `TeamBrain (production)`. Client ID + secret captured. Distinct from the scratch OAuth App. The callback URL is the same for both paths — it resolves via whichever reverse-proxy is fronting `:443`. See `docs/deployment.md` § "GitHub OAuth App".
 - [ ] **GitHub Sync App (production).** Registered as `TeamBrain Sync — fabric-testbed` (no `(dev)` suffix). Permissions: Repository → Metadata: Read; Organization → Members: Read. Webhook disabled. Installed on the org with the pilot repo selected. App ID + installation ID + PKCS#8-converted private key captured. Distinct from the scratch Sync App per `docs/deployment.md` § "Scratch vs production: register two Apps".
 - [ ] **OpenAI API key** **or** decision to run the ollama embedding variant. Production-billed key (separate from any personal account) is preferred for cost attribution and key-rotation isolation, but a personal key is acceptable for the pilot — cost is ~$0.02 per 1M tokens for `text-embedding-3-small`, effectively free at pilot scale. Plan to rotate to a project-scoped key before opening the pilot beyond the initial reviewer set.
@@ -258,9 +258,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 # expect: 200
 ```
 
-### Path B — host nginx
+### Path B — compose-managed nginx
 
-The supabase stack comes up *without* the caddy overlay. Two changes from upstream defaults keep every host-side port off `0.0.0.0`:
+The supabase stack comes up with the **`docker-compose.nginx.yml`** overlay (no caddy overlay). The overlay adds an `nginx` service that publishes `:80` + `:443`, terminates TLS with the institutional cert bind-mounted from `/root/cert/`, and reverse-proxies the public Supabase API paths to Kong over the docker network (`http://kong:8000`).
+
+The server-block config lives in this repo at `deploy/production/nginx/conf.d/pr.fabric-testbed.net.conf` and is bind-mounted read-only into the container. Edit workflow: change the conf file in the repo → `git pull` on the box → `docker exec supabase-nginx nginx -t && docker exec supabase-nginx nginx -s reload`.
+
+Two changes from upstream defaults keep every host-side port off `0.0.0.0` for everything that *isn't* the public nginx terminator:
 
 1. **`.env` loopback-prefixes for host-bound ports.** Upstream's `.env.example` sets `KONG_HTTP_PORT=8000`, `KONG_HTTPS_PORT=8443`, `POOLER_PROXY_PORT_TRANSACTION=6543`. For Path B these need to be prefixed with `127.0.0.1:` so the base compose's `${KONG_HTTP_PORT}:8000/tcp` expression resolves to a loopback bind. **Do not prefix `POSTGRES_PORT`** — it's read by the db container as Postgres's internal listen port and must stay numeric (`5432`), or PG refuses to start with `FATAL: invalid value for parameter "port"`.
    ```bash
@@ -283,21 +287,45 @@ The supabase stack comes up *without* the caddy overlay. Two changes from upstre
    ```
    The patch removes only the host-port bindings. supavisor still comes up and remains reachable from other containers over the docker network (service name `supavisor`); TeamBrain doesn't actually use it at pilot scale (PostgREST/GoTrue/Storage all reach `db` directly), so no host bind is the intended state.
 
+For the bind-mount of `nginx/conf.d/` to resolve, `deploy/production/docker-compose.nginx.yml` uses a path relative to `~/supabase-stack/` — namely `../TeamBrain/deploy/production/nginx/conf.d`. That assumes `~/supabase-stack/` and `~/TeamBrain/` are siblings under the same user's home directory (matching the convention used elsewhere on the box). If your layout differs, change the bind source in `docker-compose.nginx.yml` accordingly.
+
+Copy the two overlay files into `~/supabase-stack/` (or symlink them — either works, but copies make the deployed layout self-contained):
+
+```bash
+cp ~/TeamBrain/deploy/production/docker-compose.override.yml ~/supabase-stack/
+cp ~/TeamBrain/deploy/production/docker-compose.nginx.yml    ~/supabase-stack/
+```
+
+Set `COMPOSE_FILE` in `~/supabase-stack/.env` so every subsequent `docker compose` command in this directory picks up the nginx overlay implicitly — without it, plain `docker compose up -d` would silently drop nginx out of the stack:
+
+```bash
+grep -q '^COMPOSE_FILE=' ~/supabase-stack/.env \
+  || echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml' >> ~/supabase-stack/.env
+```
+
+(`docker-compose.override.yml` is *always* auto-discovered by compose; it does not belong in `COMPOSE_FILE`. Path A deployments would instead set `COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml`.)
+
+Bring up the full stack:
+
 ```bash
 cd ~/supabase-stack
 
-# No caddy overlay. docker-compose.override.yml auto-merges last and wins.
+# COMPOSE_FILE in .env supplies the overlay list; override.yml auto-merges
+# last and wins for any service-key conflict.
 docker compose up -d
 docker compose ps
-# expect 12 services Healthy or Started (no supavisor, no caddy).
+# expect 13 services Healthy or Started (12 supabase services + nginx;
+# no supavisor host bind, no caddy).
 
-# Verify the loopback binds — kong on 127.0.0.1 only, no 0.0.0.0 anywhere,
-# and no supabase-pooler at all:
-docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'kong|pooler|0\.0\.0\.0'
-# expect: only the kong line, both ports prefixed 127.0.0.1.
+# Verify the loopback binds — kong on 127.0.0.1 only; nginx on 0.0.0.0:80
+# and 0.0.0.0:443 is INTENDED (it's the public terminator); nothing else
+# on 0.0.0.0; no supabase-pooler:
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'kong|nginx|pooler|0\.0\.0\.0'
+# expect: kong with 127.0.0.1: prefixes, supabase-nginx with 0.0.0.0:80
+#         + 0.0.0.0:443, no pooler row.
 ```
 
-On-VM smoke (before fronting with nginx):
+On-VM smoke (before going through the public terminator):
 
 ```bash
 # Kong enforces the `key-auth` plugin on /auth/v1/* and /rest/v1/* — an
@@ -312,74 +340,16 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 
 > **PGDATA is a host bind mount, not a docker named volume.** `volumes/db/data` lives on the VM filesystem and **survives `docker compose down -v`**. If you ever need a clean re-init (after a JWT_SECRET / POSTGRES_PASSWORD rotation, for example), you must `sudo rm -rf ~/supabase-stack/volumes/db/data/*` before the next `up -d` — otherwise PG sees "Database directory appears to contain a database; Skipping initialization" and comes up using the *old* password, leaving every service unable to authenticate.
 
-Now write the nginx server block. Create a file on the host (e.g. `/etc/nginx-pr/conf.d/pr.fabric-testbed.net.conf` if you bind-mount that, or a temp file otherwise) with:
+The server block is already committed at `deploy/production/nginx/conf.d/pr.fabric-testbed.net.conf` and bind-mounted into the `supabase-nginx` container at `/etc/nginx/conf.d/` (read-only). No `docker cp` or in-image editing required — `docker compose ... up -d` above will have loaded it on first start.
 
-```nginx
-server {
-    listen 80;
-    listen [::]:80;
-    server_name pr.fabric-testbed.net;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name pr.fabric-testbed.net;
-
-    # Cert paths are inside the container — the host's /root/cert is
-    # bind-mounted to /etc/letsencrypt in the existing nginx setup.
-    ssl_certificate     /etc/letsencrypt/fabric-other-services_fabric-testbed_net.pem;
-    ssl_certificate_key /etc/letsencrypt/fabric-other-services.key;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    # Edge functions can return sizable payloads; bump the default 1m.
-    client_max_body_size 50m;
-
-    # Public-facing Supabase API paths (Kong routes each subpath to the
-    # right backend internally — GoTrue, PostgREST, Realtime, Storage,
-    # Edge Functions).
-    location ~ ^/(auth|rest|functions|storage|realtime)/ {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto https;
-        proxy_set_header   Upgrade $http_upgrade;
-        proxy_set_header   Connection "upgrade";
-        proxy_read_timeout 120s;
-    }
-
-    # Studio is NOT publicly exposed in Path B until vouch-proxy +
-    # CILogon gating is layered in (see ADR 0001 § "Studio admin").
-    # Until then, admins SSH-tunnel to Kong directly:
-    #   ssh -L 3000:127.0.0.1:8000 nrig-service@pr.fabric-testbed.net
-    #   open http://localhost:3000   # Kong forwards / → Studio
-    location / {
-        return 404;
-    }
-}
-```
-
-Install the file into the nginx container's `/etc/nginx/conf.d/` — the exact mechanism depends on how that container was originally set up. Two common patterns:
+If the cert filenames at `/root/cert/` differ from the FABRIC defaults baked into the committed conf, edit `deploy/production/nginx/conf.d/pr.fabric-testbed.net.conf` in the repo, `git pull` on the box, then reload:
 
 ```bash
-# (a) If /etc/nginx/conf.d/ is bind-mounted from the host, just drop
-#     the file in and reload:
-sudo install -m 0644 pr.fabric-testbed.net.conf /path/to/host/conf.d/
-docker exec nginx nginx -t          # syntax-check
-docker exec nginx nginx -s reload   # apply
-
-# (b) If /etc/nginx/conf.d/ lives inside the image (no bind), copy in:
-docker cp pr.fabric-testbed.net.conf nginx:/etc/nginx/conf.d/
-docker exec nginx nginx -t
-docker exec nginx nginx -s reload
-# NB: docker cp does not survive `docker rm`; if the container is ever
-# recreated, the config disappears. Long-term, recreate the nginx
-# container with a host bind mount for /etc/nginx/conf.d.
+docker exec supabase-nginx nginx -t        # syntax-check
+docker exec supabase-nginx nginx -s reload # apply
 ```
+
+The same reload flow applies to any subsequent server-block edits (location blocks, headers, etc.). The container's `/etc/nginx/conf.d/` is a bind-mount, so edits land immediately — only a reload is needed.
 
 External smoke:
 
@@ -717,17 +687,21 @@ If the new key fails, the old key still works during step 4 since key revocation
 
 ### (Path B) nginx returns 502 Bad Gateway
 
-- Kong is not actually listening on `127.0.0.1:8000`. Verify from the VM: `ss -tlnp | grep :8000` — expect a docker-proxy LISTEN line. If absent, `docker compose -f docker-compose.yml up -d` from `~/supabase-stack` and re-check. The loopback bind is supplied by our `docker-compose.override.yml`.
-- SELinux denying nginx → loopback. On RHEL/Rocky, the nginx container's host-side socket access to `127.0.0.1:8000` may be blocked. Check `getenforce` and `ausearch -m AVC -ts recent | grep nginx`. If that's the cause, the policy fix is environment-specific — coordinate with the VM owner.
+- Kong is not resolving on the docker network. From inside the nginx container: `docker exec supabase-nginx getent hosts kong` — expect a row with kong's container IP. If absent, the `supabase-nginx` and `supabase-kong` containers aren't on the same compose network; re-bring the stack up with both overlays explicit (`-f docker-compose.yml -f docker-compose.nginx.yml`).
+- Kong is unhealthy. `docker compose ps kong` should show `(healthy)`. If not, check `docker logs supabase-kong` — most often a missing env var (`SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `KONG_DECLARATIVE_CONFIG`).
 
 ### (Path B) Browser shows TLS error / wrong certificate
 
-- The new `pr.fabric-testbed.net.conf` server block isn't loaded. `docker exec nginx nginx -T | grep -E 'server_name|ssl_certificate'` — confirm both your server_name and your cert path appear. If they don't, the file isn't in `/etc/nginx/conf.d/` inside the container (Path B step 6b options a/b).
+- The server block isn't loaded inside the container. `docker exec supabase-nginx nginx -T | grep -E 'server_name|ssl_certificate'` — confirm both `pr.fabric-testbed.net` and the cert path under `/etc/nginx/cert/` appear. If they don't, the bind-mount source path in `docker-compose.nginx.yml` (`../TeamBrain/deploy/production/nginx/conf.d`) doesn't resolve to a real directory on the box — confirm the `~/supabase-stack/` + `~/TeamBrain/` sibling layout, or edit the overlay's bind source.
 - The cert doesn't cover this hostname. `openssl s_client -connect pr.fabric-testbed.net:443 -servername pr.fabric-testbed.net </dev/null 2>/dev/null | openssl x509 -noout -text | grep -A1 'Subject Alternative Name'` — the SAN list must include `pr.fabric-testbed.net` (or a wildcard that does).
 
-### (Path B) `docker exec nginx nginx -s reload` exits non-zero
+### (Path B) `docker exec supabase-nginx nginx -s reload` exits non-zero
 
-- Run `docker exec nginx nginx -t` for the actual syntax error. Common causes: copy-paste smart-quotes in the conf file; cert/key path typo; duplicate `server_name` clashing with the stock `default.conf` (rename the stock file's `server_name` to `_` if needed).
+- Run `docker exec supabase-nginx nginx -t` for the actual syntax error. Common causes: copy-paste smart-quotes in the conf file; cert/key path typo (cert lives at `/etc/nginx/cert/` inside the container, not `/etc/letsencrypt/`); duplicate `server_name` clashing with the stock `default.conf`. If the stock default conflicts, the cleanest fix is to mount over it — add a second bind that maps an empty file (or a file with `server_name _;`) to `/etc/nginx/conf.d/default.conf` in `docker-compose.nginx.yml`.
+
+### (Path B) nginx container won't start, "bind: address already in use"
+
+- Something else on the VM is already holding `:80` or `:443`. `ss -tlnp '( sport = :80 or sport = :443 )'` — expect no rows before the stack is up. A common culprit on `pr.fabric-testbed.net` historically was a placeholder host-side nginx container; remove any such container (`docker rm -f <name>`) before bringing the stack up.
 
 ### `Authorization` header rejected by edge function
 

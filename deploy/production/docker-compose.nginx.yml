@@ -1,0 +1,64 @@
+# deploy/production/docker-compose.nginx.yml — Path B TLS terminator
+#
+# Compose overlay that adds a public-facing nginx in front of Kong, for
+# deployments using an institutional TLS certificate instead of Let's
+# Encrypt (Path B per ../README.md §6). Mirrors upstream's
+# `docker-compose.caddy.yml` overlay convention.
+#
+# Usage (Path B):
+#
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.nginx.yml \
+#     up -d                                # override.yml auto-discovered
+#
+# Path A (Caddy) deployments do NOT load this file.
+#
+# What this overlay provides:
+#   * A `nginx` service publishing :80 + :443 on the VM.
+#   * TLS termination using an institutional cert bind-mounted from
+#     /root/cert on the host. The cert is renewed out-of-band by the
+#     VM owner; this stack only consumes it read-only.
+#   * Reverse proxy to Kong over the docker compose network
+#     (`http://kong:8000`) — no host loopback in the proxy hot path.
+#   * Server-block source-of-truth = the TeamBrain repo checkout at
+#     ../TeamBrain/deploy/production/nginx/conf.d/. The bind is relative
+#     so the same compose works on any box that follows the
+#     ~/supabase-stack/ + ~/TeamBrain/ sibling layout.
+#
+# What this overlay does NOT do:
+#   * No Studio gating. Studio remains accessible only via SSH tunnel
+#     to Kong's loopback bind until vouch-proxy + CILogon is layered in
+#     (ADR 0001 § "Studio admin").
+#   * No cert acquisition. Bring your own cert at /root/cert/<name>.pem
+#     + .key; update the conf file's ssl_certificate paths if the
+#     filenames differ from the pr.fabric-testbed.net defaults.
+
+services:
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: supabase-nginx
+    restart: unless-stopped
+    depends_on:
+      kong:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Server-block configs, read straight from the repo checkout on
+      # the box. Relative path resolves from ~/supabase-stack/ (where
+      # this overlay is copied) to ~/TeamBrain/deploy/production/nginx/.
+      # Edit + git pull + `docker exec supabase-nginx nginx -s reload`.
+      - ../TeamBrain/deploy/production/nginx/conf.d:/etc/nginx/conf.d:ro
+      # Institutional FABRIC SAN cert + key (UNC/InCommon-issued,
+      # renewed out-of-band). Root-owned on the host; the nginx
+      # container runs as root and can read.
+      - /root/cert:/etc/nginx/cert:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
