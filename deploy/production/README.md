@@ -296,14 +296,30 @@ cp ~/TeamBrain/deploy/production/docker-compose.override.yml ~/supabase-stack/
 cp ~/TeamBrain/deploy/production/docker-compose.nginx.yml    ~/supabase-stack/
 ```
 
-Set `COMPOSE_FILE` in `~/supabase-stack/.env` so every subsequent `docker compose` command in this directory picks up the nginx overlay implicitly — without it, plain `docker compose up -d` would silently drop nginx out of the stack:
+Set `COMPOSE_FILE` in `~/supabase-stack/.env` so every subsequent `docker compose` command in this directory picks up both overlays implicitly — without it, plain `docker compose up -d` would silently drop nginx out of the stack:
 
 ```bash
-grep -q '^COMPOSE_FILE=' ~/supabase-stack/.env \
-  || echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml' >> ~/supabase-stack/.env
+sed -i.bak \
+  -e '/^COMPOSE_FILE=/d' \
+  ~/supabase-stack/.env
+rm -f ~/supabase-stack/.env.bak
+echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml:docker-compose.override.yml' \
+  >> ~/supabase-stack/.env
 ```
 
-(`docker-compose.override.yml` is *always* auto-discovered by compose; it does not belong in `COMPOSE_FILE`. Path A deployments would instead set `COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml`.)
+**Important — `COMPOSE_FILE` disables `override.yml` auto-discovery.** Compose normally auto-loads `docker-compose.override.yml` from the working directory, but **only when `COMPOSE_FILE` is unset**. Once `COMPOSE_FILE` is set, the list is authoritative and override.yml is no longer auto-discovered. The TeamBrain env passthrough (OPENAI_API_KEY, TEAMBRAIN_GITHUB_*, etc.) lives in override.yml, so missing it from the list silently strips those vars from the functions container. Path A deployments would set `COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml:docker-compose.override.yml`.
+
+Verify the merge picked up the env block:
+
+```bash
+cd ~/supabase-stack
+docker compose config | awk '/^  functions:/,/^  [a-z][a-z_]*:/' \
+  | grep -E 'TEAMBRAIN_|EMBEDDING_|OPENAI_' | awk -F: '{print $1}' | sort -u
+# expect: lines for TEAMBRAIN_DEFAULT_PROJECT_SLUG, TEAMBRAIN_GITHUB_APP_ID,
+#         TEAMBRAIN_GITHUB_APP_PRIVATE_KEY, TEAMBRAIN_GITHUB_INSTALLATION_ID,
+#         EMBEDDING_DIMS, EMBEDDING_PROVIDER, OPENAI_API_KEY,
+#         OPENAI_EMBEDDING_MODEL
+```
 
 Bring up the full stack:
 
