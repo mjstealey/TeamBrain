@@ -52,6 +52,11 @@ services:
       # this overlay is copied) to ~/TeamBrain/deploy/production/nginx/.
       # Edit + git pull + `docker exec supabase-nginx nginx -s reload`.
       - ../TeamBrain/deploy/production/nginx/conf.d:/etc/nginx/conf.d:ro
+      # Static landing page served at /. Brief explainer + Sign-in-with-
+      # GitHub button + post-auth identity panel (fragment-parsed).
+      # Edit + git pull; nginx picks up changes immediately (no reload
+      # needed for static files — only conf.d changes require -s reload).
+      - ../TeamBrain/deploy/production/nginx/html:/usr/share/nginx/html:ro
       # Institutional FABRIC SAN cert + key (UNC/InCommon-issued,
       # renewed out-of-band). Root-owned on the host; the nginx
       # container runs as root and can read.
