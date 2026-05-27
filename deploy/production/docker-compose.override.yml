@@ -44,36 +44,37 @@ services:
     # Silicon scratch we pin linux/arm64 to avoid Rosetta emulation;
     # not relevant here.
 
-  # ---- Connection pooler: disabled by default --------------------------
+  # ---- Connection pooler: NOTE — no override here works ----------------
   #
   # The supavisor pooler ships in upstream's docker-compose.yml bound to
   # `${POSTGRES_PORT}:5432` = `0.0.0.0:5432:5432` — publicly reachable on
   # any host with an open network path. TeamBrain's pilot doesn't need
   # supavisor: PostgREST / GoTrue / Storage all reach the db container
-  # directly over the docker network; supavisor's connection-pooling
-  # value is for external SQL clients we don't yet have.
+  # directly over the docker network.
   #
-  # We tried two compose-level fixes first; neither worked on
-  # Compose v2.27.0:
-  #   1. `KONG_HTTP_PORT=127.0.0.1:8000`-style .env loopback-prefix —
-  #      blocked by POSTGRES_PORT being double-consumed (db's internal
-  #      listen port + supavisor's host bind; PG refuses non-numeric).
-  #   2. `supavisor.ports: !reset` / `!override []` here in the override —
-  #      silently ignored (compose accepts the tag, never merges the
-  #      block; behavior also reproduced for `--force-recreate
-  #      supavisor`). docker compose config --no-interpolate continued
-  #      to show the base's `${POSTGRES_PORT}:5432` entries unchanged.
+  # Compose v2.27.0 SILENTLY IGNORES every override we tried under the
+  # supavisor service key. Each of the following had no effect on the
+  # resulting container's ports (verified via `docker ps` and
+  # `docker compose config --no-interpolate`):
+  #   - `ports: !reset` with replacement loopback entries
+  #   - `ports: !reset []` (upstream caddy overlay's pattern for kong)
+  #   - `ports: !override []`
+  #   - `profiles: ["disabled"]`
+  # `--force-recreate supavisor` and full `down`+`up` cycles both kept
+  # the base's `${POSTGRES_PORT}:5432` bind. Same overrides on the kong
+  # service DO merge (verified by changing image / env behavior), so
+  # this is something supavisor-specific in compose v2.27.0's merge
+  # logic. Unidentified at session-end.
   #
-  # Setting `profiles: [disabled]` keeps the service definition but
-  # tells compose not to start it on a plain `docker compose up -d`
-  # (compose only starts services in active profiles). To re-enable
-  # temporarily: `docker compose --profile disabled up -d supavisor`.
+  # Working workaround documented in README §6 Path B: sed-delete the
+  # three supavisor `ports:` lines from `~/supabase-stack/docker-compose.yml`
+  # directly. That's a box-local edit, not a TeamBrain-repo change.
+  # supavisor still starts, just without host port bindings, and stays
+  # reachable from other containers via the docker network.
   #
-  # Nothing depends_on supavisor (it's a leaf service), so disabling it
-  # doesn't cascade. Verify with:
-  #   grep -B 4 '^      supavisor:' docker-compose.yml
-  supavisor:
-    profiles: ["disabled"]
+  # If you find the override-merge root cause, this comment block can
+  # be replaced by a proper `supavisor:` block here and the README's
+  # sed step dropped.
 
   # ---- Edge Functions: TeamBrain env passthrough --------------------------
   #

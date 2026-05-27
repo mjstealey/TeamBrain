@@ -262,7 +262,18 @@ The supabase stack comes up *without* the caddy overlay. Two changes from upstre
      -e 's|^POOLER_PROXY_PORT_TRANSACTION=6543$|POOLER_PROXY_PORT_TRANSACTION=127.0.0.1:6543|' \
      ~/supabase-stack/.env
    ```
-2. **supavisor disabled by default** via `profiles: ["disabled"]` in our override. The pooler's session-mode bind on 5432 can't be loopback-prefixed via `.env` (POSTGRES_PORT collision), and `ports: !reset` / `!override []` in the override file were both silently ignored by Compose v2.27.0 — see [the override file](docker-compose.override.yml) for the full story. Since TeamBrain doesn't need a pooler (PostgREST/GoTrue/Storage all reach `db` over the docker network), we just don't start supavisor.
+2. **supavisor's host port binding patched out of base** `~/supabase-stack/docker-compose.yml`. The pooler's session-mode bind on 5432 can't be loopback-prefixed via `.env` (POSTGRES_PORT collision with the db service), and every attempted override (`ports: !reset` / `!reset []` / `!override []` / `profiles: ["disabled"]`) was silently dropped by Compose v2.27.0 — `docker compose config --no-interpolate` kept showing the base's `${POSTGRES_PORT}:5432` regardless of override content; see [the override file](docker-compose.override.yml) for the full story. Last-resort workaround: delete the three lines directly from the base. This is a box-local edit, not a TeamBrain-repo change — re-apply if the upstream supabase docker subtree is re-cloned.
+   ```bash
+   cd ~/supabase-stack
+   # Idempotent backup the first time, sed-delete after.
+   [ -f docker-compose.yml.upstream-bak ] || cp docker-compose.yml docker-compose.yml.upstream-bak
+   sed -i '/^  supavisor:$/,/^  [a-z]/ {
+     /^    ports:$/d
+     /^      - \${POSTGRES_PORT}:5432$/d
+     /^      - \${POOLER_PROXY_PORT_TRANSACTION}:6543$/d
+   }' docker-compose.yml
+   ```
+   The patch removes only the host-port bindings. supavisor still comes up and remains reachable from other containers over the docker network (service name `supavisor`); TeamBrain doesn't actually use it at pilot scale (PostgREST/GoTrue/Storage all reach `db` directly), so no host bind is the intended state.
 
 ```bash
 cd ~/supabase-stack
