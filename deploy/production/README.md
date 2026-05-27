@@ -241,13 +241,18 @@ docker compose logs caddy --tail 50 | grep -iE 'certificate|obtained'
 External smoke:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' https://pr.fabric-testbed.net/auth/v1/health
+# Without an apikey, Kong's key-auth plugin returns 401 — that's the
+# success signal that the gateway routed the request. To reach GoTrue:
+set -a; source .env 2>/dev/null; set +a
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "apikey: $ANON_KEY" \
+  https://pr.fabric-testbed.net/auth/v1/health
 # expect: 200
 ```
 
 ### Path B — host nginx
 
-The supabase stack comes up *without* the caddy overlay; our `docker-compose.override.yml` already binds Kong to `127.0.0.1:8000`, which is exactly the upstream the host nginx will reverse-proxy to.
+The supabase stack comes up *without* the caddy overlay; our `docker-compose.override.yml` binds Kong **and** the supavisor pooler to `127.0.0.1` only (via `ports: !reset` — compose merges `ports` lists rather than replacing them, so the override has to explicitly clear the base's `${KONG_HTTP_PORT}:8000/tcp` and `${POSTGRES_PORT}:5432` entries). The host nginx reverse-proxies external 443 traffic to `127.0.0.1:8000`.
 
 ```bash
 cd ~/supabase-stack
@@ -256,14 +261,29 @@ cd ~/supabase-stack
 docker compose up -d
 docker compose ps
 # expect every service Healthy or Started. There is no caddy container.
+
+# Verify the override took effect — every host-side bind should be 127.0.0.1,
+# never 0.0.0.0. If you see `0.0.0.0:8000` or `0.0.0.0:5432`, the override's
+# `!reset` did not apply (most likely the file wasn't copied into
+# ~/supabase-stack/ or .env's KONG_HTTP_PORT/POSTGRES_PORT got loopback-prefixed
+# — POSTGRES_PORT must stay numeric or PG refuses to start).
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'kong|pooler'
 ```
 
 On-VM smoke (before fronting with nginx):
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/auth/v1/health
+# Kong enforces the `key-auth` plugin on /auth/v1/* and /rest/v1/* — an
+# unauthenticated request 401s. That's evidence the gateway is up and policy
+# is active. To actually reach GoTrue/PostgREST, send the anon key:
+set -a; source .env 2>/dev/null; set +a
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "apikey: $ANON_KEY" \
+  http://127.0.0.1:8000/auth/v1/health
 # expect: 200 — proves Kong + GoTrue are up on the loopback bind.
 ```
+
+> **PGDATA is a host bind mount, not a docker named volume.** `volumes/db/data` lives on the VM filesystem and **survives `docker compose down -v`**. If you ever need a clean re-init (after a JWT_SECRET / POSTGRES_PASSWORD rotation, for example), you must `sudo rm -rf ~/supabase-stack/volumes/db/data/*` before the next `up -d` — otherwise PG sees "Database directory appears to contain a database; Skipping initialization" and comes up using the *old* password, leaving every service unable to authenticate.
 
 Now write the nginx server block. Create a file on the host (e.g. `/etc/nginx-pr/conf.d/pr.fabric-testbed.net.conf` if you bind-mount that, or a temp file otherwise) with:
 
@@ -337,11 +357,19 @@ docker exec nginx nginx -s reload
 External smoke:
 
 ```bash
-# From off-VM:
+# From off-VM. Without an apikey expect 401 (Kong policy active); with
+# the anon key expect 200. The HTTP/2 + subject/issuer probe verifies
+# TLS termination via the institutional cert.
 curl -sSv https://pr.fabric-testbed.net/auth/v1/health 2>&1 | grep -E '^< HTTP|subject:|issuer:'
-# expect: HTTP/2 200, subject containing pr.fabric-testbed.net,
+# expect: HTTP/2 401, subject containing pr.fabric-testbed.net,
 #         issuer matching your institutional CA.
+
+# Then on-VM (anon key available there):
+ssh fabric-pr 'sudo -iu nrig-service bash -lc "set -a; source ~/supabase-stack/.env 2>/dev/null; set +a; curl -sS -o /dev/null -w \"%{http_code}\\n\" -H \"apikey: \$ANON_KEY\" https://pr.fabric-testbed.net/auth/v1/health"'
+# expect: 200
 ```
+
+> **5432 reachability across the institutional firewall.** During this deploy we confirmed that `pr.fabric-testbed.net:5432` is **NOT** blocked at the network edge. The pooler override above (loopback bind via `!reset`) is therefore load-bearing, not just defense-in-depth — without it the supavisor session pool is publicly reachable for postgres-protocol auth attempts. Re-verify after any compose/firewall change: `bash -c '</dev/tcp/pr.fabric-testbed.net/5432' && echo OPEN || echo CLOSED`.
 
 ---
 
