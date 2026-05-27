@@ -6,12 +6,14 @@ The scratch/dev stack on a developer laptop is **not** the deploy unit. The four
 
 | What | Source | Lives where on the VM |
 |---|---|---|
-| Supabase docker-compose, init scripts, image pins | Upstream `supabase/supabase/docker/` (cloned fresh) | `/opt/supabase-stack/` |
-| TeamBrain customizations (override, env additions, runbook) | This directory | Copied/merged into `/opt/supabase-stack/` |
-| Secrets (`.env`), TLS certs, named-volume data | Generated/issued on the VM | `/opt/supabase-stack/.env`, docker named volumes |
-| Edge-function source (TS, deno.json) | TeamBrain repo `edge-functions/` | `/opt/supabase-stack/volumes/functions/<name>/` (rsync'd) |
+| Supabase docker-compose, init scripts, image pins | Upstream `supabase/supabase/docker/` (cloned fresh) | `~nrig-service/supabase-stack/` |
+| TeamBrain customizations (override, env additions, runbook) | This directory | Copied/merged into `~nrig-service/supabase-stack/` |
+| Secrets (`.env`), TLS certs, named-volume data | Generated/issued on the VM | `~nrig-service/supabase-stack/.env`, docker named volumes |
+| Edge-function source (TS, deno.json) | TeamBrain repo `edge-functions/` | `~nrig-service/supabase-stack/volumes/functions/<name>/` |
 
 The procedure below assembles these in order. Each step has an explicit verification command — do not move past a step until its verification passes.
+
+**Account convention:** the entire stack runs as the `nrig-service` service account on `pr.fabric-testbed.net`. Every subsequent shell command that uses `~/` assumes you're shelled in as that user — typically `ssh <vm>` (as a sudoer like `stealey`) followed by `sudo -iu nrig-service`. If you're deploying to a different VM under a different service account, substitute that home throughout.
 
 ---
 
@@ -49,7 +51,7 @@ Before SSHing to the VM, confirm:
 - [ ] **Host nginx container running** (*Path B only*). Already binds `:80` and `:443` and is in the `docker` group's view: `docker ps | grep nginx`. Confirm how the container's `/etc/nginx/conf.d/` is sourced (host bind mount vs. baked into the image) — that determines how you'll add the TeamBrain server block in Step 6b.
 - [ ] **GitHub OAuth App (production).** Registered under `fabric-testbed` org with `Authorization callback URL = https://<hostname>/auth/v1/callback`. App name `TeamBrain (production)`. Client ID + secret captured. Distinct from the scratch OAuth App. The callback URL is the same for both paths — it resolves via whichever reverse-proxy is fronting `:443`. See `docs/deployment.md` § "GitHub OAuth App".
 - [ ] **GitHub Sync App (production).** Registered as `TeamBrain Sync — fabric-testbed` (no `(dev)` suffix). Permissions: Repository → Metadata: Read; Organization → Members: Read. Webhook disabled. Installed on the org with the pilot repo selected. App ID + installation ID + PKCS#8-converted private key captured. Distinct from the scratch Sync App per `docs/deployment.md` § "Scratch vs production: register two Apps".
-- [ ] **OpenAI API key** (production-billed; not a personal account) **or** decision to run the ollama embedding variant.
+- [ ] **OpenAI API key** **or** decision to run the ollama embedding variant. Production-billed key (separate from any personal account) is preferred for cost attribution and key-rotation isolation, but a personal key is acceptable for the pilot — cost is ~$0.02 per 1M tokens for `text-embedding-3-small`, effectively free at pilot scale. Plan to rotate to a project-scoped key before opening the pilot beyond the initial reviewer set.
 - [ ] **DNS for the public hostname** has propagated. (You can `dig` from a non-VM host to verify before deploying.)
 
 If any precondition fails, fix it before proceeding — production install is not the place to debug DNS.
@@ -84,12 +86,16 @@ docker compose version     # expect v2.20+
 
 ## 2. Clone upstream Supabase docker subtree
 
+**Skip if already done** — `pr.fabric-testbed.net` already has `~/supabase-stack/` populated and the pinned SHA recorded in `~/supabase-stack-sha.txt`. Verify with `cat ~/supabase-stack-sha.txt`; if it shows a `supabase:` line, the subtree is in place and you can proceed to §3.
+
+For a fresh deploy:
+
 ```bash
 git clone --depth=1 https://github.com/supabase/supabase /tmp/sb
-mv /tmp/sb/docker /opt/supabase-stack
+mv /tmp/sb/docker ~/supabase-stack
 rm -rf /tmp/sb
 
-cd /opt/supabase-stack
+cd ~/supabase-stack
 ls
 # expect: docker-compose.yml, docker-compose.caddy.yml, .env.example,
 #         volumes/, dev/, utils/, ...
@@ -101,18 +107,24 @@ Note the commit hash so this deploy is reproducible:
 git -C /tmp/sb rev-parse HEAD 2>/dev/null || \
   curl -s https://api.github.com/repos/supabase/supabase/commits/master | \
   python3 -c 'import sys,json; print(json.load(sys.stdin)["sha"])'
-# Save this somewhere — it's the upstream pin for this install.
+# Save this to ~/supabase-stack-sha.txt — it's the upstream pin for this install.
 ```
 
 ---
 
 ## 3. Clone TeamBrain
 
+**Skip if already done** — `pr.fabric-testbed.net` already has `~/TeamBrain` checked out. If so, `git -C ~/TeamBrain pull --ff-only origin main` to update, then proceed to §4.
+
+For a fresh deploy:
+
 ```bash
-git clone https://github.com/mjstealey/TeamBrain /opt/teambrain
-cd /opt/teambrain
+git clone https://github.com/mjstealey/TeamBrain ~/TeamBrain
+cd ~/TeamBrain
 git log -1 --oneline    # capture the TeamBrain commit hash too
 ```
+
+**Treat the VM's TeamBrain checkout as read-only.** Never edit edge-function source or migrations on the VM directly — that creates drift between what's running and what main says. The flow is always: edit on your laptop → push to `origin/main` → `git pull` on the VM → re-sync into the running stack (see §8).
 
 ---
 
@@ -120,11 +132,11 @@ git log -1 --oneline    # capture the TeamBrain commit hash too
 
 ```bash
 # Production override (TeamBrain env passthrough + Postgres 17 + kong loopback bind):
-cp /opt/teambrain/deploy/production/docker-compose.override.yml \
-   /opt/supabase-stack/docker-compose.override.yml
+cp ~/TeamBrain/deploy/production/docker-compose.override.yml \
+   ~/supabase-stack/docker-compose.override.yml
 
 # Seed .env from upstream, then mint fresh secrets:
-cd /opt/supabase-stack
+cd ~/supabase-stack
 cp .env.example .env
 bash utils/generate-keys.sh
 ```
@@ -143,7 +155,7 @@ grep -E '^(JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY)=' .env | \
 
 ## 5. Configure `.env` (must-edit values)
 
-Open `/opt/supabase-stack/.env` and set the values documented in `/opt/teambrain/deploy/production/env.template`. The short list:
+Open `~/supabase-stack/.env` and set the values documented in `~/TeamBrain/deploy/production/env.template`. The short list:
 
 | Key | Value | Source | Path |
 |---|---|---|---|
@@ -154,7 +166,7 @@ Open `/opt/supabase-stack/.env` and set the values documented in `/opt/teambrain
 | `CERTBOT_EMAIL` | a monitored email | Let's Encrypt registration | A only |
 | `GITHUB_CLIENT_ID` | from the production OAuth App | Prerequisites | A + B |
 | `GITHUB_SECRET` | from the production OAuth App | Prerequisites | A + B |
-| `OPENAI_API_KEY` | production-billed OpenAI key | Prerequisites | A + B |
+| `OPENAI_API_KEY` | OpenAI key (production-billed preferred; personal acceptable at pilot scale) | Prerequisites | A + B |
 
 Then **append** the TeamBrain Phase 3 block (it is not in upstream's `.env.example`):
 
@@ -176,7 +188,7 @@ awk 'BEGIN{ORS="\\n"} {print}' teambrain-sync.pkcs8.pem
 Verify (mask values):
 
 ```bash
-grep -E '^(PROXY_DOMAIN|CERTBOT_EMAIL|GITHUB_CLIENT_ID|GITHUB_SECRET|OPENAI_API_KEY|TEAMBRAIN_GITHUB_)' /opt/supabase-stack/.env | \
+grep -E '^(PROXY_DOMAIN|CERTBOT_EMAIL|GITHUB_CLIENT_ID|GITHUB_SECRET|OPENAI_API_KEY|TEAMBRAIN_GITHUB_)' ~/supabase-stack/.env | \
   awk -F= '{printf "%s = <%d chars>\n", $1, length($0)-length($1)-1}'
 # expect 7+ lines, none with 0 chars
 ```
@@ -188,7 +200,7 @@ grep -E '^(PROXY_DOMAIN|CERTBOT_EMAIL|GITHUB_CLIENT_ID|GITHUB_SECRET|OPENAI_API_
 ### Path A — Caddy
 
 ```bash
-cd /opt/supabase-stack
+cd ~/supabase-stack
 
 # `-f docker-compose.yml -f docker-compose.caddy.yml` loads the caddy
 # overlay; `docker-compose.override.yml` auto-merges last and wins.
@@ -221,7 +233,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://pr.fabric-testbed.net/auth/v1/
 The supabase stack comes up *without* the caddy overlay; our `docker-compose.override.yml` already binds Kong to `127.0.0.1:8000`, which is exactly the upstream the host nginx will reverse-proxy to.
 
 ```bash
-cd /opt/supabase-stack
+cd ~/supabase-stack
 
 # No caddy overlay. docker-compose.override.yml auto-merges last and wins.
 docker compose up -d
@@ -338,7 +350,7 @@ Kong's `/` route forwards to Studio internally, so the tunnel to Kong gives you 
 
 ### Both paths — apply migrations
 
-In **SQL Editor → New query**, paste each migration's full contents from `/opt/teambrain/migrations/` and click **Run**. Apply in this order:
+In **SQL Editor → New query**, paste each migration's full contents from `~/TeamBrain/migrations/` and click **Run**. Apply in this order:
 
 ```
 0001_init.sql
@@ -355,26 +367,44 @@ After each, run the verification queries from `docs/phase-1-checklist.md` § B/C
 
 ## 8. Deploy the edge functions
 
-From your **local laptop**, rsync the function source to the VM. (Doing this from the VM's TeamBrain checkout works too, but the laptop is the authoritative source — rsync from there avoids the "I edited on the VM and the repo never saw it" drift trap.)
+The VM's `~/TeamBrain` checkout (per §3) is the source. Pull-then-copy keeps the running stack in lockstep with `main` — and because §3 mandates the VM checkout is read-only, the laptop checkout and the VM checkout are always identical at a given SHA.
+
+On the VM (as `nrig-service`):
 
 ```bash
-# From your laptop:
-rsync -av --delete \
-  ~/GitHub/mjstealey/TeamBrain/edge-functions/teambrain-mcp/ \
-  root@pr.fabric-testbed.net:/opt/supabase-stack/volumes/functions/teambrain-mcp/
+# 1. Sync the VM's TeamBrain checkout to latest main.
+git -C ~/TeamBrain pull --ff-only origin main
+git -C ~/TeamBrain log -1 --oneline    # record the SHA being deployed
 
-rsync -av --delete \
-  ~/GitHub/mjstealey/TeamBrain/edge-functions/teambrain-membership-sync/ \
-  root@pr.fabric-testbed.net:/opt/supabase-stack/volumes/functions/teambrain-membership-sync/
-```
+# 2. Copy each edge function into the supabase-stack volumes/functions/ tree.
+#    rsync --delete keeps the destination tree exactly matching source
+#    (removes files that have been deleted upstream).
+for fn in teambrain-mcp teambrain-membership-sync; do
+  rsync -av --delete \
+    ~/TeamBrain/edge-functions/"$fn"/ \
+    ~/supabase-stack/volumes/functions/"$fn"/
+done
 
-Then on the VM, recreate the functions container so it sees the new dirs:
-
-```bash
-cd /opt/supabase-stack
+# 3. Recreate the functions container so it sees the new dirs.
+cd ~/supabase-stack
 docker compose up -d --force-recreate functions
 docker compose logs functions --tail 30
 ```
+
+If you'd rather push *from your laptop* (e.g., to deploy an in-flight branch without pushing to `origin` first), the alternative is rsync-with-sudo via the SSH alias:
+
+```bash
+# From your laptop. Substitutes for steps 1–2 above.
+for fn in teambrain-mcp teambrain-membership-sync; do
+  rsync -av --delete \
+    --rsync-path='sudo -u nrig-service rsync' \
+    ~/GitHub/mjstealey/TeamBrain/edge-functions/"$fn"/ \
+    fabric-pr:/home/nrig-service/supabase-stack/volumes/functions/"$fn"/
+done
+# Then on the VM: cd ~/supabase-stack && docker compose up -d --force-recreate functions
+```
+
+(Absolute path on the right side of the `:` is required — `~` would expand to the SSH-login user's home, not `nrig-service`'s.)
 
 Verify the functions container picked up the TeamBrain env vars:
 
@@ -392,7 +422,7 @@ docker compose exec functions env | grep -E '^(EMBEDDING_|OPENAI_|TEAMBRAIN_)' |
 ## 9. MCP smoke test (Phase 2)
 
 ```bash
-ANON_KEY=$(grep '^ANON_KEY=' /opt/supabase-stack/.env | cut -d= -f2)
+ANON_KEY=$(grep '^ANON_KEY=' ~/supabase-stack/.env | cut -d= -f2)
 
 curl -sS -X POST \
   -H "Authorization: Bearer $ANON_KEY" \
@@ -437,7 +467,7 @@ where repo_slug = 'fabric-testbed/fabric-core-api';
 ## 11. Phase 3 smoke test (on-demand sync)
 
 ```bash
-SERVICE_KEY=$(grep '^SERVICE_ROLE_KEY=' /opt/supabase-stack/.env | cut -d= -f2)
+SERVICE_KEY=$(grep '^SERVICE_ROLE_KEY=' ~/supabase-stack/.env | cut -d= -f2)
 
 curl -sS -X POST \
   -H "Authorization: Bearer $SERVICE_KEY" \
@@ -553,11 +583,11 @@ That completes Phase 3 sign-off.
 A nightly `pg_dump` from inside the `db` container, encrypted, copied to FABRIC NFS or an S3-compatible bucket:
 
 ```bash
-# Example backup script (place in /opt/backups/backup-supabase.sh, run via systemd timer):
+# Example backup script (place in ~/backups/backup-supabase.sh, run via systemd timer):
 #!/bin/bash
 set -euo pipefail
-DEST=/opt/backups/$(date +%Y-%m-%d).sql.gz
-docker compose -f /opt/supabase-stack/docker-compose.yml exec -T db \
+DEST=~/backups/$(date +%Y-%m-%d).sql.gz
+docker compose -f ~/supabase-stack/docker-compose.yml exec -T db \
   pg_dump -U postgres -d postgres | gzip > "$DEST"
 # Then rsync to your offsite location.
 ```
@@ -595,8 +625,8 @@ Soft-delete means every recovery is an UPDATE — no row-recovery procedure to d
 
 1. In the production App's settings → Private keys → **Generate a private key**. Don't revoke the old key yet.
 2. Convert to PKCS#8 (`openssl pkcs8 -topk8 ...`).
-3. Update `TEAMBRAIN_GITHUB_APP_PRIVATE_KEY` in `/opt/supabase-stack/.env`.
-4. `cd /opt/supabase-stack && docker compose up -d --force-recreate functions`.
+3. Update `TEAMBRAIN_GITHUB_APP_PRIVATE_KEY` in `~/supabase-stack/.env`.
+4. `cd ~/supabase-stack && docker compose up -d --force-recreate functions`.
 5. Trigger an on-demand `/sync` — verify a 200 with a real diff/report.
 6. Revoke the old key from the App settings.
 
@@ -615,7 +645,7 @@ If the new key fails, the old key still works during step 4 since key revocation
 
 ### (Path B) nginx returns 502 Bad Gateway
 
-- Kong is not actually listening on `127.0.0.1:8000`. Verify from the VM: `ss -tlnp | grep :8000` — expect a docker-proxy LISTEN line. If absent, `docker compose -f docker-compose.yml up -d` from `/opt/supabase-stack` and re-check. The loopback bind is supplied by our `docker-compose.override.yml`.
+- Kong is not actually listening on `127.0.0.1:8000`. Verify from the VM: `ss -tlnp | grep :8000` — expect a docker-proxy LISTEN line. If absent, `docker compose -f docker-compose.yml up -d` from `~/supabase-stack` and re-check. The loopback bind is supplied by our `docker-compose.override.yml`.
 - SELinux denying nginx → loopback. On RHEL/Rocky, the nginx container's host-side socket access to `127.0.0.1:8000` may be blocked. Check `getenforce` and `ausearch -m AVC -ts recent | grep nginx`. If that's the cause, the policy fix is environment-specific — coordinate with the VM owner.
 
 ### (Path B) Browser shows TLS error / wrong certificate
@@ -651,7 +681,7 @@ If the new key fails, the old key still works during step 4 since key revocation
 
 ### "could not find an appropriate entrypoint" worker boot error
 
-- The function's source isn't actually present at `/opt/supabase-stack/volumes/functions/<name>/`. Re-rsync from your laptop and `docker compose restart functions`.
+- The function's source isn't actually present at `~/supabase-stack/volumes/functions/<name>/`. Re-rsync from your laptop and `docker compose restart functions`.
 
 ---
 
