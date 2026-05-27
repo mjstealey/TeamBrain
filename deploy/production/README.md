@@ -149,6 +149,14 @@ bash utils/generate-keys.sh --update-env >/dev/null 2>&1
 
 > **Note — `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` stay blank.** Upstream's `.env.example` ships these two keys empty for the newer publishable/secret-key API system. `generate-keys.sh` doesn't populate them, and the load-bearing services at boot (Kong, GoTrue, PostgREST) only consume the classic `ANON_KEY` / `SERVICE_ROLE_KEY`. Leaving them blank is correct.
 
+> **Quote the two Studio dashboard-label defaults.** Upstream ships `STUDIO_DEFAULT_ORGANIZATION=Default Organization` and `STUDIO_DEFAULT_PROJECT=Default Project` — values contain spaces with no quotes. Docker compose's env parser is fine with that, but any tool that `source`s `.env` (smoke-test scripts, deploy automation) hits `Organization: command not found` / `Project: command not found` because bash parses each as `KEY=Word` followed by a stray command word. One-liner fix:
+> ```bash
+> sed -i \
+>   -e 's|^STUDIO_DEFAULT_ORGANIZATION=Default Organization$|STUDIO_DEFAULT_ORGANIZATION="Default Organization"|' \
+>   -e 's|^STUDIO_DEFAULT_PROJECT=Default Project$|STUDIO_DEFAULT_PROJECT="Default Project"|' \
+>   ~/supabase-stack/.env
+> ```
+
 Verify the secret block exists and is non-default:
 
 ```bash
