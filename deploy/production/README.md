@@ -135,13 +135,19 @@ git log -1 --oneline    # capture the TeamBrain commit hash too
 cp ~/TeamBrain/deploy/production/docker-compose.override.yml \
    ~/supabase-stack/docker-compose.override.yml
 
-# Seed .env from upstream, then mint fresh secrets:
+# Seed .env from upstream, then mint fresh secrets. `--update-env`
+# rewrites `.env` in place; the `>/dev/null` redirect is **load-bearing**:
+# without it the script echoes every freshly-minted secret to stdout,
+# which then ends up in shell history, tmux scrollback, ssh-via-Claude
+# transcripts, etc. Don't strip the redirect.
 cd ~/supabase-stack
 cp .env.example .env
-bash utils/generate-keys.sh
+bash utils/generate-keys.sh --update-env >/dev/null 2>&1
 ```
 
-`generate-keys.sh` overwrites placeholder `POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `DASHBOARD_PASSWORD`, `SECRET_KEY_BASE`, `VAULT_ENC_KEY`, `PG_META_CRYPTO_KEY`, and a few others with cryptographically random values. **Save the generated `DASHBOARD_PASSWORD` to your password manager immediately** — you'll need it to access Studio.
+`generate-keys.sh` overwrites placeholder `POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`, `DASHBOARD_PASSWORD`, `SECRET_KEY_BASE`, `VAULT_ENC_KEY`, `PG_META_CRYPTO_KEY`, and a few others with cryptographically random values. **Save the generated `DASHBOARD_PASSWORD` to your password manager immediately** — you'll need it to access Studio.
+
+> **Note — `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` stay blank.** Upstream's `.env.example` ships these two keys empty for the newer publishable/secret-key API system. `generate-keys.sh` doesn't populate them, and the load-bearing services at boot (Kong, GoTrue, PostgREST) only consume the classic `ANON_KEY` / `SERVICE_ROLE_KEY`. Leaving them blank is correct.
 
 Verify the secret block exists and is non-default:
 
@@ -164,9 +170,20 @@ Open `~/supabase-stack/.env` and set the values documented in `~/TeamBrain/deplo
 | `API_EXTERNAL_URL` | `https://pr.fabric-testbed.net` | derived | A + B |
 | `SITE_URL` | `https://pr.fabric-testbed.net` | derived | A + B |
 | `CERTBOT_EMAIL` | a monitored email | Let's Encrypt registration | A only |
+| `GITHUB_ENABLED` | `true` | required to switch GoTrue on | A + B |
 | `GITHUB_CLIENT_ID` | from the production OAuth App | Prerequisites | A + B |
 | `GITHUB_SECRET` | from the production OAuth App | Prerequisites | A + B |
 | `OPENAI_API_KEY` | OpenAI key (production-billed preferred; personal acceptable at pilot scale) | Prerequisites | A + B |
+
+> **Heads-up — the GitHub OAuth block ships commented out.** Upstream's `.env.example` has `GITHUB_ENABLED=false`, `GITHUB_CLIENT_ID=`, `GITHUB_SECRET=` all prefixed with `# `. After filling the values, you also have to **uncomment** the three lines and flip `GITHUB_ENABLED` to `true` — otherwise GoTrue starts without the provider and the OAuth round-trip 404s. An idempotent one-shot:
+>
+> ```bash
+> sed -i \
+>   -e 's/^[[:space:]]*#[[:space:]]*GITHUB_ENABLED=.*/GITHUB_ENABLED=true/' \
+>   -e 's/^[[:space:]]*#[[:space:]]*GITHUB_CLIENT_ID=/GITHUB_CLIENT_ID=/' \
+>   -e 's/^[[:space:]]*#[[:space:]]*GITHUB_SECRET=/GITHUB_SECRET=/' \
+>   ~/supabase-stack/.env
+> ```
 
 Then **append** the TeamBrain Phase 3 block (it is not in upstream's `.env.example`):
 
