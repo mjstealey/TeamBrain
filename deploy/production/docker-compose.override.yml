@@ -44,39 +44,36 @@ services:
     # Silicon scratch we pin linux/arm64 to avoid Rosetta emulation;
     # not relevant here.
 
-  # ---- API gateway: loopback bind --------------------------------------
+  # ---- Connection pooler: disabled by default --------------------------
   #
-  # Compose merges `ports` lists rather than replacing them, so without
-  # !reset our `127.0.0.1:8000:8000/tcp` entry would be ADDED to the
-  # base's `${KONG_HTTP_PORT}:8000/tcp` (= `0.0.0.0:8000:8000/tcp` from
-  # upstream's .env.example) and compose picks the public bind. We
-  # explicitly clear the base list and re-state both binds loopback-only.
-  # Path-agnostic: Path A (caddy overlay) sets ports: !reset [] before
-  # this override merges in, so the net effect is the same loopback bind
-  # there too. Caddy reaches kong via the docker network (service name),
-  # not the host port, so the lack of a public bind doesn't break it.
-  kong:
-    ports: !reset
-      - "127.0.0.1:8000:8000/tcp"
-      - "127.0.0.1:8443:8443/tcp"
-
-  # ---- Connection pooler: loopback bind --------------------------------
+  # The supavisor pooler ships in upstream's docker-compose.yml bound to
+  # `${POSTGRES_PORT}:5432` = `0.0.0.0:5432:5432` — publicly reachable on
+  # any host with an open network path. TeamBrain's pilot doesn't need
+  # supavisor: PostgREST / GoTrue / Storage all reach the db container
+  # directly over the docker network; supavisor's connection-pooling
+  # value is for external SQL clients we don't yet have.
   #
-  # `${POSTGRES_PORT}` in the base resolves to `5432` from .env.example
-  # and is consumed by TWO services:
-  #   (a) the db container — as Postgres's internal listen port (must
-  #       be numeric; `127.0.0.1:5432` makes PG refuse to start), and
-  #   (b) the supavisor container — as the host-side bind for
-  #       session-mode pooling on 5432.
-  # The double-binding means we can't loopback-prefix POSTGRES_PORT in
-  # .env without breaking PG. Instead we leave POSTGRES_PORT=5432 and
-  # !reset the supavisor port list here. Note: service key in the base
-  # compose is `supavisor` (the container_name is `supabase-pooler`,
-  # which is what shows up in `docker ps`).
+  # We tried two compose-level fixes first; neither worked on
+  # Compose v2.27.0:
+  #   1. `KONG_HTTP_PORT=127.0.0.1:8000`-style .env loopback-prefix —
+  #      blocked by POSTGRES_PORT being double-consumed (db's internal
+  #      listen port + supavisor's host bind; PG refuses non-numeric).
+  #   2. `supavisor.ports: !reset` / `!override []` here in the override —
+  #      silently ignored (compose accepts the tag, never merges the
+  #      block; behavior also reproduced for `--force-recreate
+  #      supavisor`). docker compose config --no-interpolate continued
+  #      to show the base's `${POSTGRES_PORT}:5432` entries unchanged.
+  #
+  # Setting `profiles: [disabled]` keeps the service definition but
+  # tells compose not to start it on a plain `docker compose up -d`
+  # (compose only starts services in active profiles). To re-enable
+  # temporarily: `docker compose --profile disabled up -d supavisor`.
+  #
+  # Nothing depends_on supavisor (it's a leaf service), so disabling it
+  # doesn't cascade. Verify with:
+  #   grep -B 4 '^      supavisor:' docker-compose.yml
   supavisor:
-    ports: !reset
-      - "127.0.0.1:5432:5432/tcp"
-      - "127.0.0.1:6543:6543/tcp"
+    profiles: ["disabled"]
 
   # ---- Edge Functions: TeamBrain env passthrough --------------------------
   #

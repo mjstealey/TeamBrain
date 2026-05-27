@@ -252,7 +252,17 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 
 ### Path B — host nginx
 
-The supabase stack comes up *without* the caddy overlay; our `docker-compose.override.yml` binds Kong **and** the supavisor pooler to `127.0.0.1` only (via `ports: !reset` — compose merges `ports` lists rather than replacing them, so the override has to explicitly clear the base's `${KONG_HTTP_PORT}:8000/tcp` and `${POSTGRES_PORT}:5432` entries). The host nginx reverse-proxies external 443 traffic to `127.0.0.1:8000`.
+The supabase stack comes up *without* the caddy overlay. Two changes from upstream defaults keep every host-side port off `0.0.0.0`:
+
+1. **`.env` loopback-prefixes for host-bound ports.** Upstream's `.env.example` sets `KONG_HTTP_PORT=8000`, `KONG_HTTPS_PORT=8443`, `POOLER_PROXY_PORT_TRANSACTION=6543`. For Path B these need to be prefixed with `127.0.0.1:` so the base compose's `${KONG_HTTP_PORT}:8000/tcp` expression resolves to a loopback bind. **Do not prefix `POSTGRES_PORT`** — it's read by the db container as Postgres's internal listen port and must stay numeric (`5432`), or PG refuses to start with `FATAL: invalid value for parameter "port"`.
+   ```bash
+   sed -i \
+     -e 's|^KONG_HTTP_PORT=8000$|KONG_HTTP_PORT=127.0.0.1:8000|' \
+     -e 's|^KONG_HTTPS_PORT=8443$|KONG_HTTPS_PORT=127.0.0.1:8443|' \
+     -e 's|^POOLER_PROXY_PORT_TRANSACTION=6543$|POOLER_PROXY_PORT_TRANSACTION=127.0.0.1:6543|' \
+     ~/supabase-stack/.env
+   ```
+2. **supavisor disabled by default** via `profiles: ["disabled"]` in our override. The pooler's session-mode bind on 5432 can't be loopback-prefixed via `.env` (POSTGRES_PORT collision), and `ports: !reset` / `!override []` in the override file were both silently ignored by Compose v2.27.0 — see [the override file](docker-compose.override.yml) for the full story. Since TeamBrain doesn't need a pooler (PostgREST/GoTrue/Storage all reach `db` over the docker network), we just don't start supavisor.
 
 ```bash
 cd ~/supabase-stack
@@ -260,14 +270,12 @@ cd ~/supabase-stack
 # No caddy overlay. docker-compose.override.yml auto-merges last and wins.
 docker compose up -d
 docker compose ps
-# expect every service Healthy or Started. There is no caddy container.
+# expect 12 services Healthy or Started (no supavisor, no caddy).
 
-# Verify the override took effect — every host-side bind should be 127.0.0.1,
-# never 0.0.0.0. If you see `0.0.0.0:8000` or `0.0.0.0:5432`, the override's
-# `!reset` did not apply (most likely the file wasn't copied into
-# ~/supabase-stack/ or .env's KONG_HTTP_PORT/POSTGRES_PORT got loopback-prefixed
-# — POSTGRES_PORT must stay numeric or PG refuses to start).
-docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'kong|pooler'
+# Verify the loopback binds — kong on 127.0.0.1 only, no 0.0.0.0 anywhere,
+# and no supabase-pooler at all:
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'kong|pooler|0\.0\.0\.0'
+# expect: only the kong line, both ports prefixed 127.0.0.1.
 ```
 
 On-VM smoke (before fronting with nginx):
