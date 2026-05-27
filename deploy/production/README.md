@@ -486,11 +486,16 @@ curl -sS -X POST \
   -H "Authorization: Bearer $ANON_KEY" \
   -H "apikey: $ANON_KEY" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp
-# expect: a JSON-RPC response listing six tools (ping, capture_project_thought,
-# search_project_thoughts, list_recent_project_thoughts, mark_stale, promote_to_docs).
+# expect: an SSE `event: message` / `data: { ... }` response whose
+# data payload is a JSON-RPC envelope listing six tools (ping,
+# capture_project_thought, search_project_thoughts,
+# list_recent_project_thoughts, mark_stale, promote_to_docs).
 ```
+
+The `Accept: application/json, text/event-stream` header is mandated by the MCP HTTP transport spec — omitting it returns `Not Acceptable: Client must accept both application/json and text/event-stream`. The response comes back as a single SSE message (one `event: message` / `data: ...` block followed by EOF) rather than plain JSON.
 
 The MCP function rejects requests authenticated only by the anon key for any tool that touches RLS-scoped data — that's expected. The `tools/list` method is auth-light.
 
@@ -498,27 +503,28 @@ For an end-to-end RLS smoke test, log in once via the web (sign in with GitHub a
 
 ---
 
-## 10. Apply Phase 3 migrations + seed
+## 10. Set the project's GitHub team slug
 
-In Studio SQL Editor, apply:
+> **Note.** Phase 3 migrations (`0007_projects_github_teams.sql`, `0008_project_members_soft_delete.sql`, `0009_sync_runs.sql`, `0010_pg_cron_membership_sync.sql`) and `seed.sql` are part of the consolidated §7 batch (`migrations/0001`-`migrations/0010`). If you applied §7 in order they are already in place — no separate Phase 3 application step is needed.
 
-```
-seed.sql                                # creates the projects row and seeds
-                                        # the initial admin (mjstealey) — keep
-                                        # this so the sync has something to
-                                        # reconcile against.
-0007_projects_github_teams.sql
-0008_project_members_soft_delete.sql
-0009_sync_runs.sql
-```
+The remaining one-time configuration step is to tell the sync function which GitHub team membership should imply the `admin` role. Apply against the running stack as `supabase_admin`:
 
-Then populate the team slug:
-
-```sql
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres <<'SQL'
 update public.projects
 set github_team_slugs = array['systemservicesteam']
 where repo_slug = 'fabric-testbed/fabric-core-api';
+SQL
 ```
+
+Or paste the inner `update` into Studio SQL Editor (over the SSH tunnel per §7) if you prefer a UI. Verify:
+
+```sql
+select repo_slug, github_team_slugs from public.projects;
+-- expect: ('fabric-testbed/fabric-core-api', '{systemservicesteam}')
+```
+
+If `github_team_slugs` is left empty (`{}`), the sync function falls back to the broadest `affiliation=all` collaborator query — every repo collaborator becomes `contributor` and nobody gets `admin` automatically. That is rarely what you want.
 
 ---
 
