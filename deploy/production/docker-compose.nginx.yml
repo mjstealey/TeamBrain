@@ -46,12 +46,25 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Limit envsubst to ANON_KEY only — without this filter, envsubst
+      # would also clobber every $remote_addr / $host / $proxy_set_header
+      # value referenced in the conf template (it sees them as undefined
+      # env vars and substitutes empty string).
+      NGINX_ENVSUBST_FILTER: '^ANON_KEY$$'
+      ANON_KEY:              ${ANON_KEY}
     volumes:
-      # Server-block configs, read straight from the repo checkout on
-      # the box. Relative path resolves from ~/supabase-stack/ (where
-      # this overlay is copied) to ~/TeamBrain/deploy/production/nginx/.
-      # Edit + git pull + `docker exec supabase-nginx nginx -s reload`.
-      - ../TeamBrain/deploy/production/nginx/conf.d:/etc/nginx/conf.d:ro
+      # nginx-alpine's /docker-entrypoint.d/20-envsubst-on-templates.sh
+      # processes *.template files here at container startup, runs
+      # envsubst (filtered to ANON_KEY only — see NGINX_ENVSUBST_FILTER
+      # above), and writes the rendered configs to /etc/nginx/conf.d/.
+      # That's why we mount templates instead of conf.d.
+      #
+      # Edit workflow: git pull on the box → `docker compose up -d
+      # --force-recreate nginx`. Plain `nginx -s reload` won't pick up
+      # template edits (no envsubst re-run). HTML edits in nginx/html
+      # below are reload-safe — no preprocessing happens there.
+      - ../TeamBrain/deploy/production/nginx/templates:/etc/nginx/templates:ro
       # Static landing page served at /. Brief explainer + Sign-in-with-
       # GitHub button + post-auth identity panel (fragment-parsed).
       # Edit + git pull; nginx picks up changes immediately (no reload

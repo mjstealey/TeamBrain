@@ -95,6 +95,14 @@ services:
       GOTRUE_EXTERNAL_GITHUB_CLIENT_ID:    ${GITHUB_CLIENT_ID}
       GOTRUE_EXTERNAL_GITHUB_SECRET:       ${GITHUB_SECRET}
       GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
+      # Access-token lifetime. Default upstream is 3600s (1 hour), which
+      # forces pilot developers to re-mint a JWT for every Claude Code /
+      # Cursor MCP session. Bumped to 24h here as a deliberate pilot
+      # tradeoff: longer-lived token vs. less friction. The refresh-token
+      # flow (landing-page Renew button) extends a session indefinitely
+      # within the JWT_EXP window without forcing a fresh GitHub
+      # round-trip. Re-evaluate when external collaborators are added.
+      GOTRUE_JWT_EXP: "86400"
 
   # ---- Edge Functions: TeamBrain env passthrough --------------------------
   #

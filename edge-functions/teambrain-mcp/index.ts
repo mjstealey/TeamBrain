@@ -348,8 +348,11 @@ app.post('*', async (c) => {
         .describe('Restrict to specific scopes. Default: all three (RLS still filters).'),
       limit: z.number().int().min(1).max(50).default(10)
         .describe('Max results (planner caps to limit).'),
-      threshold: z.number().min(0).max(1).default(0.5)
-        .describe('Minimum cosine similarity (0–1). Lower = looser match.'),
+      threshold: z.number().min(0).max(1).default(0.3)
+        .describe('Minimum cosine similarity (0–1). Lower = looser match. ' +
+                  'Default tuned for openai:text-embedding-3-small, whose ' +
+                  'relevant matches cluster in 0.4–0.6; older ada-002 typically ' +
+                  'wanted 0.7+. Re-tune if the embedding model changes.'),
       cross_project: z.boolean().default(false)
         .describe('If true, ignore project_slug and search every accessible thought.'),
     },

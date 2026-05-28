@@ -196,10 +196,21 @@
     <code>systemservicesteam</code> GitHub team) or <code>contributor</code>
     (any other repo collaborator).
   </p>
+  <p style="margin:1rem 0 0; font-size: 0.92rem">
+    <span style="color: var(--color-grey)">Access token expires:</span>
+    <span class="mono" id="jwt-expiry">—</span>
+    <button type="button" class="btn btn-secondary" id="renew-jwt"
+            style="margin-left:0.75rem; padding:0.35rem 0.75rem; font-size:0.88rem">
+      Renew
+    </button>
+    <span id="renew-status" style="margin-left:0.75rem; font-size: 0.85rem"></span>
+  </p>
+
   <details>
-    <summary>Show access token (for terminal / MCP-client setup)</summary>
+    <summary>Show access token (raw JWT, for ad-hoc curl)</summary>
     <p style="margin:0.75rem 0 0.5rem; color: var(--color-grey); font-size: 0.88rem">
-      Bearer JWT, expires ~1&nbsp;hour from sign-in. Use as <code>Authorization: Bearer&nbsp;…</code>.
+      Use as <code>Authorization: Bearer&nbsp;…</code>. Refresh via the Renew button
+      above (uses the refresh_token, no GitHub round-trip).
     </p>
     <div class="jwt-box mono" id="jwt-box"></div>
     <p style="margin:0.5rem 0 0">
@@ -207,6 +218,24 @@
       <span id="copy-status" style="margin-left:0.75rem; color: var(--color-success); font-size: 0.88rem"></span>
     </p>
   </details>
+
+  <details style="margin-top: 0.75rem">
+    <summary>Wire TeamBrain into Claude Code (one command)</summary>
+    <p style="margin:0.75rem 0 0.5rem; color: var(--color-grey); font-size: 0.88rem">
+      Pre-filled with your JWT and the ANON_KEY for this deploy. Run on your
+      laptop, then restart Claude Code. The MCP server is named <code>teambrain</code>.
+    </p>
+    <div class="jwt-box mono" id="mcp-cmd-box"></div>
+    <p style="margin:0.5rem 0 0">
+      <button type="button" class="btn btn-secondary" id="copy-mcp-cmd">Copy command</button>
+      <span id="copy-mcp-status" style="margin-left:0.75rem; color: var(--color-success); font-size: 0.88rem"></span>
+    </p>
+    <p style="margin:0.75rem 0 0; color: var(--color-grey); font-size: 0.82rem">
+      Already have an entry named <code>teambrain</code>? Run
+      <code>claude mcp remove teambrain</code> first.
+    </p>
+  </details>
+
   <p style="margin-top:1.5rem">
     <a class="btn btn-secondary" href="/">Sign in as someone else</a>
   </p>
@@ -234,57 +263,148 @@
 
 <script>
 (() => {
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const token = params.get('access_token');
+  // ANON_KEY is templated in at container startup via nginx sub_filter
+  // (see deploy/production/nginx/templates/pr.fabric-testbed.net.conf.template).
+  // The literal __TEAMBRAIN_ANON_KEY__ is replaced in the served HTML body
+  // with the actual value from .env. The repo never sees the rotated value.
+  const ANON_KEY = '__TEAMBRAIN_ANON_KEY__';
+  const MCP_URL  = 'https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp';
+
+  const params  = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const errCode = params.get('error_code') || params.get('error');
   const errDesc = params.get('error_description');
-
-  const show = id => document.getElementById(id).classList.remove('hidden');
-  const hide = id => document.getElementById(id).classList.add('hidden');
+  const $ = id => document.getElementById(id);
+  const show = id => $(id).classList.remove('hidden');
+  const hide = id => $(id).classList.add('hidden');
 
   if (errCode) {
     hide('pre-auth');
-    document.getElementById('err-code').textContent = errCode;
-    document.getElementById('err-desc').textContent = errDesc || '(no description)';
+    $('err-code').textContent = errCode;
+    $('err-desc').textContent = errDesc || '(no description)';
     show('error-auth');
     history.replaceState(null, '', window.location.pathname);
     return;
   }
 
-  if (!token) return;  // pre-auth state; default render
+  // Tokens come from EITHER the URL fragment (fresh OAuth callback) or
+  // sessionStorage (set on a prior callback in the same tab). Fragment
+  // wins if both present — it's the most recently-issued pair.
+  let accessToken  = params.get('access_token')  || sessionStorage.getItem('tb_access_token');
+  let refreshToken = params.get('refresh_token') || sessionStorage.getItem('tb_refresh_token');
 
-  // Decode JWT payload (middle segment, base64url). No signature check —
-  // GoTrue minted this, server-side. Display only.
-  let payload = {};
-  try {
-    const seg = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    payload = JSON.parse(atob(seg.padEnd(seg.length + (4 - seg.length % 4) % 4, '=')));
-  } catch (e) {
-    console.error('JWT decode failed', e);
-  }
+  if (!accessToken) return;   // pre-auth state; default render
 
-  document.getElementById('gh-handle').textContent =
-    '@' + (payload.user_metadata?.user_name || payload.user_metadata?.preferred_username || '(unknown)');
-  document.getElementById('gh-email').textContent = payload.email || '(no email scope)';
-  document.getElementById('auth-uid').textContent = payload.sub || '(missing sub)';
-  document.getElementById('jwt-box').textContent = token;
+  // Persist for the lifetime of this browser tab. sessionStorage is
+  // cleared when the tab/window closes — never written to disk.
+  // Reloading the page within the tab keeps us in post-auth state.
+  sessionStorage.setItem('tb_access_token',  accessToken);
+  if (refreshToken) sessionStorage.setItem('tb_refresh_token', refreshToken);
 
-  document.getElementById('copy-jwt').addEventListener('click', async () => {
-    const status = document.getElementById('copy-status');
+  // Strip the fragment so JWTs don't sit in browser URL/history.
+  history.replaceState(null, '', window.location.pathname);
+
+  const decodeJwt = (jwt) => {
     try {
-      await navigator.clipboard.writeText(token);
-      status.textContent = '✓ copied';
-      setTimeout(() => { status.textContent = ''; }, 2000);
-    } catch {
-      status.textContent = 'copy failed — select manually';
+      const seg = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(seg.padEnd(seg.length + (4 - seg.length % 4) % 4, '=')));
+    } catch (e) {
+      console.error('JWT decode failed', e);
+      return {};
+    }
+  };
+
+  const fmtExpiry = (exp) => {
+    if (!exp) return '(unknown)';
+    const d = new Date(exp * 1000);
+    const now = Date.now() / 1000;
+    const mins = Math.round((exp - now) / 60);
+    const human = mins < 60
+      ? `in ${mins}m`
+      : mins < 60 * 24
+        ? `in ${Math.round(mins / 60)}h`
+        : `in ${Math.round(mins / (60*24))}d`;
+    return `${d.toLocaleString()} (${human})`;
+  };
+
+  const mcpCommand = (jwt) => [
+    'claude mcp remove teambrain 2>/dev/null',
+    'claude mcp add \\',
+    '  --transport http \\',
+    '  --scope user \\',
+    '  teambrain \\',
+    `  ${MCP_URL} \\`,
+    `  -H "Authorization: Bearer ${jwt}" \\`,
+    `  -H "apikey: ${ANON_KEY}"`,
+  ].join('\n');
+
+  const render = (jwt) => {
+    const payload = decodeJwt(jwt);
+    $('gh-handle').textContent =
+      '@' + (payload.user_metadata?.user_name || payload.user_metadata?.preferred_username || '(unknown)');
+    $('gh-email').textContent  = payload.email || '(no email scope)';
+    $('auth-uid').textContent  = payload.sub   || '(missing sub)';
+    $('jwt-expiry').textContent = fmtExpiry(payload.exp);
+    $('jwt-box').textContent    = jwt;
+    $('mcp-cmd-box').textContent = mcpCommand(jwt);
+  };
+
+  const wireCopy = (btnId, statusId, getText) => {
+    $(btnId).addEventListener('click', async () => {
+      const status = $(statusId);
+      try {
+        await navigator.clipboard.writeText(getText());
+        status.textContent = '✓ copied';
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      } catch {
+        status.textContent = 'copy failed — select manually';
+      }
+    });
+  };
+
+  wireCopy('copy-jwt',     'copy-status',     () => accessToken);
+  wireCopy('copy-mcp-cmd', 'copy-mcp-status', () => mcpCommand(accessToken));
+
+  $('renew-jwt').addEventListener('click', async () => {
+    const status = $('renew-status');
+    if (!refreshToken) {
+      status.style.color = 'var(--color-secondary-dark, #d24502)';
+      status.textContent = 'No refresh_token in this session — sign in again.';
+      return;
+    }
+    status.style.color = 'var(--color-grey)';
+    status.textContent = 'refreshing…';
+    try {
+      const r = await fetch('/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`${r.status}: ${t}`);
+      }
+      const body = await r.json();
+      accessToken  = body.access_token;
+      refreshToken = body.refresh_token;
+      sessionStorage.setItem('tb_access_token',  accessToken);
+      sessionStorage.setItem('tb_refresh_token', refreshToken);
+      render(accessToken);
+      status.style.color = 'var(--color-success)';
+      status.textContent = '✓ token refreshed';
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    } catch (e) {
+      status.style.color = 'var(--color-secondary-dark, #d24502)';
+      status.textContent = 'refresh failed — sign in again. ' + e.message;
+      console.error(e);
     }
   });
 
+  render(accessToken);
   hide('pre-auth');
   show('post-auth');
-  // Strip the fragment so the JWT doesn't sit in history. Sign-in
-  // state is page-local; reloading takes the user back to pre-auth.
-  history.replaceState(null, '', window.location.pathname);
 })();
 </script>
 

@@ -499,7 +499,9 @@ The `Accept: application/json, text/event-stream` header is mandated by the MCP 
 
 The MCP function rejects requests authenticated only by the anon key for any tool that touches RLS-scoped data — that's expected. The `tools/list` method is auth-light.
 
-For an end-to-end RLS smoke test, log in once via the web (sign in with GitHub at `https://pr.fabric-testbed.net`), grab a user JWT from the browser dev tools, and re-curl with that bearer. See `docs/phase-2-checklist.md` § H for the full curl matrix.
+For an end-to-end RLS smoke test, sign in once via the web at `https://pr.fabric-testbed.net/auth/v1/authorize?provider=github`. The landing page renders your user JWT plus a ready-to-paste `claude mcp add` command pre-filled for this deployment — copy + run on your laptop, then restart Claude Code and verify the `teambrain` server appears in `/mcp`. See `docs/phase-2-checklist.md` § H for the full curl matrix and for direct CLI client wiring without the landing-page convenience.
+
+> **`claude mcp add` flag-order gotcha.** When wiring TeamBrain into Claude Code by hand, put the positional arguments (`<name>` and `<url>`) **before** any `-H/--header` flags. The `--header` option is variadic (`<header...>`), so any positionals appearing after it are greedily consumed as additional header values, and you'll get `error: missing required argument 'name'`. The landing page's pre-filled command is already correctly ordered.
 
 ---
 
