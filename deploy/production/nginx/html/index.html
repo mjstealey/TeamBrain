@@ -154,19 +154,23 @@
 <section id="pre-auth">
   <h1>What is this?</h1>
   <p>
-    TeamBrain is a multi-tenant, AI-agnostic shared memory service for the
-    <code>fabric-testbed/fabric-core-api</code> pilot. Developers capture and
-    search project context — decisions, gotchas, conventions — from
+    TeamBrain is a multi-tenant, AI-agnostic shared memory service for FABRIC
+    development teams. Each registered project — a repo in the
+    <code>fabric-testbed</code> GitHub org — gets its own scoped memory:
+    decisions, gotchas, conventions, and context, captured and searched from
     Claude&nbsp;Code, Cursor, ChatGPT, gemini-cli, Copilot, or any
     <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP</a>-aware tool.
-    A parallel REST surface is available for non-MCP clients (GitHub Actions,
-    OpenAI function calling, custom agents).
+    A parallel REST surface — described by the
+    <a href="/openapi.yaml" target="_blank" rel="noopener">OpenAPI&nbsp;spec</a> —
+    serves non-MCP clients like GitHub Actions, OpenAI function calling, and custom agents.
   </p>
   <p>
-    To join the pilot, sign in once with the GitHub account listed on
-    the <code>fabric-testbed/fabric-core-api</code> repository. Within
-    15 minutes the membership sync picks you up and grants you a role.
-    Source: <a href="https://github.com/fabric-testbed/TeamBrain" target="_blank" rel="noopener">fabric-testbed/TeamBrain</a>.
+    Sign in once with your GitHub account. You're granted access to every
+    registered project you collaborate on — the membership sync reconciles
+    from GitHub every 15&nbsp;minutes and maps your repo permission to a
+    TeamBrain role. An admin of any <code>fabric-testbed</code> repo can
+    register it as a new project. Source:
+    <a href="https://github.com/fabric-testbed/TeamBrain" target="_blank" rel="noopener">fabric-testbed/TeamBrain</a>.
   </p>
   <p style="margin-top:1.5rem">
     <a class="btn" href="/auth/v1/authorize?provider=github">
@@ -190,11 +194,11 @@
   </div>
   <p>
     Your <code>auth.users</code> row exists. The membership sync runs every
-    15&nbsp;minutes via <code>pg_cron</code> — within that window you'll
-    be added to <code>fabric-testbed/fabric-core-api</code> as either
-    <code>admin</code> (if you're in the
-    <code>systemservicesteam</code> GitHub team) or <code>contributor</code>
-    (any other repo collaborator).
+    15&nbsp;minutes via <code>pg_cron</code> — within that window you'll be
+    added to each registered <code>fabric-testbed</code> project you can
+    access on GitHub, with your role mapped from your repo permission
+    (admin&nbsp;→&nbsp;<code>admin</code>, write&nbsp;→&nbsp;<code>contributor</code>,
+    read&nbsp;→&nbsp;<code>reader</code>).
   </p>
   <p style="margin:1rem 0 0; font-size: 0.92rem">
     <span style="color: var(--color-grey)">Access token expires:</span>
@@ -209,8 +213,9 @@
   <details>
     <summary>Show access token (raw JWT, for ad-hoc curl)</summary>
     <p style="margin:0.75rem 0 0.5rem; color: var(--color-grey); font-size: 0.88rem">
-      Use as <code>Authorization: Bearer&nbsp;…</code>. Refresh via the Renew button
-      above (uses the refresh_token, no GitHub round-trip).
+      Use as <code>Authorization: Bearer&nbsp;…</code> against the MCP server or the
+      <a href="/openapi.yaml" target="_blank" rel="noopener">REST API</a>. Refresh via the
+      Renew button above (uses the refresh_token, no GitHub round-trip).
     </p>
     <div class="jwt-box mono" id="jwt-box"></div>
     <p style="margin:0.5rem 0 0">
@@ -249,7 +254,7 @@
       <dt>Detail</dt> <dd id="err-desc">—</dd>
     </dl>
   </div>
-  <p>Try again, or contact the pilot admin if this persists.</p>
+  <p>Try again, or contact a TeamBrain admin if this persists.</p>
   <p style="margin-top:1.5rem">
     <a class="btn" href="/auth/v1/authorize?provider=github">Retry sign-in</a>
   </p>
