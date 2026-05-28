@@ -1,0 +1,667 @@
+openapi: "3.1.1"
+
+info:
+  title: TeamBrain REST API
+  version: "0.1.0"
+  description: |
+    REST surface for **TeamBrain** — a multi-tenant, project-scoped,
+    AI-agnostic shared-memory service. This is a plain HTTP/JSON mirror of
+    the MCP tool set, for clients that aren't MCP-native (curl, OpenAI /
+    gemini function calling, GitHub Actions, CI).
+
+    **Auth.** Every endpoint requires a GitHub-OAuth-derived JWT
+    (`Authorization: Bearer <jwt>`), obtained by signing in at
+    `https://pr.fabric-testbed.net/`. The token's `sub` claim is the
+    caller's `auth.uid()`. All access control is enforced by Postgres
+    Row-Level Security against that identity — there are no
+    application-layer permission checks. A caller only ever sees or writes
+    rows their RLS policies permit.
+
+    **Project scoping.** Most operations take a `project_slug`
+    (`owner/repo`, e.g. `fabric-testbed/fabric-core-api`). When omitted, the
+    server falls back to its configured `TEAMBRAIN_DEFAULT_PROJECT_SLUG`.
+    Always pass it explicitly when working against a non-default project.
+  license:
+    name: TBD
+  contact:
+    name: TeamBrain
+    url: https://github.com/fabric-testbed/TeamBrain
+
+servers:
+  - url: https://pr.fabric-testbed.net/functions/v1
+    description: Production (FABRIC self-hosted Supabase)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: system
+    description: Liveness / diagnostics.
+  - name: thoughts
+    description: Capture, search, list, and lifecycle of memory rows.
+  - name: projects
+    description: Project registration.
+
+paths:
+  /teambrain-rest/health:
+    get:
+      operationId: health
+      tags: [system]
+      summary: Liveness + caller identity
+      description: |
+        Returns the caller's `auth.uid()` and a count of thought rows
+        visible to them through RLS. Exercises the same JWT-forward +
+        PostgREST path the real tools use, so a 200 confirms the whole
+        chain is healthy for this caller.
+      responses:
+        "200":
+          description: Service is healthy and the caller is authenticated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /teambrain-rest/thoughts:
+    post:
+      operationId: captureThought
+      tags: [thoughts]
+      summary: Capture a thought
+      description: |
+        Embeds `content` and inserts a new thought. `personal` scope is
+        author-only and must NOT carry a project; `project` and
+        `project_private` require the caller to be a writer
+        (admin/contributor) on the resolved project — RLS enforces this and
+        a denial surfaces as `403`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CaptureRequest" }
+      responses:
+        "201":
+          description: Thought captured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CaptureResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: RLS denied the write (caller is not a writer on the project).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+    get:
+      operationId: listThoughts
+      tags: [thoughts]
+      summary: List recent thoughts
+      description: |
+        Newest-first listing visible to the caller (RLS-filtered). No
+        semantic ranking — pair with `POST /thoughts/search` for relevance.
+      parameters:
+        - name: project_slug
+          in: query
+          required: false
+          schema: { type: string }
+          description: Limit to one project. Falls back to the server default.
+          example: fabric-testbed/fabric-core-api
+        - name: scopes
+          in: query
+          required: false
+          schema: { type: string }
+          description: Comma-separated subset of scopes (e.g. `project,project_private`).
+          example: project,project_private
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: since
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Only rows created strictly after this instant (ISO 8601).
+        - name: cross_project
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: If `true`, ignore `project_slug` and list every accessible thought.
+      responses:
+        "200":
+          description: A page of thoughts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /teambrain-rest/thoughts/search:
+    post:
+      operationId: searchThoughts
+      tags: [thoughts]
+      summary: Semantic search
+      description: |
+        Embeds `query` and ranks thoughts by cosine similarity, filtered to
+        what the caller can see (RLS). `threshold` defaults to 0.3, tuned for
+        `openai:text-embedding-3-small` (relevant matches cluster 0.4–0.6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchRequest" }
+      responses:
+        "200":
+          description: Ranked matches.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /teambrain-rest/thoughts/{id}/stale:
+    patch:
+      operationId: markThoughtStale
+      tags: [thoughts]
+      summary: Flag a thought stale
+      description: |
+        Sets `confidence` (default `deprecated`) and bumps
+        `last_verified_at`. RLS-gated: the caller must be the author or a
+        project writer. If the row is missing or RLS blocks the update, the
+        response is `{ "updated": false }` (the two cases are intentionally
+        not distinguished — that distinction would leak existence).
+      parameters:
+        - $ref: "#/components/parameters/ThoughtId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaleRequest" }
+      responses:
+        "200":
+          description: Update result (applied or no-op).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaleResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /teambrain-rest/thoughts/{id}/promote:
+    post:
+      operationId: promoteThought
+      tags: [thoughts]
+      summary: Preview a docs-promotion
+      description: |
+        Returns a structured preview of the docs PR that promoting this
+        thought would create (proposed branch, filename, and markdown body).
+        **Preview only** — it does not create a branch or open a PR; that
+        lands in Phase 6.
+      parameters:
+        - $ref: "#/components/parameters/ThoughtId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromoteRequest" }
+      responses:
+        "200":
+          description: Promotion preview (or not-found no-op).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoteResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+  /teambrain-register-project/register:
+    post:
+      operationId: registerProject
+      tags: [projects]
+      summary: Self-service project registration
+      description: |
+        Registers a GitHub repo as a TeamBrain project. Two gates, both
+        enforced server-side via the org-scoped GitHub App: the repo owner
+        must equal the configured org, and the caller must have **admin**
+        permission on the repo. On success the caller is seeded as the
+        project `admin` and a membership sync pulls in the rest of the team.
+        This endpoint requires a user JWT (role `authenticated`); a
+        service-role token is rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: Project registered; creator seeded as admin.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegisterResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            Org gate or repo-admin gate failed, or the account has no GitHub
+            identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Repo not found or not accessible to the TeamBrain GitHub App.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: The repo is already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: GitHub-OAuth-derived access token from https://pr.fabric-testbed.net/
+
+  parameters:
+    ThoughtId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID of the target thought.
+
+  responses:
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or malformed JWT (no `Authorization` header, or no `sub` claim).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ProjectNotFound:
+      description: Project not found or not accessible to the caller (RLS-consistent).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UpstreamError:
+      description: An upstream dependency (database, embedding provider, GitHub) failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Scope:
+      type: string
+      enum: [personal, project, project_private]
+      description: Visibility scope.
+    ThoughtType:
+      type: string
+      enum: [decision, convention, gotcha, context, preference, runbook]
+      description: Memory taxonomy.
+    Confidence:
+      type: string
+      enum: [tentative, confirmed, deprecated]
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+      example:
+        error: "validation failed: content: String must contain at least 1 character(s)"
+
+    HealthResult:
+      type: object
+      required: [service, version, uid, visible_thought_rows, checked_at]
+      properties:
+        service: { type: string, const: teambrain-rest }
+        version: { type: string }
+        uid:
+          type: string
+          format: uuid
+          description: The caller's auth.uid().
+        visible_thought_rows:
+          type: integer
+          description: Count of thought rows visible to the caller through RLS.
+        checked_at: { type: string, format: date-time }
+
+    CaptureRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: The memory text. Markdown OK.
+        scope:
+          allOf: [{ $ref: "#/components/schemas/Scope" }]
+          default: project
+        type:
+          $ref: "#/components/schemas/ThoughtType"
+        project_slug:
+          type: string
+          description: Required for project / project_private scope; falls back to server default.
+          example: fabric-testbed/fabric-core-api
+        tags:
+          type: array
+          items: { type: string }
+          default: []
+        paths:
+          type: array
+          items: { type: string }
+          default: []
+          description: Repo file paths the thought relates to.
+        linked_commit_sha: { type: string }
+        linked_pr_url: { type: string }
+        linked_issue_url: { type: string }
+
+    CaptureResult:
+      type: object
+      required: [id, scope, project_id, created_at, content_chars, embedding_dims]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: "#/components/schemas/Scope" }
+        type:
+          oneOf:
+            - { $ref: "#/components/schemas/ThoughtType" }
+            - { type: "null" }
+        project_slug:
+          type: [string, "null"]
+          description: Resolved slug, or null for personal scope.
+        project_id:
+          type: [string, "null"]
+          format: uuid
+        created_at: { type: string, format: date-time }
+        content_chars: { type: integer }
+        embedding_dims: { type: integer }
+        embedding_model: { type: [string, "null"] }
+
+    SearchRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Natural-language search query.
+        project_slug:
+          type: string
+          description: Limit search to one project; falls back to server default.
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+          description: Restrict to specific scopes (RLS still filters).
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.3
+          description: Minimum cosine similarity. Lower = looser match.
+        cross_project:
+          type: boolean
+          default: false
+          description: If true, ignore project_slug and search every accessible thought.
+
+    SearchHit:
+      type: object
+      required: [id, similarity, scope, created_at, content]
+      properties:
+        id: { type: string, format: uuid }
+        similarity:
+          type: number
+          description: Cosine similarity (0–1), rounded to 4 dp.
+        scope: { $ref: "#/components/schemas/Scope" }
+        type:
+          oneOf:
+            - { $ref: "#/components/schemas/ThoughtType" }
+            - { type: "null" }
+        project_id: { type: [string, "null"], format: uuid }
+        author_user_id: { type: [string, "null"], format: uuid }
+        created_at: { type: string, format: date-time }
+        last_verified_at: { type: [string, "null"], format: date-time }
+        tags:
+          type: array
+          items: { type: string }
+        content: { type: string }
+
+    SearchResult:
+      type: object
+      required: [query, cross_project, threshold, count, results]
+      properties:
+        query: { type: string }
+        project_slug: { type: [string, "null"] }
+        cross_project: { type: boolean }
+        threshold: { type: number }
+        count: { type: integer }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/SearchHit" }
+
+    Thought:
+      type: object
+      description: A thought row as returned by the list endpoint.
+      required: [id, scope, content, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { $ref: "#/components/schemas/Scope" }
+        type:
+          oneOf:
+            - { $ref: "#/components/schemas/ThoughtType" }
+            - { type: "null" }
+        project_id: { type: [string, "null"], format: uuid }
+        author_user_id: { type: [string, "null"], format: uuid }
+        content: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        paths:
+          type: array
+          items: { type: string }
+        confidence: { $ref: "#/components/schemas/Confidence" }
+        created_at: { type: string, format: date-time }
+        last_verified_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+
+    ListResult:
+      type: object
+      required: [cross_project, count, results]
+      properties:
+        project_slug: { type: [string, "null"] }
+        cross_project: { type: boolean }
+        count: { type: integer }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/Thought" }
+
+    StaleRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        confidence:
+          type: string
+          enum: [tentative, deprecated]
+          default: deprecated
+        reason:
+          type: string
+          description: Optional reason; echoed back, not yet persisted (Phase 6).
+
+    StaleResult:
+      oneOf:
+        - $ref: "#/components/schemas/StaleApplied"
+        - $ref: "#/components/schemas/StaleNoop"
+
+    StaleApplied:
+      type: object
+      required: [updated, id, new_confidence, last_verified_at]
+      properties:
+        updated: { type: boolean, const: true }
+        id: { type: string, format: uuid }
+        new_confidence: { type: string, enum: [tentative, deprecated] }
+        last_verified_at: { type: string, format: date-time }
+        reason_received: { type: [string, "null"] }
+
+    StaleNoop:
+      type: object
+      required: [updated, thought_id, reason]
+      properties:
+        updated: { type: boolean, const: false }
+        thought_id: { type: string, format: uuid }
+        reason:
+          type: string
+          description: Why nothing changed (not found, or no update permission).
+
+    PromoteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        target_path:
+          type: string
+          default: docs/adr/
+          description: Repo-relative directory the eventual PR would write into.
+        target_branch:
+          type: string
+          default: main
+          description: Base branch of the eventual PR.
+
+    PromoteResult:
+      oneOf:
+        - $ref: "#/components/schemas/PromotePreview"
+        - $ref: "#/components/schemas/PromoteNotFound"
+
+    PromotePreview:
+      type: object
+      required: [ok, preview, request, commit_payload]
+      properties:
+        ok: { type: boolean, const: true }
+        preview: { type: boolean, const: true }
+        note: { type: string }
+        request:
+          type: object
+          properties:
+            thought_id: { type: string, format: uuid }
+            target_path: { type: string }
+            target_branch: { type: string }
+            proposed_branch: { type: string }
+            proposed_filename: { type: string }
+            proposed_full_path: { type: string }
+        commit_payload:
+          type: object
+          properties:
+            filename: { type: string }
+            markdown: { type: string }
+
+    PromoteNotFound:
+      type: object
+      required: [ok, thought_id, reason]
+      properties:
+        ok: { type: boolean, const: false }
+        thought_id: { type: string, format: uuid }
+        reason: { type: string }
+
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [repo_slug]
+      properties:
+        repo_slug:
+          type: string
+          pattern: "^[^/\\s]+/[^/\\s]+$"
+          description: GitHub repo as owner/repo. Owner must equal the configured org.
+          example: fabric-testbed/publication-tracker-dev
+        name:
+          type: string
+          description: Friendly display name. Defaults to repo_slug.
+        github_team_slugs:
+          type: array
+          items: { type: string }
+          default: []
+          description: Org-team slugs to gate membership on (empty = all collaborators).
+
+    RegisterResult:
+      type: object
+      required: [project, sync]
+      properties:
+        project:
+          type: object
+          required: [id, repo_slug, name, created_by, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            repo_slug: { type: string }
+            name: { type: string }
+            github_team_slugs:
+              type: array
+              items: { type: string }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+        sync:
+          description: Membership sync report, or a deferral note if the post-registration sync failed.
+          oneOf:
+            - $ref: "#/components/schemas/SyncReport"
+            - $ref: "#/components/schemas/SyncDeferred"
+
+    SyncReport:
+      type: object
+      description: Result of the membership sync run triggered by registration.
+      properties:
+        project_slug: { type: string }
+        github_collaborators_seen: { type: integer }
+        github_team_members_seen: { type: integer }
+        added:
+          type: array
+          items: { $ref: "#/components/schemas/MemberChange" }
+        updated:
+          type: array
+          items: { type: object }
+        removed:
+          type: array
+          items: { type: object }
+        restored:
+          type: array
+          items: { $ref: "#/components/schemas/MemberChange" }
+        skipped_no_auth_row:
+          type: array
+          items:
+            type: object
+            properties:
+              login: { type: string }
+        duration_ms: { type: integer }
+        rate_limit_remaining: { type: [integer, "null"] }
+
+    MemberChange:
+      type: object
+      properties:
+        login: { type: string }
+        role: { type: string, enum: [admin, contributor, reader] }
+
+    SyncDeferred:
+      type: object
+      required: [error, note]
+      properties:
+        error: { type: string }
+        note:
+          type: string
+          description: e.g. "project registered; team sync will retry on next scheduled run".

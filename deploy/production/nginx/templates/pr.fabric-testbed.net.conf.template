@@ -80,6 +80,18 @@ server {
         try_files /index.html =404;
     }
 
+    # OpenAPI 3.1 spec for the REST surface
+    # (deploy/production/nginx/html/openapi.yaml). Served as a public,
+    # unauthenticated contract — it documents the API but contains no
+    # secrets. default_type is set explicitly because nginx's bundled
+    # mime.types has no mapping for .yaml. sub_filter only touches
+    # text/html, so the spec is served verbatim.
+    location = /openapi.yaml {
+        root         /usr/share/nginx/html;
+        default_type application/yaml;
+        try_files    /openapi.yaml =404;
+    }
+
     # Anything else under / that we don't explicitly route is a 404.
     # (The named API paths above are still matched first by their
     # location regex; this block only fires for non-API, non-root paths.)
