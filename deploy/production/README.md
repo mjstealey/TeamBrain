@@ -417,7 +417,14 @@ In **SQL Editor → New query**, paste each migration's full contents from `~/Te
 0004_match_thoughts.sql
 [0005_resize_embedding_768.sql — only if running the ollama variant]
 0006_embedding_model.sql
+0007_projects_github_teams.sql
+0008_project_members_soft_delete.sql
+0009_sync_runs.sql
+0010_pg_cron_membership_sync.sql
+0011_project_registration.sql
 ```
+
+`0011_project_registration.sql` (Phase 4) drops the placeholder `projects_insert_authenticated` policy so the only path to create a project is the gated `teambrain-register-project` function (§8). Apply it together with the batch above.
 
 After each, run the verification queries from `docs/phase-1-checklist.md` § B/C/D/E and `docs/phase-2-checklist.md` § B/L as a check. Expect Studio's **Security Advisor: 0 errors / 0 warnings** and **Performance Advisor: 0 issues** after `0003`. If anything else is red, stop and triage.
 
@@ -437,7 +444,7 @@ git -C ~/TeamBrain log -1 --oneline    # record the SHA being deployed
 # 2. Copy each edge function into the supabase-stack volumes/functions/ tree.
 #    rsync --delete keeps the destination tree exactly matching source
 #    (removes files that have been deleted upstream).
-for fn in teambrain-mcp teambrain-membership-sync; do
+for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project; do
   rsync -av --delete \
     ~/TeamBrain/edge-functions/"$fn"/ \
     ~/supabase-stack/volumes/functions/"$fn"/
@@ -453,7 +460,7 @@ If you'd rather push *from your laptop* (e.g., to deploy an in-flight branch wit
 
 ```bash
 # From your laptop. Substitutes for steps 1–2 above.
-for fn in teambrain-mcp teambrain-membership-sync; do
+for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project; do
   rsync -av --delete \
     --rsync-path='sudo -u nrig-service rsync' \
     ~/GitHub/mjstealey/TeamBrain/edge-functions/"$fn"/ \
@@ -464,6 +471,8 @@ done
 
 (Absolute path on the right side of the `:` is required — `~` would expand to the SSH-login user's home, not `nrig-service`'s.)
 
+> **Note.** `teambrain-register-project` imports the GitHub-App token mint and the per-project sync from `teambrain-membership-sync` via a relative path (`../teambrain-membership-sync/…`). Both functions live under the same `volumes/functions/` root, so the import resolves at runtime — but always deploy the two together (the loops above do). Removing or renaming `teambrain-membership-sync` breaks registration.
+
 Verify the functions container picked up the TeamBrain env vars:
 
 ```bash
@@ -472,7 +481,8 @@ docker compose exec functions env | grep -E '^(EMBEDDING_|OPENAI_|TEAMBRAIN_)' |
 # expect: EMBEDDING_PROVIDER, EMBEDDING_DIMS, OPENAI_API_KEY,
 #         OPENAI_EMBEDDING_MODEL, TEAMBRAIN_DEFAULT_PROJECT_SLUG,
 #         TEAMBRAIN_GITHUB_APP_ID, TEAMBRAIN_GITHUB_INSTALLATION_ID,
-#         TEAMBRAIN_GITHUB_APP_PRIVATE_KEY (>1500 chars for PEM)
+#         TEAMBRAIN_GITHUB_APP_PRIVATE_KEY (>1500 chars for PEM),
+#         TEAMBRAIN_GITHUB_ORG
 ```
 
 ---
@@ -565,6 +575,42 @@ from public.sync_runs
 order by started_at desc
 limit 1;
 ```
+
+---
+
+## 11a. Self-service project registration (Phase 4)
+
+`teambrain-register-project` lets any **org member who is an admin of a GitHub repo** register that repo as a TeamBrain project — no manual `INSERT` / seed by an operator. The function (running as service_role) verifies the caller's repo-admin permission via the GitHub App, inserts the `projects` row, seeds the caller as `admin`, and runs the membership sync to pull in the rest of the team.
+
+Unlike the membership-sync endpoints (service-role-only), this one requires a **GitHub-OAuth user JWT** (`role: authenticated`) — get one by signing in at `https://pr.fabric-testbed.net/` and copying the access token from the landing page.
+
+```bash
+USER_JWT='<paste the access_token from the landing page>'
+ANON_KEY=$(grep '^ANON_KEY=' ~/supabase-stack/.env | cut -d= -f2)
+
+curl -sS -X POST \
+  -H "Authorization: Bearer $USER_JWT" \
+  -H "apikey: $ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"repo_slug":"fabric-testbed/some-repo","github_team_slugs":[]}' \
+  https://pr.fabric-testbed.net/functions/v1/teambrain-register-project/register \
+  | python3 -m json.tool
+# expect 201: { "project": { id, repo_slug, name, ... },
+#               "sync":    { added: [...], skipped_no_auth_row: [...] } }
+```
+
+Expected rejections (all surface a JSON `{ "error": ... }`):
+
+| Status | Cause |
+| --- | --- |
+| `400` | `repo_slug` missing or not `owner/repo` form |
+| `403` | repo owner ≠ `TEAMBRAIN_GITHUB_ORG` (org gate) |
+| `403` | caller's effective repo permission is not `admin` |
+| `403` | caller's account has no GitHub identity (`user_metadata.user_name` absent) |
+| `404` | repo not found, or the TeamBrain GitHub App is not installed on it |
+| `409` | `repo_slug` already registered |
+
+`name` defaults to the `repo_slug` if omitted. `github_team_slugs` follows the same C-plus membership semantics as §10 — empty means "all collaborators"; non-empty gates membership on team-or-direct-grant.
 
 ---
 
@@ -765,5 +811,5 @@ If the new key fails, the old key still works during step 4 since key revocation
 | Phase 2 verification matrix | `docs/phase-2-checklist.md` § H/L |
 | Phase 3 verification matrix | `docs/phase-3-checklist.md` § G |
 | Production overrides (this dir) | `deploy/production/` |
-| Edge-function source | `edge-functions/{teambrain-mcp,teambrain-membership-sync}/` |
+| Edge-function source | `edge-functions/{teambrain-mcp,teambrain-membership-sync,teambrain-register-project}/` |
 | Migrations | `migrations/` (README inside the dir) |

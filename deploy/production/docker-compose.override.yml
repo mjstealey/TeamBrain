@@ -138,6 +138,11 @@ services:
       TEAMBRAIN_GITHUB_INSTALLATION_ID: ${TEAMBRAIN_GITHUB_INSTALLATION_ID}
       TEAMBRAIN_GITHUB_APP_PRIVATE_KEY: ${TEAMBRAIN_GITHUB_APP_PRIVATE_KEY}
 
+      # --- Phase 4 self-service project registration ---
+      # Org gate for teambrain-register-project: only repos owned by this
+      # org may be registered. Must match the org the App is installed on.
+      TEAMBRAIN_GITHUB_ORG:             ${TEAMBRAIN_GITHUB_ORG:-fabric-testbed}
+
   # ---- (Optional) ollama sidecar for self-host embedding variant ----------
   #
   # Uncomment this entire block AND change the functions.environment
