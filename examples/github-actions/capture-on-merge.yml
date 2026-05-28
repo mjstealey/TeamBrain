@@ -1,0 +1,82 @@
+# capture-on-merge.yml — ILLUSTRATIVE GitHub Actions recipe
+# ==========================================================
+# Captures a TeamBrain memory when a pull request is merged, recording the
+# decision the PR represents with a link back to it.
+#
+# ⚠️  NOT RUNNABLE AS-IS. A GitHub Action has no interactive GitHub-OAuth
+#     flow, so it can't mint the user JWT the REST surface expects. It needs
+#     a *non-interactive* credential — a long-lived TeamBrain API token —
+#     which does not exist yet (deferred; see docs/phase-4-checklist.md § J
+#     and § I). Until that lands, `secrets.TEAMBRAIN_TOKEN` is a placeholder
+#     and this workflow is a reference for the shape of the integration, not
+#     a working automation. Phase 5 wires the real PR-merge summarization
+#     with a human-approval gate.
+#
+# To adopt once tokens exist:
+#   1. Add a repo/org secret TEAMBRAIN_TOKEN (a long-lived TeamBrain token).
+#   2. Drop this file into .github/workflows/ of a registered repo.
+#   3. Confirm the repo is registered as a TeamBrain project (its
+#      owner/repo slug == github.repository).
+
+name: TeamBrain — capture on merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    # Only on actual merges, not every closed PR.
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Capture merged-PR decision into TeamBrain
+        env:
+          TEAMBRAIN_BASE: https://pr.fabric-testbed.net/functions/v1
+          TEAMBRAIN_TOKEN: ${{ secrets.TEAMBRAIN_TOKEN }}
+          PROJECT_SLUG: ${{ github.repository }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TEAMBRAIN_TOKEN}" ]; then
+            echo "TEAMBRAIN_TOKEN not set — this recipe is illustrative until the"
+            echo "long-lived API-token mechanism ships. Skipping." >&2
+            exit 0
+          fi
+
+          # Build the request body with jq so the PR title is JSON-escaped
+          # safely (titles can contain quotes, backslashes, emoji, etc.).
+          body=$(jq -n \
+            --arg content "Merged PR #${PR_NUMBER}: ${PR_TITLE}" \
+            --arg slug    "${PROJECT_SLUG}" \
+            --arg pr      "${PR_URL}" \
+            --arg sha     "${MERGE_SHA}" \
+            '{
+               content: $content,
+               scope: "project",
+               type: "decision",
+               project_slug: $slug,
+               linked_pr_url: $pr,
+               linked_commit_sha: $sha,
+               tags: ["pr-merge", "auto-capture"]
+             }')
+
+          http_code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
+            -X POST "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+            -H "Authorization: Bearer ${TEAMBRAIN_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${body}")
+
+          echo "TeamBrain responded HTTP ${http_code}"
+          cat /tmp/resp.json
+          # Don't fail the merge pipeline on a capture hiccup.
+          if [ "${http_code}" -ge 300 ]; then
+            echo "::warning::TeamBrain capture failed (HTTP ${http_code})"
+          fi

@@ -444,7 +444,7 @@ git -C ~/TeamBrain log -1 --oneline    # record the SHA being deployed
 # 2. Copy each edge function into the supabase-stack volumes/functions/ tree.
 #    rsync --delete keeps the destination tree exactly matching source
 #    (removes files that have been deleted upstream).
-for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project; do
+for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project teambrain-rest; do
   rsync -av --delete \
     ~/TeamBrain/edge-functions/"$fn"/ \
     ~/supabase-stack/volumes/functions/"$fn"/
@@ -460,7 +460,7 @@ If you'd rather push *from your laptop* (e.g., to deploy an in-flight branch wit
 
 ```bash
 # From your laptop. Substitutes for steps 1–2 above.
-for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project; do
+for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project teambrain-rest; do
   rsync -av --delete \
     --rsync-path='sudo -u nrig-service rsync' \
     ~/GitHub/mjstealey/TeamBrain/edge-functions/"$fn"/ \
@@ -471,7 +471,7 @@ done
 
 (Absolute path on the right side of the `:` is required — `~` would expand to the SSH-login user's home, not `nrig-service`'s.)
 
-> **Note.** `teambrain-register-project` imports the GitHub-App token mint and the per-project sync from `teambrain-membership-sync` via a relative path (`../teambrain-membership-sync/…`). Both functions live under the same `volumes/functions/` root, so the import resolves at runtime — but always deploy the two together (the loops above do). Removing or renaming `teambrain-membership-sync` breaks registration.
+> **Note.** Two functions import from siblings via relative paths, so the import only resolves when both are deployed under the same `volumes/functions/` root (the loops above do this): `teambrain-register-project` imports the GitHub-App token mint + per-project sync from `teambrain-membership-sync`, and `teambrain-rest` imports `embedding.ts` from `teambrain-mcp`. Removing or renaming `teambrain-membership-sync` breaks registration; removing or renaming `teambrain-mcp` breaks the REST capture/search endpoints.
 
 Verify the functions container picked up the TeamBrain env vars:
 
@@ -611,6 +611,44 @@ Expected rejections (all surface a JSON `{ "error": ... }`):
 | `409` | `repo_slug` already registered |
 
 `name` defaults to the `repo_slug` if omitted. `github_team_slugs` follows the same C-plus membership semantics as §10 — empty means "all collaborators"; non-empty gates membership on team-or-direct-grant.
+
+---
+
+## 11b. REST surface (Phase 4)
+
+`teambrain-rest` is a plain HTTP/JSON mirror of the MCP tools, for clients that aren't MCP-native (curl, OpenAI/gemini function calling, GitHub Actions, CI). Same backend, same RLS, same GitHub-OAuth JWT — every request builds a per-request `userClient` (ANON_KEY + forwarded `Authorization`), so `auth.uid()` does all access control. It reuses `embedding.ts` from `teambrain-mcp` (deploy both together — see the §8 note) and needs **no new env vars** (it reuses `EMBEDDING_*`, `OPENAI_*`, `TEAMBRAIN_DEFAULT_PROJECT_SLUG`).
+
+The published contract is the **OpenAPI 3.1 spec served at `https://pr.fabric-testbed.net/openapi.yaml`** (static file from `deploy/production/nginx/html/openapi.yaml`, fronted by the nginx `location = /openapi.yaml`). Endpoints, all under `/functions/v1/teambrain-rest`:
+
+| Method + path | Mirrors MCP tool |
+| --- | --- |
+| `GET /health` | `ping` |
+| `POST /thoughts` | `capture_project_thought` |
+| `POST /thoughts/search` | `search_project_thoughts` |
+| `GET /thoughts` | `list_recent_project_thoughts` |
+| `PATCH /thoughts/{id}/stale` | `mark_stale` |
+| `POST /thoughts/{id}/promote` | `promote_to_docs` |
+
+Smoke test (needs a **user** JWT from the landing page, not the service key — `/functions/*` authenticates on the bearer alone, no `apikey` required):
+
+```bash
+USER_JWT='<access_token from https://pr.fabric-testbed.net/>'
+BASE=https://pr.fabric-testbed.net/functions/v1
+H=(-H "Authorization: Bearer $USER_JWT" -H "Content-Type: application/json")
+
+curl -sS "${H[@]}" "$BASE/teambrain-rest/health" | python3 -m json.tool
+# expect: {service:"teambrain-rest", uid, visible_thought_rows, ...}
+
+# capture → search round-trip:
+ID=$(curl -sS "${H[@]}" -X POST "$BASE/teambrain-rest/thoughts" \
+  -d '{"content":"REST smoke — safe to delete.","scope":"project","type":"context","project_slug":"fabric-testbed/TeamBrain","tags":["smoke"]}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+curl -sS "${H[@]}" -X POST "$BASE/teambrain-rest/thoughts/search" \
+  -d '{"query":"REST smoke","project_slug":"fabric-testbed/TeamBrain"}' | python3 -m json.tool
+curl -sS "${H[@]}" -X PATCH "$BASE/teambrain-rest/thoughts/$ID/stale" -d '{}' | python3 -m json.tool
+```
+
+Per-endpoint recipes, an OpenAI function-calling client, and an (illustrative) GitHub Actions capture-on-merge workflow live under `examples/` in the repo.
 
 ---
 
@@ -811,5 +849,7 @@ If the new key fails, the old key still works during step 4 since key revocation
 | Phase 2 verification matrix | `docs/phase-2-checklist.md` § H/L |
 | Phase 3 verification matrix | `docs/phase-3-checklist.md` § G |
 | Production overrides (this dir) | `deploy/production/` |
-| Edge-function source | `edge-functions/{teambrain-mcp,teambrain-membership-sync,teambrain-register-project}/` |
+| Edge-function source | `edge-functions/{teambrain-mcp,teambrain-membership-sync,teambrain-register-project,teambrain-rest}/` |
+| OpenAPI spec (served at `/openapi.yaml`) | `deploy/production/nginx/html/openapi.yaml` |
+| REST/OpenAPI example clients | `examples/{curl.md,openai_function_calling.py,github-actions/}` |
 | Migrations | `migrations/` (README inside the dir) |

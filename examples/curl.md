@@ -1,0 +1,206 @@
+# TeamBrain REST — curl recipes
+
+Copy-paste recipes for every endpoint of the TeamBrain REST surface
+(`teambrain-rest` + project registration). The canonical contract is the
+OpenAPI spec at **https://pr.fabric-testbed.net/openapi.yaml**.
+
+## Setup
+
+Every request needs a **GitHub-OAuth JWT**. Get one by signing in at
+<https://pr.fabric-testbed.net/> and copying the access token. Export it in
+your shell (it lasts 24h — re-grab or use the page's **Renew** button when
+it expires):
+
+```bash
+export TEAMBRAIN_JWT='<access_token from the landing page>'
+export BASE=https://pr.fabric-testbed.net/functions/v1
+AUTH=(-H "Authorization: Bearer $TEAMBRAIN_JWT" -H "Content-Type: application/json")
+```
+
+> The `/functions/*` routes authenticate on the bearer JWT alone — no
+> `apikey` header is required (unlike the raw PostgREST `/rest/*` routes).
+> All access control is enforced by Row-Level Security against your
+> `auth.uid()`; you only ever see or write what your project membership
+> permits.
+
+Most endpoints take a `project_slug` (`owner/repo`). When omitted, the
+server falls back to its configured default — pass it explicitly when
+working against a specific project.
+
+---
+
+## 1. Health — `GET /teambrain-rest/health`
+
+```bash
+curl -sS "${AUTH[@]}" "$BASE/teambrain-rest/health" | jq .
+```
+
+```json
+{
+  "service": "teambrain-rest",
+  "version": "0.1.0",
+  "uid": "e8a3c935-cfae-452c-8c84-9eea89a246bd",
+  "visible_thought_rows": 5,
+  "checked_at": "2026-05-28T21:01:43.203Z"
+}
+```
+
+---
+
+## 2. Capture — `POST /teambrain-rest/thoughts`
+
+```bash
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts" -d '{
+  "content": "We standardized on UTC for all stored timestamps; convert at the edges only.",
+  "scope": "project",
+  "type": "convention",
+  "project_slug": "fabric-testbed/TeamBrain",
+  "tags": ["timestamps", "convention"],
+  "paths": ["migrations/0001_init.sql"]
+}' | jq .
+```
+
+Returns `201`:
+
+```json
+{
+  "id": "d5dfab3a-1ad6-49ac-a91c-de5f4b13afe1",
+  "scope": "project",
+  "type": "convention",
+  "project_slug": "fabric-testbed/TeamBrain",
+  "project_id": "bb30f8c5-d611-4735-89bf-8b79ad511f04",
+  "created_at": "2026-05-28T21:02:10.904289+00:00",
+  "content_chars": 76,
+  "embedding_dims": 1536,
+  "embedding_model": "openai:text-embedding-3-small"
+}
+```
+
+Notes:
+- `scope: "personal"` must omit `project_slug` (personal thoughts carry no project).
+- `project` / `project_private` require you to be a writer on the project;
+  RLS denial returns `403`.
+- `type` is optional but recommended: `decision | convention | gotcha | context | preference | runbook`.
+
+---
+
+## 3. Search — `POST /teambrain-rest/thoughts/search`
+
+Semantic (vector) search, ranked by cosine similarity, RLS-filtered.
+
+```bash
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts/search" -d '{
+  "query": "how do we handle timestamps?",
+  "project_slug": "fabric-testbed/TeamBrain",
+  "limit": 5,
+  "threshold": 0.3
+}' | jq .
+```
+
+```json
+{
+  "query": "how do we handle timestamps?",
+  "project_slug": "fabric-testbed/TeamBrain",
+  "cross_project": false,
+  "threshold": 0.3,
+  "count": 1,
+  "results": [
+    { "id": "d5dfab3a-...", "similarity": 0.71, "scope": "project",
+      "type": "convention", "content": "We standardized on UTC ...", "tags": ["timestamps","convention"] }
+  ]
+}
+```
+
+- `threshold` defaults to `0.3` (tuned for `text-embedding-3-small`; relevant
+  matches cluster 0.4–0.6).
+- `cross_project: true` searches everything you can see and ignores `project_slug`.
+- `scopes: ["project","project_private"]` restricts which scopes to return.
+
+---
+
+## 4. List recent — `GET /teambrain-rest/thoughts`
+
+Newest-first, no semantic ranking. Filters are query params; `scopes` is
+comma-separated.
+
+```bash
+curl -sS "${AUTH[@]}" \
+  "$BASE/teambrain-rest/thoughts?project_slug=fabric-testbed/TeamBrain&limit=10&scopes=project,project_private" | jq .
+
+# only rows created after a timestamp:
+curl -sS "${AUTH[@]}" \
+  "$BASE/teambrain-rest/thoughts?project_slug=fabric-testbed/TeamBrain&since=2026-05-01T00:00:00Z" | jq '.count'
+```
+
+---
+
+## 5. Mark stale — `PATCH /teambrain-rest/thoughts/{id}/stale`
+
+```bash
+ID=d5dfab3a-1ad6-49ac-a91c-de5f4b13afe1
+curl -sS "${AUTH[@]}" -X PATCH "$BASE/teambrain-rest/thoughts/$ID/stale" -d '{
+  "confidence": "deprecated",
+  "reason": "superseded by PR #1234"
+}' | jq .
+```
+
+```json
+{ "updated": true, "id": "d5dfab3a-...", "new_confidence": "deprecated",
+  "last_verified_at": "2026-05-28T21:02:42.137+00:00", "reason_received": "superseded by PR #1234" }
+```
+
+If the thought doesn't exist *or* you lack permission, the response is
+`{ "updated": false, ... }` — the two cases are intentionally not
+distinguished (that would leak existence). `confidence` defaults to
+`deprecated`; the body is optional.
+
+---
+
+## 6. Promote (preview) — `POST /teambrain-rest/thoughts/{id}/promote`
+
+Returns a preview of the docs PR that promotion *would* create. It does not
+open a PR yet (Phase 6).
+
+```bash
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts/$ID/promote" -d '{
+  "target_path": "docs/adr/",
+  "target_branch": "main"
+}' | jq '{ok, file: .request.proposed_filename, branch: .request.proposed_branch}'
+```
+
+---
+
+## 7. Register a project — `POST /teambrain-register-project/register`
+
+Self-service registration, gated on GitHub repo-admin permission. You must
+be an **admin** of the repo, and the owner must be the configured org.
+
+```bash
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-register-project/register" -d '{
+  "repo_slug": "fabric-testbed/some-repo",
+  "github_team_slugs": []
+}' | jq .
+```
+
+Returns `201` with the created `project` and a membership `sync` report.
+Common rejections: `403` (not repo admin / wrong org), `404` (repo not
+visible to the TeamBrain GitHub App), `409` (already registered).
+
+---
+
+## Error shape
+
+All errors return a JSON body:
+
+```json
+{ "error": "validation failed: content: String must contain at least 1 character(s)" }
+```
+
+| Status | Meaning |
+|---|---|
+| `400` | Request validation failed (bad/missing field). |
+| `401` | Missing or malformed JWT. |
+| `403` | RLS denied the write, or a registration gate failed. |
+| `404` | Project/repo not found or not accessible to you. |
+| `409` | Project already registered. |
+| `502` | An upstream dependency (DB, embedding provider, GitHub) failed. |
