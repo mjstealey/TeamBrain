@@ -4,14 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository State
 
-**Phases 0 → 3 complete (as of 2026-05-11).** Working artifacts on `main`:
+**Phases 0 → 4 complete (as of 2026-05-28). Deployed and live on `pr.fabric-testbed.net`.** Working artifacts on `main`:
 
-- `migrations/0001_init.sql` … `0010_pg_cron_membership_sync.sql` + `seed.sql` — multi-tenant schema, RLS for `personal | project | project_private`, pgvector with model-tagged embeddings (768-dim), GitHub team mapping, soft-delete on `project_members`, `sync_runs` audit table, pg_cron membership sync.
-- `edge-functions/` — multi-tenant MCP edge function with 5 tools, smoke-tested via curl; pluggable embedding provider (OpenAI default, Ollama variant).
-- `deploy/production/` — docker-compose overlay + env template + README for `pr.fabric-testbed.net`.
-- Per-phase checklists under `docs/phase-{0,1,2,3}-checklist.md`.
+- `migrations/0001_init.sql` … `0011_project_registration.sql` + `seed.sql` — multi-tenant schema, RLS for `personal | project | project_private`, pgvector with model-tagged embeddings (1536-dim OpenAI default in production; optional 768-dim Ollama variant via `0005`), GitHub team mapping, soft-delete on `project_members`, `sync_runs` audit table, pg_cron membership sync, and the `0011` drop of the placeholder project-insert policy.
+- `edge-functions/` — four Deno functions: `teambrain-mcp` (6 MCP tools: `ping` + `capture`/`search`/`list_recent`/`mark_stale`/`promote_to_docs`), `teambrain-membership-sync` (GitHub-App-driven `project_members` reconciliation, pg_cron-scheduled), `teambrain-register-project` (self-service registration gated on GitHub repo-admin), and `teambrain-rest` (plain HTTP/JSON mirror of the MCP tools). Pluggable embedding provider (OpenAI default, Ollama variant).
+- `deploy/production/` — docker-compose overlays (nginx Path B) + env template + runbook README, plus the FABRIC-branded landing page and the OpenAPI 3.1 spec under `nginx/html/`.
+- `examples/` — curl recipes, an OpenAI function-calling client, and an illustrative GitHub Actions capture-on-merge workflow.
+- Per-phase checklists under `docs/phase-{0,1,2,3,4}-checklist.md`.
 
-**Next phase: Phase 4 — REST + OpenAPI surface.** Thin REST handlers over the same backend logic (PostgREST covers some; custom edge functions cover the rest), publish OpenAPI spec, example clients (OpenAI function calling, curl, GitHub Actions). See Phased Roadmap below.
+**Live at `https://pr.fabric-testbed.net`:** GitHub-OAuth sign-in + landing page, the MCP server (`/functions/v1/teambrain-mcp/mcp`), the REST surface (`/functions/v1/teambrain-rest/*`), self-service registration (`/functions/v1/teambrain-register-project/register`), and the published OpenAPI spec (`/openapi.yaml`). Multiple projects registered, including `fabric-testbed/TeamBrain` (dogfood), `fabric-testbed/publication-tracker-dev`, and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
+
+**Next phase: Phase 5 — Capture integrations.** Slack bot (channel → `project_id`), GitHub Action for PR-merge summarization with a human-approval gate, slash commands for Claude Code and Cursor. **Gating item:** a long-lived, non-interactive API token (deferred from Phase 4 — see `docs/phase-4-checklist.md` §J) is required before the GitHub-Action half can run end-to-end; the rest of Phase 5 has no such dependency. See Phased Roadmap below.
 
 Build/lint/test commands still do not exist as a unified suite. SQL migrations apply via Studio or `psql`; edge functions deploy via the Supabase CLI / docker exec. Do not invent commands; ask if uncertain.
 
@@ -35,7 +38,7 @@ All four major architectural decisions are locked in (see `docs/adr/0001-teambra
 
 Pre-pilot social-coordination blocker still open: Komal's buy-in (one-time GitHub OAuth login on `pr.fabric-testbed.net`, willingness to read `AGENTS.md`, review cadence during the pilot window). Sub-questions tracked in `docs/phase-0-checklist.md` B1. Confirmed her GitHub handle is `kthare10` (seed commit `4d079e2`).
 
-Phase 4 has no architectural blockers — proceed when ready.
+Phase 5 has no architectural blockers, but its GitHub-Action capture integration is gated on a long-lived, non-interactive API-token mechanism (deferred from Phase 4 — see `docs/phase-4-checklist.md` §I/§J). The Slack-bot and slash-command halves of Phase 5 can proceed without it.
 
 ## Architecture Reference
 
@@ -112,13 +115,15 @@ Capture decisions and blockers back to Open Brain with the prefix `PROJECT: Team
 - **No credentials, API keys, or secrets in any committed file.** Use `.env` (gitignored) and document required vars in `.env.template`.
 - **No `DROP TABLE`, `DROP DATABASE`, `TRUNCATE`, or unqualified `DELETE FROM`** in SQL files.
 
-## Phase 4 — Suggested Next Deliverables
+## Phase 4 — Delivered
 
-1. Inventory which planned tool-equivalents PostgREST already gives us for free against the current schema, vs. which need custom edge-function handlers.
-2. Author `edge-functions/teambrain-rest/` (or extend the existing MCP function) covering the gaps — at minimum the equivalents of `capture_project_thought`, `search_project_thoughts` (vector similarity is not a PostgREST primitive), `mark_stale`, and `promote_to_docs`.
-3. Publish an OpenAPI 3.1 spec at a stable path (e.g. `/openapi.yaml`) describing the unified surface (PostgREST-generated + custom).
-4. Example clients under `examples/`: curl recipes, an OpenAI function-calling snippet, and a GitHub Actions workflow that captures a thought from a merged-PR title.
-5. Smoke test parity: every MCP tool's behavior reproducible through REST with the same GitHub-OAuth JWT.
+REST + OpenAPI surface, complete and live (full detail + Done-when criteria in `docs/phase-4-checklist.md`):
+
+1. `teambrain-rest` edge function — a **uniform custom** REST mirror of all six MCP tools. The PostgREST-hybrid option was considered and rejected (decision A1): the published surface is one coherent, LLM-friendly contract; PostgREST stays available underneath but undocumented.
+2. `teambrain-register-project` — self-service project registration gated on GitHub repo-admin permission; migration `0011` closed the placeholder `authenticated`-insert policy so the gated function is the only path to create a project.
+3. OpenAPI 3.1 spec published at `/openapi.yaml` (served static by nginx), validated lint-clean with `openapi-spec-validator`.
+4. `examples/` — curl recipes, an OpenAI function-calling client, and an illustrative GitHub Actions capture-on-merge workflow (the runnable version waits on the deferred long-lived token).
+5. Parity verified: every MCP tool reproduced through REST with the same GitHub-OAuth JWT.
 
 ## Phased Roadmap
 
