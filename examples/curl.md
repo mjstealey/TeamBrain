@@ -188,6 +188,76 @@ visible to the TeamBrain GitHub App), `409` (already registered).
 
 ---
 
+## 8. Non-interactive API tokens — `teambrain-token`
+
+For server-to-server callers (GitHub Actions, cron, CI) that can't do the
+interactive GitHub-OAuth flow. A project **admin** issues a long-lived opaque
+token; the caller exchanges it for a short-lived JWT, then calls the REST/MCP
+surface with that JWT. Default capability: capture + read on
+`project`/`personal` (no `project_private`, no `mark_stale`/`promote_to_docs`).
+
+### Issue a token (admin only — uses your user JWT)
+
+```bash
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-token/token" -d '{
+  "project_slug": "fabric-testbed/fabric-core-api",
+  "name": "PR-merge capture action"
+}' | jq .
+```
+
+Returns `201`. The plaintext `token` is shown **once** — store it now:
+
+```json
+{
+  "token": "tbk_xq3…",
+  "note": "Store this now — it is shown ONLY once and cannot be retrieved later.",
+  "id": "…", "token_prefix": "tbk_xq3F1a8b",
+  "project_slug": "fabric-testbed/fabric-core-api",
+  "allowed_tools": ["capture_project_thought","search_project_thoughts","list_recent_project_thoughts"],
+  "allowed_scopes": ["project","personal"], "expires_at": "2026-11-25T…Z"
+}
+```
+
+### Exchange the opaque token for a short-lived JWT (no user JWT)
+
+The exchange takes **two headers**: the opaque token in `X-TeamBrain-Token`,
+and the *public* anon key as the bearer (the gateway requires some valid JWT;
+the exchange endpoint ignores it). The anon key is the same one the landing
+page ships to browsers — it is not a secret.
+
+```bash
+export TBK='tbk_xq3…'              # the opaque token (keep this secret)
+export ANON='<public anon key>'    # gateway pass-through only
+ACCESS=$(curl -sS -X POST "$BASE/teambrain-token/token/exchange" \
+  -H "Authorization: Bearer $ANON" \
+  -H "X-TeamBrain-Token: $TBK" | jq -r .access_token)
+
+# Use $ACCESS like any user JWT (lasts 15 min):
+curl -sS -H "Authorization: Bearer $ACCESS" -H "Content-Type: application/json" \
+  -X POST "$BASE/teambrain-rest/thoughts" -d '{
+    "content": "Merged PR #42: switch to UTC everywhere",
+    "scope": "project", "type": "decision",
+    "project_slug": "fabric-testbed/fabric-core-api"
+  }' | jq .
+```
+
+A token call to a disallowed tool returns `403` (`not permitted for this API
+token`); a `project_private` scope is likewise refused. RLS enforces the same
+limits at the database.
+
+### List / revoke (admin only — your user JWT)
+
+```bash
+curl -sS "${AUTH[@]}" "$BASE/teambrain-token/token?project=fabric-testbed/fabric-core-api" | jq .
+
+TOKEN_ID=…   # from the list (the plaintext is never retrievable)
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-token/token/$TOKEN_ID/revoke" | jq .
+```
+
+Revocation takes effect within the 15-minute access-token TTL.
+
+---
+
 ## Error shape
 
 All errors return a JSON body:

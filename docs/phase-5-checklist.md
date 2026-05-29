@@ -91,6 +91,7 @@ Read `teambrain_token` / `teambrain_allowed_tools` from the JWT; when present, r
 
 - Confirm `JWT_SECRET` is in the functions service env (expected — the stock dispatcher reads it); add to the `override.yml` passthrough only if missing (and if so, `cp` to the box per the override-is-a-copy rule).
 - Apply `0012` via Studio; rsync `teambrain-token/` into `~/supabase-stack/volumes/functions/` (no `--delete` — the earlier footgun wiped stock `main/`/`hello/`); redeploy patched `teambrain-mcp` / `teambrain-rest` / `teambrain-membership-sync`.
+- **Reload PostgREST's schema cache** after `0012` (`NOTIFY pgrst, 'reload schema'`, or bounce the `rest` container) so the new `public.api_tokens` table is visible — otherwise the `teambrain-token` service client gets a 404/`PGRST205` on it.
 - Smoke: **Michael** creates the token in his own shell (plaintext returned once — not echoed through Claude) → exchange → capture a `project` thought → confirm `project_private` capture and `mark_stale` are denied → revoke → confirm exchange now fails.
 
 **Done when:** the full smoke passes on `pr.fabric-testbed.net`.
@@ -135,6 +136,7 @@ Phase 6 (staleness & promotion: `last_verified_at` decay in ranking, commit-trig
 
 - **`teambrain-auth` dev refresh daemon** — developer-side helper that keeps a fresh 24h JWT on disk for CLI clients. Convenience, still deferred (§ J of Phase 4).
 - **Exchange audit / rate limiting** — an `api_token_uses` audit table or per-token rate limit on `/token/exchange`. Not required for the pilot; revisit if the exchange surface needs hardening.
+- **Asymmetric-key migration** — minting assumes legacy **HS256** over `JWT_SECRET` (matches this stack's current anon/service JWTs and the dispatcher's legacy-verify path). If the stack ever migrates to Supabase's asymmetric (ES256/JWKS) keys, `teambrain-token`'s `mintAccessToken` must switch to signing with the ES256 private key.
 
 ---
 

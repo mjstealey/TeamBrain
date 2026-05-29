@@ -220,12 +220,12 @@ export async function syncOneProject(
   //    to restore one).
   const { data: currentRows, error: currentErr } = await service
     .from('project_members')
-    .select('user_id, role, removed_at')
+    .select('user_id, role, removed_at, is_service_account')
     .eq('project_id', project.project_id);
   if (currentErr) throw new Error(`project_members fetch failed: ${currentErr.message}`);
 
   // user_id → row
-  type CurrentRow = { user_id: string; role: MemberRole; removed_at: string | null };
+  type CurrentRow = { user_id: string; role: MemberRole; removed_at: string | null; is_service_account: boolean };
   const currentByUserId = new Map<string, CurrentRow>(
     (currentRows ?? []).map((r) => [r.user_id, r as CurrentRow]),
   );
@@ -262,7 +262,8 @@ export async function syncOneProject(
   // Removals: anyone in current (not tombstoned) but not in desired.
   const removeUserIds: string[] = [];
   for (const [userId, current] of currentByUserId) {
-    if (current.removed_at !== null) continue;          // already tombstoned
+    if (current.is_service_account)    continue;        // per-project bot — no GitHub identity to reconcile (0012)
+    if (current.removed_at !== null)   continue;        // already tombstoned
     if (desiredByUserId.has(userId))   continue;        // still wanted
     removed.push({ login: '<auth-only>', previous_role: current.role });
     removeUserIds.push(userId);

@@ -56,6 +56,17 @@ class HttpError extends Error {
 interface AuthContext {
   userClient: SupabaseClient;
   userId:     string;     // auth.uid() — the JWT's `sub` claim
+  caps:       TokenCaps;  // API-token capability claims (absent ⇒ a human JWT)
+}
+
+// Capability claims carried by an exchanged API-token JWT (teambrain-token).
+// Absent on human GitHub-OAuth JWTs, in which case isToken=false and the
+// guards are inert. RLS (migration 0012) is the real boundary — these checks
+// just return clear errors instead of opaque RLS denials / silent empties.
+interface TokenCaps {
+  isToken:       boolean;
+  allowedTools:  string[];
+  allowedScopes: string[];
 }
 
 // Decode the JWT payload's `sub` without re-verifying the signature (the
@@ -75,6 +86,27 @@ function jwtSub(authHeader: string): string {
   return payload.sub;
 }
 
+// Decode the API-token capability claims (no re-verify; same trust model as
+// jwtSub). Returns isToken=false for a human JWT or any decode hiccup.
+function tokenCaps(authHeader: string): TokenCaps {
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const parts = token.split('.');
+  if (parts.length !== 3) return { isToken: false, allowedTools: [], allowedScopes: [] };
+  let payload: Record<string, unknown>;
+  try {
+    const padded = parts[1] + '='.repeat((4 - parts[1].length % 4) % 4);
+    payload = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return { isToken: false, allowedTools: [], allowedScopes: [] };
+  }
+  if (payload.teambrain_token !== true) return { isToken: false, allowedTools: [], allowedScopes: [] };
+  return {
+    isToken:       true,
+    allowedTools:  Array.isArray(payload.teambrain_allowed_tools)  ? payload.teambrain_allowed_tools  as string[] : [],
+    allowedScopes: Array.isArray(payload.teambrain_allowed_scopes) ? payload.teambrain_allowed_scopes as string[] : [],
+  };
+}
+
 function requireAuth(authHeader: string | null): AuthContext {
   if (!authHeader) throw new HttpError(401, 'Authorization header required');
   return {
@@ -84,7 +116,24 @@ function requireAuth(authHeader: string | null): AuthContext {
       db:     { schema: 'public' },
     }),
     userId: jwtSub(authHeader),
+    caps:   tokenCaps(authHeader),
   };
+}
+
+// Reject an endpoint when the caller's API token does not list its MCP tool
+// name. Inert for human JWTs (isToken=false). The `ping`/`health` diagnostic
+// is intentionally not gated.
+function requireToolAllowed(caps: TokenCaps, tool: string): void {
+  if (caps.isToken && !caps.allowedTools.includes(tool)) {
+    throw new HttpError(403, `not permitted for this API token (tool "${tool}"); allowed: ${JSON.stringify(caps.allowedTools)}`);
+  }
+}
+
+// Clamp requested scopes to the token's allowed set (RLS still enforces).
+// For a token, an empty result ⇒ caller asked only for scopes it cannot see.
+function tokenScopes(caps: TokenCaps, requested: string[] | undefined): string[] {
+  if (!requested || requested.length === 0) return caps.allowedScopes;
+  return requested.filter((s) => caps.allowedScopes.includes(s));
 }
 
 // ---------------------------------------------------------------------------
@@ -177,8 +226,13 @@ const CaptureBody = z.object({
 });
 
 app.post('/thoughts', async (c) => {
-  const { userClient, userId } = requireAuth(c.req.header('Authorization') ?? null);
+  const { userClient, userId, caps } = requireAuth(c.req.header('Authorization') ?? null);
+  requireToolAllowed(caps, 'capture_project_thought');
   const body = parse(CaptureBody, await jsonBody(c));
+
+  if (caps.isToken && !caps.allowedScopes.includes(body.scope)) {
+    throw new HttpError(403, `scope "${body.scope}" not permitted for this API token; allowed: ${JSON.stringify(caps.allowedScopes)}`);
+  }
 
   // Resolve project context (skip for personal — CHECK requires project_id NULL).
   let projectId: string | null = null;
@@ -248,7 +302,8 @@ const SearchBody = z.object({
 });
 
 app.post('/thoughts/search', async (c) => {
-  const { userClient } = requireAuth(c.req.header('Authorization') ?? null);
+  const { userClient, caps } = requireAuth(c.req.header('Authorization') ?? null);
+  requireToolAllowed(caps, 'search_project_thoughts');
   const body = parse(SearchBody, await jsonBody(c));
 
   let filterProjectId: string | null = null;
@@ -271,7 +326,7 @@ app.post('/thoughts/search', async (c) => {
     match_count:       body.limit,
     match_threshold:   body.threshold,
     filter_project_id: filterProjectId,
-    filter_scopes:     body.scopes ?? null,
+    filter_scopes:     caps.isToken ? tokenScopes(caps, body.scopes) : (body.scopes ?? null),
   });
   if (error) throw new HttpError(502, `search failed: ${error.message} (code=${error.code ?? 'n/a'})`);
 
@@ -313,7 +368,8 @@ const ListQuery = z.object({
 });
 
 app.get('/thoughts', async (c) => {
-  const { userClient } = requireAuth(c.req.header('Authorization') ?? null);
+  const { userClient, caps } = requireAuth(c.req.header('Authorization') ?? null);
+  requireToolAllowed(caps, 'list_recent_project_thoughts');
 
   const scopesRaw = c.req.query('scopes');
   const raw = {
@@ -340,9 +396,10 @@ app.get('/thoughts', async (c) => {
     .order('created_at', { ascending: false })
     .limit(q.limit);
 
-  if (filterProjectId)   query = query.eq('project_id', filterProjectId);
-  if (q.scopes?.length)  query = query.in('scope', q.scopes);
-  if (q.since)           query = query.gt('created_at', q.since);
+  if (filterProjectId)       query = query.eq('project_id', filterProjectId);
+  if (caps.isToken)          query = query.in('scope', tokenScopes(caps, q.scopes));
+  else if (q.scopes?.length) query = query.in('scope', q.scopes);
+  if (q.since)               query = query.gt('created_at', q.since);
 
   const { data, error } = await query;
   if (error) throw new HttpError(502, `list failed: ${error.message} (code=${error.code ?? 'n/a'})`);
@@ -362,7 +419,8 @@ const StaleBody = z.object({
 });
 
 app.patch('/thoughts/:id/stale', async (c) => {
-  const { userClient } = requireAuth(c.req.header('Authorization') ?? null);
+  const { userClient, caps } = requireAuth(c.req.header('Authorization') ?? null);
+  requireToolAllowed(caps, 'mark_stale');
   const id = parse(z.string().uuid(), c.req.param('id'));
   // Body is optional; default to {} so PATCH with no body still works.
   const rawBody = c.req.header('content-length') && c.req.header('content-length') !== '0'
@@ -406,7 +464,8 @@ const PromoteBody = z.object({
 });
 
 app.post('/thoughts/:id/promote', async (c) => {
-  const { userClient } = requireAuth(c.req.header('Authorization') ?? null);
+  const { userClient, caps } = requireAuth(c.req.header('Authorization') ?? null);
+  requireToolAllowed(caps, 'promote_to_docs');
   const id = parse(z.string().uuid(), c.req.param('id'));
   const rawBody = c.req.header('content-length') && c.req.header('content-length') !== '0'
     ? await jsonBody(c)

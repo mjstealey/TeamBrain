@@ -90,6 +90,62 @@ function getAuthContext(authHeader: string | null): AuthContext {
 }
 
 // ---------------------------------------------------------------------------
+// API-token capability claims (migration 0012 / teambrain-token)
+// ---------------------------------------------------------------------------
+//
+// An exchanged API-token JWT carries `teambrain_token: true` plus allow-lists.
+// Human GitHub-OAuth JWTs carry none of this, so isToken=false and the guards
+// below are inert. RLS is the real boundary — these checks just turn an opaque
+// RLS denial / silent-empty result into a clear "not permitted" message.
+
+interface TokenCaps {
+  isToken:       boolean;
+  allowedTools:  string[];
+  allowedScopes: string[];
+}
+
+function tokenCaps(authHeader: string | null): TokenCaps {
+  const none = { isToken: false, allowedTools: [] as string[], allowedScopes: [] as string[] };
+  if (!authHeader) return none;
+  try {
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const parts = token.split('.');
+    if (parts.length !== 3) return none;
+    const padded  = parts[1] + '='.repeat((4 - parts[1].length % 4) % 4);
+    const payload = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+    if (payload.teambrain_token !== true) return none;
+    return {
+      isToken:       true,
+      allowedTools:  Array.isArray(payload.teambrain_allowed_tools)  ? payload.teambrain_allowed_tools  : [],
+      allowedScopes: Array.isArray(payload.teambrain_allowed_scopes) ? payload.teambrain_allowed_scopes : [],
+    };
+  } catch {
+    return none;
+  }
+}
+
+// Returns an MCP isError result when an API token does not permit `tool`,
+// else null. Inert for human JWTs.
+function toolDenied(caps: TokenCaps, tool: string) {
+  if (caps.isToken && !caps.allowedTools.includes(tool)) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({
+        error:         `tool "${tool}" is not permitted for this API token`,
+        allowed_tools: caps.allowedTools,
+      }, null, 2) }],
+      isError: true,
+    };
+  }
+  return null;
+}
+
+// Clamp requested scopes to the token's allowed set (RLS still enforces).
+function tokenScopes(caps: TokenCaps, requested: string[] | undefined): string[] {
+  if (!requested || requested.length === 0) return caps.allowedScopes;
+  return requested.filter((s) => caps.allowedScopes.includes(s));
+}
+
+// ---------------------------------------------------------------------------
 // Project-slug → project-id resolution
 // ---------------------------------------------------------------------------
 //
@@ -148,6 +204,7 @@ app.get('*', (c) => c.json({
 // `userClient`.
 app.post('*', async (c) => {
   const authHeader = c.req.header('Authorization') ?? null;
+  const caps       = tokenCaps(authHeader);
 
   const server = new McpServer({
     name:    'teambrain-mcp',
@@ -241,6 +298,14 @@ app.post('*', async (c) => {
       linked_issue_url:  z.string().optional(),
     },
     async (args) => {
+      const denied = toolDenied(caps, 'capture_project_thought');
+      if (denied) return denied;
+      if (caps.isToken && !caps.allowedScopes.includes(args.scope)) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({
+          error:          `scope "${args.scope}" is not permitted for this API token`,
+          allowed_scopes: caps.allowedScopes,
+        }, null, 2) }], isError: true };
+      }
       const { userClient, userId } = getAuthContext(authHeader);
 
       // 1. Resolve project context (skip for personal scope — the CHECK
@@ -357,6 +422,8 @@ app.post('*', async (c) => {
         .describe('If true, ignore project_slug and search every accessible thought.'),
     },
     async (args) => {
+      const denied = toolDenied(caps, 'search_project_thoughts');
+      if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
 
       // 1. Resolve project filter (skipped if cross_project=true).
@@ -392,7 +459,7 @@ app.post('*', async (c) => {
         match_count:       args.limit,
         match_threshold:   args.threshold,
         filter_project_id: filterProjectId,
-        filter_scopes:     args.scopes ?? null,
+        filter_scopes:     caps.isToken ? tokenScopes(caps, args.scopes) : (args.scopes ?? null),
       });
 
       if (error) {
@@ -467,6 +534,8 @@ app.post('*', async (c) => {
         .describe('If true, ignore project_slug and list every accessible thought.'),
     },
     async (args) => {
+      const denied = toolDenied(caps, 'list_recent_project_thoughts');
+      if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
 
       let filterProjectId: string | null = null;
@@ -491,7 +560,8 @@ app.post('*', async (c) => {
         .limit(args.limit);
 
       if (filterProjectId) q = q.eq('project_id', filterProjectId);
-      if (args.scopes?.length) q = q.in('scope', args.scopes);
+      if (caps.isToken)        q = q.in('scope', tokenScopes(caps, args.scopes));
+      else if (args.scopes?.length) q = q.in('scope', args.scopes);
       if (args.since)          q = q.gt('created_at', args.since);
 
       const { data, error } = await q;
@@ -541,6 +611,8 @@ app.post('*', async (c) => {
         .describe('Optional reason; appended to metadata.staleness_reason.'),
     },
     async (args) => {
+      const denied = toolDenied(caps, 'mark_stale');
+      if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
 
       // Build the update payload. We touch metadata only when a reason
@@ -621,6 +693,8 @@ app.post('*', async (c) => {
         .describe('Base branch of the eventual PR.'),
     },
     async (args) => {
+      const denied = toolDenied(caps, 'promote_to_docs');
+      if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
 
       const { data, error } = await userClient

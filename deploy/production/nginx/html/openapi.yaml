@@ -21,6 +21,12 @@ info:
     (`owner/repo`, e.g. `fabric-testbed/fabric-core-api`). When omitted, the
     server falls back to its configured `TEAMBRAIN_DEFAULT_PROJECT_SLUG`.
     Always pass it explicitly when working against a non-default project.
+
+    **Non-interactive tokens.** Server-to-server callers (GitHub Actions,
+    cron, CI) that can't run the interactive OAuth flow use a long-lived API
+    token issued by `POST /teambrain-token/token` and exchanged at `POST
+    /teambrain-token/token/exchange` for a short-lived JWT. See the `tokens`
+    tag.
   license:
     name: TBD
   contact:
@@ -41,6 +47,8 @@ tags:
     description: Capture, search, list, and lifecycle of memory rows.
   - name: projects
     description: Project registration.
+  - name: tokens
+    description: Long-lived non-interactive API tokens (issue, list, revoke, exchange).
 
 paths:
   /teambrain-rest/health:
@@ -263,6 +271,138 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "502": { $ref: "#/components/responses/UpstreamError" }
 
+  /teambrain-token/token:
+    post:
+      operationId: createApiToken
+      tags: [tokens]
+      summary: Issue a long-lived API token
+      description: |
+        Issues an opaque, non-interactive API token (`tbk_…`) scoped to a
+        project, for server-to-server callers. Requires a user JWT whose
+        caller is an **admin** of the target project. On first issuance for a
+        project a per-project bot identity is provisioned.
+
+        The plaintext token is returned **once** in the `token` field and is
+        never retrievable again — only its SHA-256 hash is stored. Defaults
+        grant capture + read on `project`/`personal` scope (no
+        `project_private`, no `mark_stale`/`promote_to_docs`) and a 180-day
+        lifetime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTokenRequest" }
+      responses:
+        "201":
+          description: Token issued. Store `token` now — it is shown only once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateTokenResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an admin of the project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    get:
+      operationId: listApiTokens
+      tags: [tokens]
+      summary: List a project's API tokens
+      description: |
+        Lists token metadata for a project — never the hash or plaintext.
+        Requires a user JWT whose caller is an **admin** of the project.
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema: { type: string }
+          description: Project slug (owner/repo) to list tokens for.
+          example: fabric-testbed/fabric-core-api
+      responses:
+        "200":
+          description: Token metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenListResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an admin of the project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /teambrain-token/token/exchange:
+    post:
+      operationId: exchangeApiToken
+      tags: [tokens]
+      summary: Exchange an API token for a short-lived JWT
+      description: |
+        Exchanges an opaque API token for a short-lived (15 min) access JWT
+        that authenticates as the project's bot on the MCP/REST surface.
+
+        **Auth (two headers).** Send the opaque token in `X-TeamBrain-Token`,
+        and the *public* anon key as the `Authorization: Bearer` value — the
+        gateway requires a valid JWT, and the anon key (the same one the
+        landing page ships to browsers) is not a secret. The exchange endpoint
+        ignores the bearer; the opaque token is the credential. No user JWT is
+        involved.
+
+        The returned `access_token` carries the token's capability claims;
+        RLS and the MCP/REST capability guard enforce them.
+      security:
+        - bearerAuth: []
+          teamBrainToken: []
+      responses:
+        "200":
+          description: A freshly minted short-lived access token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExchangeResult" }
+        "401":
+          description: Missing `X-TeamBrain-Token`, or the token is invalid, revoked, or expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /teambrain-token/token/{id}/revoke:
+    post:
+      operationId: revokeApiToken
+      tags: [tokens]
+      summary: Revoke an API token
+      description: |
+        Soft-revokes a token (sets `revoked_at`); takes effect within the
+        15-min access-token TTL. Requires a user JWT whose caller is an
+        **admin** of the token's project. Idempotent — revoking an
+        already-revoked token returns its existing `revoked_at`.
+      parameters:
+        - $ref: "#/components/parameters/TokenId"
+      responses:
+        "200":
+          description: Token revoked (or already revoked).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevokeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an admin of the token's project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Token not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -270,6 +410,14 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: GitHub-OAuth-derived access token from https://pr.fabric-testbed.net/
+    teamBrainToken:
+      type: apiKey
+      in: header
+      name: X-TeamBrain-Token
+      description: |
+        A long-lived TeamBrain API token (`tbk_…`) issued by
+        `POST /teambrain-token/token`. Presented only to the exchange
+        endpoint, alongside the public anon key as the bearer.
 
   parameters:
     ThoughtId:
@@ -278,6 +426,12 @@ components:
       required: true
       schema: { type: string, format: uuid }
       description: UUID of the target thought.
+    TokenId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID of the target API token.
 
   responses:
     BadRequest:
@@ -297,6 +451,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     UpstreamError:
       description: An upstream dependency (database, embedding provider, GitHub) failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServerError:
+      description: An internal error occurred handling the request.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -665,3 +824,125 @@ components:
         note:
           type: string
           description: e.g. "project registered; team sync will retry on next scheduled run".
+
+    ToolName:
+      type: string
+      enum:
+        - ping
+        - capture_project_thought
+        - search_project_thoughts
+        - list_recent_project_thoughts
+        - mark_stale
+        - promote_to_docs
+
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [project_slug]
+      properties:
+        project_slug:
+          type: string
+          pattern: "^[^/\\s]+/[^/\\s]+$"
+          description: Project (owner/repo) the token is scoped to.
+          example: fabric-testbed/fabric-core-api
+        name:
+          type: string
+          description: Human label for the token (shown in the list).
+          example: PR-merge capture action
+        allowed_tools:
+          type: array
+          items: { $ref: "#/components/schemas/ToolName" }
+          description: |
+            Tools the token may call. Defaults to capture + the two read tools
+            (capture_project_thought, search_project_thoughts,
+            list_recent_project_thoughts).
+        allowed_scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+          description: Scopes the token may act on. Defaults to [project, personal].
+        expires_in_days:
+          type: integer
+          minimum: 1
+          description: Token lifetime in days. Defaults to 180.
+
+    CreateTokenResult:
+      type: object
+      required: [token, id, token_prefix, project_slug, allowed_tools, allowed_scopes, expires_at]
+      properties:
+        token:
+          type: string
+          description: The plaintext API token (tbk_…). Shown ONCE — store it now.
+          example: tbk_QmFzZTY0VXJsRW5jb2RlZA
+        note: { type: string }
+        id: { type: string, format: uuid }
+        token_prefix:
+          type: string
+          description: First chars of the token, shown in the list for identification.
+        project_slug: { type: string }
+        allowed_tools:
+          type: array
+          items: { $ref: "#/components/schemas/ToolName" }
+        allowed_scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+        name: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    TokenMeta:
+      type: object
+      required: [id, token_prefix, allowed_tools, allowed_scopes, created_at, expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        token_prefix: { type: string }
+        name: { type: [string, "null"] }
+        allowed_tools:
+          type: array
+          items: { $ref: "#/components/schemas/ToolName" }
+        allowed_scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+        created_by: { type: [string, "null"], format: uuid }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: string, format: date-time }
+        revoked_at: { type: [string, "null"], format: date-time }
+
+    TokenListResult:
+      type: object
+      required: [project_slug, tokens]
+      properties:
+        project_slug: { type: string }
+        tokens:
+          type: array
+          items: { $ref: "#/components/schemas/TokenMeta" }
+
+    ExchangeResult:
+      type: object
+      required: [access_token, token_type, expires_in, project_id, allowed_tools, allowed_scopes]
+      properties:
+        access_token:
+          type: string
+          description: Short-lived (15 min) JWT — send it as the Authorization Bearer credential on the MCP/REST surface.
+        token_type: { type: string, const: Bearer }
+        expires_in:
+          type: integer
+          description: Seconds until the access token expires (900).
+        project_id: { type: string, format: uuid }
+        project_slug: { type: [string, "null"] }
+        allowed_tools:
+          type: array
+          items: { $ref: "#/components/schemas/ToolName" }
+        allowed_scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+
+    RevokeResult:
+      type: object
+      required: [id, revoked_at]
+      properties:
+        id: { type: string, format: uuid }
+        revoked_at: { type: string, format: date-time }
+        note:
+          type: string
+          description: Present (e.g. "already revoked") when the token was already revoked.
