@@ -228,7 +228,7 @@ create policy thoughts_select
     )
     and (
       not (select app.is_token_call())
-      or scope::text = any((select app.token_allowed_scopes()))
+      or scope::text = any((select app.token_allowed_scopes())::text[])
     )
   );
 comment on policy thoughts_select on public.thoughts is
@@ -250,7 +250,7 @@ create policy thoughts_insert_self
     )
     and (
       not (select app.is_token_call())
-      or scope::text = any((select app.token_allowed_scopes()))
+      or scope::text = any((select app.token_allowed_scopes())::text[])
     )
   );
 comment on policy thoughts_insert_self on public.thoughts is
@@ -334,4 +334,3 @@ commit;
 --   --   any UPDATE/DELETE raise a row-level-security violation. A project-scope
 --   --   INSERT (author_user_id = bot, the bot is a contributor) succeeds.
 --   reset role;
-</content>
