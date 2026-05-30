@@ -14,7 +14,10 @@
 //                         (must match the column type in the deployed schema)
 // Provider-specific:
 //   openai: OPENAI_API_KEY, optional OPENAI_EMBEDDING_MODEL (default
-//           'text-embedding-3-small')
+//           'text-embedding-3-small'), optional OPENAI_BASE_URL to route via an
+//           OpenAI-compatible gateway (e.g. FABRIC's LiteLLM proxy) on a
+//           FABRIC-owned key. Only if it serves a 1536-dim model — else the
+//           schema's vector column won't match (see EMBEDDING_DIMS).
 //   ollama: OLLAMA_URL (e.g. 'http://ollama:11434'), optional
 //           OLLAMA_EMBEDDING_MODEL (default 'nomic-embed-text')
 //
@@ -86,7 +89,17 @@ export function currentEmbeddingModelTag(): string {
 // Provider: OpenAI
 // ---------------------------------------------------------------------------
 
-const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
+// Default = OpenAI direct. Set OPENAI_BASE_URL to an OpenAI-compatible gateway
+// (e.g. https://ai-renci.fabric-testbed.net/v1/) to keep the key + billing
+// FABRIC-owned — but only if it serves a 1536-dim embedding model, or the
+// EMBEDDING_DIMS check below will reject every capture. Trailing slash and an
+// existing `/v1` suffix are both handled.
+function openaiEmbeddingsUrl(): string {
+  const base = Deno.env.get('OPENAI_BASE_URL');
+  if (!base) return 'https://api.openai.com/v1/embeddings';
+  const trimmed = base.replace(/\/+$/, '');
+  return /\/v1$/.test(trimmed) ? `${trimmed}/embeddings` : `${trimmed}/v1/embeddings`;
+}
 
 async function embedOpenAI(text: string): Promise<number[]> {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
@@ -99,7 +112,7 @@ async function embedOpenAI(text: string): Promise<number[]> {
   }
   const model = Deno.env.get('OPENAI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
 
-  const res = await fetch(OPENAI_EMBEDDINGS_URL, {
+  const res = await fetch(openaiEmbeddingsUrl(), {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,

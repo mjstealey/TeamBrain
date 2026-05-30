@@ -8,9 +8,16 @@
 // Environment gate) before the Action writes anything through teambrain-rest
 // under the project bot's short-lived JWT.
 //
-// Provider: Anthropic Claude via raw fetch — same no-SDK idiom as
-// teambrain-mcp/embedding.ts. Model defaults to claude-sonnet-4-6; override
-// with TEAMBRAIN_SUMMARIZE_MODEL (Haiku for cost, Opus for quality).
+// Provider: any Anthropic-`/v1/messages`-compatible endpoint, via raw fetch
+// (same no-SDK idiom as teambrain-mcp/embedding.ts). Defaults to Anthropic
+// direct (claude-sonnet-4-6 over api.anthropic.com). Point ANTHROPIC_BASE_URL
+// at a gateway — e.g. FABRIC's LiteLLM proxy (ai-renci.fabric-testbed.net) —
+// with TEAMBRAIN_SUMMARIZE_MODEL set to a model it serves (e.g. gpt-5.4-mini)
+// to keep the key + billing FABRIC-owned. NOTE: the ai-renci catalog is
+// OpenAI-backed (gpt-5.x), so this centralizes the key/billing/governance — it
+// does NOT remove third-party egress (OpenAI is already in TeamBrain's path via
+// the embedding provider). Auth: ANTHROPIC_AUTH_TOKEN (Bearer, gateway) or
+// ANTHROPIC_API_KEY (x-api-key, Anthropic direct).
 //
 // Egress boundary (decision C‑D4): only PR METADATA reaches Claude — title,
 // body, commit messages, and changed-file PATHS. Never diff contents, so
@@ -21,10 +28,22 @@
 // the PR content strictly as data; the human-approval gate in the Action is
 // the real backstop — nothing is captured without a reviewer seeing it first.
 
-const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION      = '2023-06-01';
-const DEFAULT_MODEL          = 'claude-sonnet-4-6';
-const MAX_TOKENS             = 1500;
+const ANTHROPIC_VERSION = '2023-06-01';
+const DEFAULT_MODEL     = 'claude-sonnet-4-6';
+const MAX_TOKENS        = 1500;
+
+// Resolve the Messages API endpoint. Default = Anthropic direct. Set
+// ANTHROPIC_BASE_URL to an Anthropic-`/v1/messages`-compatible gateway (e.g.
+// https://ai-renci.fabric-testbed.net/v1/) — then TEAMBRAIN_SUMMARIZE_MODEL
+// MUST name a model that gateway serves (the claude-sonnet-4-6 default only
+// matches the Anthropic-direct endpoint). A trailing slash and an existing
+// `/v1` suffix are both handled.
+function messagesUrl(): string {
+  const base = Deno.env.get('ANTHROPIC_BASE_URL');
+  if (!base) return 'https://api.anthropic.com/v1/messages';
+  const trimmed = base.replace(/\/+$/, '');
+  return /\/v1$/.test(trimmed) ? `${trimmed}/messages` : `${trimmed}/v1/messages`;
+}
 
 // The capture types the PR-merge token may write (mirrors C‑D6 / migration
 // 0012). The thoughts.type enum also has 'preference' | 'runbook', but the
@@ -130,24 +149,33 @@ function buildUserPrompt(input: PrInput): string {
 }
 
 export async function proposeCaptures(input: PrInput): Promise<Proposal[]> {
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!apiKey) {
+  // Accept either env name: ANTHROPIC_AUTH_TOKEN (the Bearer-style name a
+  // gateway / Claude-Code config uses) or ANTHROPIC_API_KEY (Anthropic direct).
+  const authToken = Deno.env.get('ANTHROPIC_AUTH_TOKEN') ?? Deno.env.get('ANTHROPIC_API_KEY');
+  if (!authToken) {
     throw new SummarizeError(
-      'ANTHROPIC_API_KEY is not set on the Edge Runtime container. Add it to ' +
-      'the functions service environment in docker-compose.override.yml ' +
-      '(see deploy/production/README.md) before teambrain-summarize can run.',
+      'No AI credential set on the Edge Runtime container — set ANTHROPIC_AUTH_TOKEN ' +
+      '(gateway, e.g. the FABRIC LiteLLM proxy) or ANTHROPIC_API_KEY (Anthropic ' +
+      'direct) in the functions service environment (see deploy/production/README.md).',
       'config',
     );
   }
-  const model = Deno.env.get('TEAMBRAIN_SUMMARIZE_MODEL') ?? DEFAULT_MODEL;
+  const baseUrl = Deno.env.get('ANTHROPIC_BASE_URL');
+  const model   = Deno.env.get('TEAMBRAIN_SUMMARIZE_MODEL') ?? DEFAULT_MODEL;
 
-  const res = await fetch(ANTHROPIC_MESSAGES_URL, {
+  // Anthropic-direct authenticates via x-api-key; LiteLLM-style gateways via
+  // `Authorization: Bearer`. Add the Bearer header whenever a custom base URL is
+  // set so the same key works against the gateway (x-api-key is harmless there).
+  const headers: Record<string, string> = {
+    'x-api-key':         authToken,
+    'anthropic-version': ANTHROPIC_VERSION,
+    'content-type':      'application/json',
+  };
+  if (baseUrl) headers['authorization'] = `Bearer ${authToken}`;
+
+  const res = await fetch(messagesUrl(), {
     method: 'POST',
-    headers: {
-      'x-api-key':         apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-      'content-type':      'application/json',
-    },
+    headers,
     body: JSON.stringify({
       model,
       max_tokens: MAX_TOKENS,

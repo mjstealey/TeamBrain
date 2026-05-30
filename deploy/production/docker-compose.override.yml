@@ -123,6 +123,21 @@ services:
       EMBEDDING_DIMS:                   "1536"
       OPENAI_API_KEY:                   ${OPENAI_API_KEY}
       OPENAI_EMBEDDING_MODEL:           text-embedding-3-small
+      # Optional: route embeddings through an OpenAI-compatible gateway (FABRIC
+      # LiteLLM) on a FABRIC-owned key. Default keeps OpenAI-direct. Only point
+      # at a gateway that serves a 1536-dim model (must match EMBEDDING_DIMS).
+      OPENAI_BASE_URL:                  ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+
+      # --- Phase 5 § C: PR-merge summarization (teambrain-summarize) ---
+      # FABRIC LiteLLM gateway (ai-renci) — exposes an Anthropic
+      # /v1/messages-compatible endpoint. Keeps the AI key + billing
+      # FABRIC-owned. The catalog is OpenAI-backed (gpt-5.x), so this
+      # centralizes governance, NOT egress (OpenAI is already in-path via the
+      # embedding provider). Put the sk- gateway key in .env as
+      # ANTHROPIC_AUTH_TOKEN (never commit it).
+      ANTHROPIC_BASE_URL:               ${ANTHROPIC_BASE_URL:-https://ai-renci.fabric-testbed.net/v1/}
+      ANTHROPIC_AUTH_TOKEN:             ${ANTHROPIC_AUTH_TOKEN}
+      TEAMBRAIN_SUMMARIZE_MODEL:        ${TEAMBRAIN_SUMMARIZE_MODEL:-gpt-5.4-mini}
 
       # --- TeamBrain MCP function defaults ---
       # Lets clients omit project_slug in single-pilot deployments.
