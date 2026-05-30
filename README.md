@@ -6,41 +6,68 @@ TeamBrain gives a team of developers the same persistent context for a codebase 
 
 ## Status
 
-**Pre-Phase-1 bootstrap.** No runnable code yet. See [`CLAUDE.md`](CLAUDE.md) for the current state, [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) for the locked-in architectural decisions, and [`docs/deployment.md`](docs/deployment.md) for the target deploy topology.
+**Phases 0–4 complete; Phase 5 § A (long-lived non-interactive API tokens) complete.** Deployed and live on `https://pr.fabric-testbed.net` since 2026-05-27. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
 
-## Architecture (planned)
+Per-phase artifacts (each with a `Done when` acceptance criterion):
 
-- **Stack:** self-hosted [Supabase docker-compose](https://github.com/supabase/supabase/tree/master/docker) — Postgres+pgvector, GoTrue, PostgREST, Realtime, Storage, Edge Functions (Deno), Studio, Kong.
-- **Deploy target:** team-owned VMware VM at `https://pr.fabric-testbed.net` (public IP), TLS via Caddy or nginx + Let's Encrypt.
-- **Auth (Phase 1):** GitHub OAuth via GoTrue. Project membership hand-seeded for the pilot; Phase 3 automates the sync against GitHub collaborator and org-team APIs. CILogon OIDC supported by GoTrue and reserved for a later phase.
+| Phase | Checklist | Key deliverables |
+|-------|-----------|------------------|
+| 0 | [phase-0-checklist.md](docs/phase-0-checklist.md) | Scratch Supabase stand-up, GitHub OAuth App, ADR 0001, pilot repo choice |
+| 1 | [phase-1-checklist.md](docs/phase-1-checklist.md) | Multi-tenant schema + RLS (`personal / project / project_private`) |
+| 2 | [phase-2-checklist.md](docs/phase-2-checklist.md) | MCP edge function (`teambrain-mcp`) — 6 tools |
+| 3 | [phase-3-checklist.md](docs/phase-3-checklist.md) | GitHub-App-driven `project_members` sync (`teambrain-membership-sync`, pg_cron) |
+| 4 | [phase-4-checklist.md](docs/phase-4-checklist.md) | REST mirror (`teambrain-rest`) + OpenAPI 3.1 spec + self-service registration (`teambrain-register-project`) |
+| 5 | [phase-5-checklist.md](docs/phase-5-checklist.md) | Capture integrations: API tokens (§ A ✅), Slack bot (§ B), runnable PR-merge Action (§ C), slash commands (§ D) |
+
+See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) for the locked-in decisions, and [`docs/deployment.md`](docs/deployment.md) + [`deploy/production/`](deploy/production/) for the deploy topology.
+
+## Live surface (on `pr.fabric-testbed.net`)
+
+| Resource | URL |
+|---|---|
+| Landing page (GitHub OAuth sign-in + JWT for testing) | `https://pr.fabric-testbed.net/` |
+| OpenAPI 3.1 spec | `https://pr.fabric-testbed.net/openapi.yaml` |
+| MCP endpoint | `https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp` |
+| REST surface | `https://pr.fabric-testbed.net/functions/v1/teambrain-rest/*` |
+| Self-service project registration | `https://pr.fabric-testbed.net/functions/v1/teambrain-register-project/register` |
+| API token issue / exchange / revoke | `https://pr.fabric-testbed.net/functions/v1/teambrain-token/*` |
+
+Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`](examples/curl.md)), an OpenAI function-calling Python client, and a runnable PR-merge GitHub Action.
+
+## Architecture
+
+- **Stack:** self-hosted [Supabase docker-compose](https://github.com/supabase/supabase/tree/master/docker) — Postgres 17 + pgvector, GoTrue, PostgREST, Realtime, Storage, Edge Functions (Deno), Studio, Kong.
+- **Deploy target:** team-owned VMware VM at `https://pr.fabric-testbed.net` (public IP). TLS terminated by nginx (Path B in [`deploy/production/`](deploy/production/)) using the institutional **InCommon/UNC SAN cert** — *not* Let's Encrypt; the cert is renewed out-of-band and TeamBrain consumes it.
+- **Auth:** GitHub OAuth via GoTrue. `project_members` rows reconciled against GitHub collaborators / org-teams by an org-scoped GitHub App on a 15-min `pg_cron` schedule. Self-service project registration is gated on the caller's GitHub repo-admin permission. Non-interactive callers (CI, GitHub Actions) use a long-lived opaque API token (Phase 5 § A) exchanged at `/teambrain-token/token/exchange` for a short-lived (15 min) JWT. CILogon OIDC is supported by GoTrue and reserved for a later phase.
+- **Embedding:** OpenAI `text-embedding-3-small` (1536 dim) in production by default; a 768-dim Ollama variant is in-tree via `migrations/0005_resize_embedding_768.sql` for the no-third-party-vendor research-infra posture. Embeddings are model-tagged so a provider/model swap can be scoped at re-embed time.
 - **Storage model — hybrid:**
   - *In repo (canonical, reviewed, versioned with code):* `AGENTS.md`, `.claude/CLAUDE.md`, `.cursor/rules/`, `docs/adr/`, `docs/context/`.
   - *In TeamBrain (living, ephemeral, cross-developer):* in-flight debugging notes, gotchas not yet promoted to docs, recent decisions still being validated, dev preferences, cross-repo context.
-  - *Promotion workflow:* memories that stabilize get promoted into the repo via PR. That is the governance loop.
-- **Transport:** single backend → two thin transport layers (MCP edge function + REST/PostgREST handlers). Adding a new AI client = config entry, not adapter code.
+  - *Promotion workflow:* memories that stabilize get promoted into the repo via PR. That is the governance loop (`promote_to_docs` lands fully in Phase 6).
+- **Transport:** single backend → two thin **custom** edge functions: `teambrain-mcp` (MCP/JSON-RPC, 6 tools) and `teambrain-rest` (HTTP/JSON mirror of the same tools). PostgREST remains available under the hood but is intentionally not the documented surface — see Phase 4 § A1 for the uniform-custom-vs-PostgREST-hybrid decision. Adding a new AI client = config entry, not adapter code.
 
 ## Phased Roadmap
 
-| Phase | Scope | Duration |
-|-------|-------|----------|
-| 0 | Prep — Supabase docker-compose on scratch host, GitHub OAuth App in `fabric-testbed` org, ADR 0001, pick pilot repo | 1 wk |
-| 1 | Core multi-tenant schema — `projects`, `project_members`, extended `thoughts` columns, RLS for `personal / project / project_private`, manual member seeding | 1–2 wks |
-| 2 | MCP server with project-aware tool surface — test from Claude Code, Cursor, gemini-cli; commit `AGENTS.md` + `.claude/CLAUDE.md` to pilot repo | 1 wk |
-| 3 | Automated membership sync — GitHub collaborators / org-teams → `project_members`; minimal admin dashboard | 1 wk |
-| 4 | REST handlers + OpenAPI spec; example clients (OpenAI function calling, curl, GitHub Actions) | 3–5 days |
-| 5 | Capture integrations — Slack bot, GitHub Action for PR-merge summarization with human-approval gate, slash commands | 1–2 wks |
-| 6 | Staleness + promotion — `last_verified_at` decay, commit-triggered staleness flagging via webhook, `promote_to_docs` tool | 1 wk |
-| 7 | Pilot evaluation on 1 real repo, 2–3 devs | 2 wks |
-| Future | CILogon as second GoTrue OIDC provider when non-GitHub collaborators or research-compliance auditing requires it | — |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 0 | Prep — Supabase docker-compose on scratch host, GitHub OAuth App in `fabric-testbed` org, ADR 0001, pick pilot repo | ✅ complete |
+| 1 | Core multi-tenant schema — `projects`, `project_members`, extended `thoughts` columns, RLS for `personal / project / project_private`, manual member seeding | ✅ complete |
+| 2 | MCP server with project-aware tool surface — `capture / search / list_recent / mark_stale / promote_to_docs` (+ `ping`); validated from Claude Code, Cursor, Codex | ✅ complete |
+| 3 | Automated membership sync — GitHub collaborators + org-team members → `project_members`, pg_cron + manual trigger, `sync_runs` audit | ✅ complete |
+| 4 | REST handlers + OpenAPI 3.1 spec; example clients (OpenAI function calling, curl, illustrative GitHub Action); self-service project registration | ✅ complete |
+| 5 | Capture integrations — long-lived API token mechanism (§ A ✅), Slack bot (§ B), runnable PR-merge GitHub Action (§ C, consumes § A), slash commands (§ D) | § A ✅ — § B / § C / § D upcoming |
+| 6 | Staleness + promotion — `last_verified_at` decay in ranking, commit-triggered staleness via webhook, `promote_to_docs` generating ADR/docs PRs | upcoming |
+| 7 | Pilot evaluation on 1 real repo (`fabric-testbed/fabric-core-api`), 2–3 devs — capture / retrieval / staleness / friction metrics | upcoming |
+| Future | CILogon as second GoTrue OIDC provider when non-GitHub collaborators or research-compliance auditing requires it | deferred |
 
 ## Operational responsibilities (since we self-host)
 
 - **Backups:** `pg_dump` cron + offsite copy for v1; pgBackRest or Barman if PITR becomes a requirement.
-- **TLS:** Caddy or nginx + Let's Encrypt for `pr.fabric-testbed.net`. Caddy preferred (simpler, auto-renewing).
-- **Studio access:** restricted to internal-only or fronted by vouch-proxy + CILogon (reuses the FABRIC team's existing pattern from `cilogon-vouch-proxy-example`).
-- **Upgrades:** track Supabase docker-compose releases; the upstream team ships coordinated version bumps.
+- **TLS:** institutional InCommon/UNC SAN cert under `/root/cert`, bind-mounted into the nginx container. Renewed out-of-band; no Let's Encrypt path is wired (deliberately, to match FABRIC's existing cert posture).
+- **Studio access:** SSH tunnel only — `ssh -L 3000:127.0.0.1:8000 fabric-pr` → `http://localhost:3000`. Kong is loopback-bound at `127.0.0.1:8000`. A vouch-proxy + CILogon admin-side path is the future plan, not yet wired.
+- **Upgrades:** track Supabase docker-compose releases; the upstream team ships coordinated version bumps. See `~/supabase-stack-sha.txt` on the production box for the pinned upstream SHA.
 
-See [`docs/deployment.md`](docs/deployment.md) for VM sizing, env-var contract, GitHub OAuth App configuration, and TLS specifics.
+See [`docs/deployment.md`](docs/deployment.md) for VM sizing, env-var contract, GitHub OAuth App configuration, and TLS specifics, and [`deploy/production/`](deploy/production/) for the production overlays (Path B nginx + `docker-compose.override.yml`).
 
 ## Relationship to OB1
 
