@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Live at `https://pr.fabric-testbed.net`:** GitHub-OAuth sign-in + landing page, the MCP server (`/functions/v1/teambrain-mcp/mcp`), the REST surface (`/functions/v1/teambrain-rest/*`), self-service registration (`/functions/v1/teambrain-register-project/register`), and the published OpenAPI spec (`/openapi.yaml`). Multiple projects registered, including `fabric-testbed/TeamBrain` (dogfood), `fabric-testbed/publication-tracker-dev`, and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
 
-**Next phase: Phase 5 — Capture integrations.** Slack bot (channel → `project_id`), GitHub Action for PR-merge summarization with a human-approval gate, slash commands for Claude Code and Cursor. **Gating item:** a long-lived, non-interactive API token (deferred from Phase 4 — see `docs/phase-4-checklist.md` §J) is required before the GitHub-Action half can run end-to-end; the rest of Phase 5 has no such dependency. See Phased Roadmap below.
+**Phase 5 § A — long-lived non-interactive API token — shipped 2026-05-29** on `pr.fabric-testbed.net`. Migration `0012` (capability fence on `public.thoughts` + `public.api_tokens` + bot/service-account columns), `edge-functions/teambrain-token/` (admin CRUD + opaque-token → 15-min HS256 JWT exchange), bot-exemption in `teambrain-membership-sync`, and a friendly capability guard in `teambrain-mcp`/`teambrain-rest`. End-to-end smoke green (commits `0b86f85` + `88bb3ce`). The runnable GitHub-Action half of Phase 5 (§ C) is unblocked; § B (Slack) and § D (slash commands) had no dependency on § A. **Next work: Phase 5 § B / § C / § D** per `docs/phase-5-checklist.md`. See Phased Roadmap below.
 
 Build/lint/test commands still do not exist as a unified suite. SQL migrations apply via Studio or `psql`; edge functions deploy via the Supabase CLI / docker exec. Do not invent commands; ask if uncertain.
 
@@ -38,7 +38,7 @@ All four major architectural decisions are locked in (see `docs/adr/0001-teambra
 
 Pre-pilot social-coordination blocker still open: Komal's buy-in (one-time GitHub OAuth login on `pr.fabric-testbed.net`, willingness to read `AGENTS.md`, review cadence during the pilot window). Sub-questions tracked in `docs/phase-0-checklist.md` B1. Confirmed her GitHub handle is `kthare10` (seed commit `4d079e2`).
 
-Phase 5 has no architectural blockers, but its GitHub-Action capture integration is gated on a long-lived, non-interactive API-token mechanism (deferred from Phase 4 — see `docs/phase-4-checklist.md` §I/§J). The Slack-bot and slash-command halves of Phase 5 can proceed without it.
+Phase 5 § A (the long-lived non-interactive API token) shipped 2026-05-29; end-to-end smoke green on `pr.fabric-testbed.net`. The remaining halves — Slack bot (§ B), runnable GitHub Action (§ C, the token's first consumer), slash commands (§ D) — have no architectural blockers.
 
 ## Architecture Reference
 

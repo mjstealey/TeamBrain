@@ -10,7 +10,7 @@ Phase 5 entry preconditions (from `docs/phase-4-checklist.md` § I and the curre
 - ✅ MCP surface live — 6 tools round-trip (`ping`, `capture_project_thought`, `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`).
 - ✅ REST surface live and at parity with MCP; `openapi.yaml` published and lint-clean.
 - ✅ Self-service project registration (`teambrain-register-project`) shipped; multiple projects registered.
-- ⏳ A non-interactive credential for server-to-server callers — **this is § A**, the deferred item from `docs/phase-4-checklist.md` § J ("Long-lived PAT-style API tokens … issuance/verification path, storage, and revocation").
+- ✅ A non-interactive credential for server-to-server callers — § A shipped 2026-05-29 (commits `0b86f85` + `88bb3ce`); end-to-end smoke green on `pr.fabric-testbed.net`.
 
 ---
 
@@ -33,7 +33,7 @@ The issuance/exchange function is **`teambrain-token`** — distinct from the `t
 
 ---
 
-## A — API token mechanism (the Phase 5 gating item)
+## A — API token mechanism (the Phase 5 gating item) — *complete (2026-05-29)*
 
 ### Decisions locked before coding
 
