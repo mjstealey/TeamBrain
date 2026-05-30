@@ -110,11 +110,69 @@ Adapt OB1's Slack capture pattern, scoped per channel to a `project_id`. Authent
 
 ---
 
-## C — GitHub Action: PR-merge summarization — *consumes A*
+## C — GitHub Action: PR-merge summarization — *consumes A; scoped 2026-05-30*
 
-The runnable version of the Phase 4 illustrative example. On PR merge, an LLM proposes 0–3 captures; a **human-approval gate** must pass before any write. Unblocked once § A6 is green (it is the token's first real consumer).
+The runnable version of the Phase 4 illustrative example, and the API token's first real consumer. On PR merge, a **server-side** LLM step proposes 0–3 candidate captures from the merged PR's metadata; the proposals are surfaced in the workflow run summary; a **human-approval gate** (GitHub Environment) must pass before anything is written; on approval the approved set is captured against the REST surface under the project bot's short-lived JWT. First target is the dogfood repo `fabric-testbed/TeamBrain`. Shipping this end-to-end satisfies the Phase 6 readiness gate.
 
-**Done when:** *(to be defined; depends on § A)*.
+### Decisions locked (2026-05-30)
+
+- **C‑D1. Job topology** — two jobs in one workflow: `propose` (ungated) → `capture` (`needs: propose`, Environment-gated). Each job exchanges its **own fresh** 15‑min JWT from the opaque `tbk_` token (the durable credential, held as a repo secret). A single minted JWT cannot span the approval wait — a human may take hours — so the capture job re‑exchanges *after* the gate rather than reusing the propose job's JWT.
+- **C‑D2. Summarization location** — *server-side* `edge-functions/teambrain-summarize/`. The AI key and the proposal prompt live in one place; every adopting repo's workflow stays AI‑key‑free and prompt‑free (per TeamBrain's "new client = config, not code"). The Action just POSTs a PR payload and renders the returned proposals.
+- **C‑D3. AI provider/model** — Anthropic Claude, default `claude-sonnet-4-6` (light extraction task; configurable via `TEAMBRAIN_SUMMARIZE_MODEL` — Haiku for cost, Opus for quality). Adds a new `ANTHROPIC_API_KEY` to the functions service env — wire via the `override.yml` passthrough and `cp` to the box (override‑is‑a‑copy rule). This is a third‑party egress: the **same posture concern** as the embedding‑provider open decision (PR metadata, not source, leaves the network), and should be revisited alongside it before the pilot broadens.
+- **C‑D4. LLM input (egress boundary)** — PR **metadata only**: title, body, commit messages, and changed-file *paths*. **No diff contents.** Keeps the prompt bounded, avoids leaking secrets that live in diffs to a third‑party model, and is the conservative default given C‑D3. A bounded, secret‑scrubbed diff is a future option, not Phase 5.
+- **C‑D5. Approval granularity** — the GitHub Environment gate is **binary** (approve or reject the whole `capture` job). The reviewer reads the 0–3 proposals in the run summary, then approves‑all or rejects‑all; per‑proposal curation is not offered by the gate and is deferred (reject + re‑run, or a future dispatch‑based picker).
+- **C‑D6. Capture shape** — proposals are constrained to the token's default capability: `scope: project` only, `type ∈ {decision, convention, gotcha, context}`, `confidence: tentative`, tags include `pr-merge` + `auto-capture`, and every capture carries `linked_pr_url` + `linked_commit_sha`. No `project_private`, no `mark_stale`/`promote_to_docs` (RLS backstops this regardless — see § A4).
+- **C‑D7. Idempotency** — the REST read surface does not expose `linked_pr_url` (neither `GET /thoughts` nor `/thoughts/search` returns it), so the capture job dedups on a **deterministic per-PR tag** (`owner/repo#N`) instead: it lists recent thoughts (`GET /thoughts`, which *does* return `tags`) and skips the whole capture if any already carries that tag. Robust for the realistic re‑run (the original is still recent); a re‑run after 100+ newer captures would fall outside the window and miss it — accepted for the pilot. The clean future fix is a `linked_pr_url` filter on `GET /thoughts` (which would also serve Phase 6 staleness-by-PR).
+- **C‑D8. Prompt-injection posture** — PR title/body are **untrusted** input to the LLM; a hostile PR could try to steer the proposals. The human‑approval gate is the security backstop — nothing is written without a reviewer seeing the exact proposals first. PR‑controlled strings reach the shell only via env + `jq --arg`, never spliced into the script (the existing example already does this).
+- **C‑D9. First target** — dogfood `fabric-testbed/TeamBrain` (already a registered project).
+
+### C1. Edge function `edge-functions/teambrain-summarize/` (`index.ts` + `deno.json`)
+
+`POST /teambrain-summarize/propose` — authenticated by any valid JWT (the gateway's global `VERIFY_JWT`; in practice the project bot's minted JWT). Reuses the `teambrain-token`/`teambrain-rest` scaffolding (`HttpError` + `onError`, decode-only JWT, structured errors). Body: `{ project_slug, title, body, commits: string[], changed_paths: string[] }`. Calls Claude (`ANTHROPIC_API_KEY`, model per C‑D3) with a fixed prompt that returns **0–3** proposals as strict JSON, each `{ content, type, scope: "project", tags }`. Writes nothing — generation only. Returns `{ project_slug, count, proposals: [...] }` (possibly empty). *(Built 2026-05-30: `index.ts` + `summarize.ts` + `deno.json`, deno-type-clean; deploy/smoke pending C4/C6.)*
+
+**Done when:** a valid-JWT POST with sample PR metadata returns 0–3 well-formed proposals as JSON; an unauthenticated call is rejected by the gateway; a malformed/oversized body returns a structured 4xx, not a 500; the function never writes to `thoughts`.
+
+### C2. Rewrite `examples/github-actions/capture-on-merge.yml` to the two-job flow
+
+- `permissions: contents: read, pull-requests: read`.
+- **Job `propose`** (`if: pull_request.merged == true`): gather PR metadata (event payload for title/body/url/number/sha; `gh api` for commit messages + changed-file paths under `GITHUB_TOKEN`), exchange `tbk_` → JWT, POST to `/teambrain-summarize`, render the proposals to `$GITHUB_STEP_SUMMARY` (human-readable), persist them as a job artifact / `outputs.proposals`, and set `outputs.has_proposals`.
+- **Job `capture`** (`needs: propose`, `if: needs.propose.outputs.has_proposals == 'true'`, `environment: teambrain-capture`): on approval, read the proposals, exchange a **fresh** `tbk_` → JWT, dedup by `linked_pr_url` (C‑D7), then POST each to `/teambrain-rest/thoughts` with provenance + tags. Warn (don't fail the merge pipeline) on any capture hiccup; mask the minted JWT (`::add-mask::`).
+
+**Done when:** `actionlint` is clean; a dry inspection shows no PR-controlled value reaching the shell except via env + `jq --arg`; the gate sits between proposal and any write; `has_proposals == false` skips the `capture` job (no pointless approval prompt). *(Built 2026-05-30: rewritten to `propose → gate → capture`; proposals passed via a single-line job output, gate is the `teambrain-capture` Environment, dedup per C‑D7; `actionlint` + bundled `shellcheck` clean. Live smoke pending C4/C6.)*
+
+### C3. OpenAPI + curl
+
+- Add `/teambrain-summarize` to `nginx/html/openapi.yaml` (3.1): JWT auth, request (PR payload), response (`proposals[]`).
+- Add a curl recipe (exchange → summarize → inspect proposals) to `examples/curl.md`.
+
+**Done when:** spec re-validates lint-clean with `openapi-spec-validator`; the curl recipe runs against production and returns proposals; tail-verify the spec for stray wrapper tags after editing (the gotcha that bit this very checklist). *(Built 2026-05-30: `summarize` tag + `/teambrain-summarize/propose` path + `ProposeRequest`/`Proposal`/`ProposeResult`/`SummarizeError` schemas; `openapi-spec-validator` → OK; curl § 9 added. Live "runs against production" check pending C4/C6.)*
+
+### C4. Deploy `teambrain-summarize` + wire the AI key
+
+- Add `ANTHROPIC_API_KEY` (and optional `TEAMBRAIN_SUMMARIZE_MODEL`) to the functions service env via `deploy/production/docker-compose.override.yml` passthrough; `cp` the override to `~/supabase-stack/` on the box (copy‑not‑symlink) and recreate the functions service.
+- rsync `teambrain-summarize/` into `~/supabase-stack/volumes/functions/` (**no `--delete`** — the footgun that wiped stock `main/`/`hello/`).
+
+**Done when:** `POST /functions/v1/teambrain-summarize` on `pr.fabric-testbed.net` returns proposals for a sample payload under a bot JWT.
+
+### C5. Dogfood rollout (Michael-driven steps)
+
+- Michael issues a `tbk_` token for `fabric-testbed/TeamBrain` in his own shell (plaintext returned once — not echoed through Claude); store it as the repo **secret** `TEAMBRAIN_TOKEN`; add the public anon key as the repo **variable** `TEAMBRAIN_ANON_KEY`.
+- Create the `teambrain-capture` Environment with Michael as a Required reviewer.
+- Land `capture-on-merge.yml` in `.github/workflows/` of `fabric-testbed/TeamBrain`.
+
+**Done when:** the workflow appears under the repo's Actions and is wired to the secret/variable/environment.
+
+### C6. End-to-end smoke on a real PR
+
+Open → merge a small real PR in the dogfood repo. The `propose` job posts 0–3 proposals to the run summary; the `capture` job pauses on the gate; Michael approves; the approved captures land; each is retrievable via `search_project_thoughts` with its `linked_pr_url`; a workflow re-run writes no duplicates.
+
+**Done when:** the full propose → gate → capture → retrieve path passes on a real merged PR, with dedup verified on re-run.
+
+### C7. Commit
+
+**Done when:** `main` on both remotes contains `teambrain-summarize/`, the rewritten workflow, the spec + curl updates, and this scoped § C; production has the function deployed and the dogfood repo wired; § C6 is green.
+
+**§ C done when:** a merged PR in `fabric-testbed/TeamBrain` produces LLM-proposed captures that, after human approval, land in TeamBrain and are retrievable — satisfying the Phase 6 readiness gate (one working end-to-end capture path).
 
 ---
 
@@ -145,5 +203,3 @@ Phase 6 (staleness & promotion: `last_verified_at` decay in ranking, commit-trig
 - JWT lifetime for humans is 24h (`GOTRUE_JWT_EXP=86400`); minted bot access tokens are intentionally far shorter (15 min) to bound revocation latency.
 - The exchange endpoint is the only path that is reachable without a real user JWT — keep its surface minimal and its validation strict.
 - Default project slug on the server is `fabric-testbed/fabric-core-api`; token-scoped callers operate against the token's bound `project_id`, independent of that default.
-</content>
-</invoke>

@@ -49,6 +49,8 @@ tags:
     description: Project registration.
   - name: tokens
     description: Long-lived non-interactive API tokens (issue, list, revoke, exchange).
+  - name: summarize
+    description: PR-merge capture proposals (server-side LLM summarization for the GitHub Action).
 
 paths:
   /teambrain-rest/health:
@@ -402,6 +404,63 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "500": { $ref: "#/components/responses/ServerError" }
+
+  /teambrain-summarize/propose:
+    post:
+      operationId: proposeCaptures
+      tags: [summarize]
+      summary: Propose 0–3 capture candidates from a merged PR
+      description: |
+        Given a merged pull request's **metadata** — title, body, commit
+        messages, and changed-file *paths* (never diff contents) — an LLM
+        proposes up to three durable team-memory captures. It **writes
+        nothing**; it only proposes. The capture-on-merge GitHub Action renders
+        the proposals for a human to approve (a GitHub Environment gate) before
+        any are written via `POST /teambrain-rest/thoughts`.
+
+        **Auth.** Any valid `authenticated` JWT — in practice the project bot's
+        exchanged API-token JWT (`POST /teambrain-token/token/exchange`). No
+        capability claim is required: this endpoint touches no thoughts and
+        enforces no RLS. Requiring a JWT keeps anonymous callers from spending
+        the server's AI budget.
+
+        Each proposal's `scope` is always `project` (forced server-side) and
+        its `type` is constrained to `decision | convention | gotcha | context`.
+        The PR body/commits are treated strictly as untrusted data; the Action's
+        human-approval gate is the real backstop.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProposeRequest" }
+      responses:
+        "200":
+          description: 0–3 capture proposals (possibly empty).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProposeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The JWT's role is not `authenticated`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413":
+          description: PR metadata exceeds the ingress size limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: "Server misconfigured (e.g. the AI key is unset) — `kind: config`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SummarizeError" }
+        "502":
+          description: "The upstream LLM provider failed or returned unusable output — `kind: upstream | parse`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SummarizeError" }
 
 components:
   securitySchemes:
@@ -946,3 +1005,78 @@ components:
         note:
           type: string
           description: Present (e.g. "already revoked") when the token was already revoked.
+
+    ProposeRequest:
+      type: object
+      additionalProperties: false
+      required: [project_slug, title]
+      properties:
+        project_slug:
+          type: string
+          description: The project's owner/repo slug.
+          example: fabric-testbed/TeamBrain
+        title:
+          type: string
+          description: The merged PR's title.
+        body:
+          type: string
+          default: ""
+          description: The PR description (markdown). Treated strictly as untrusted data.
+        commits:
+          type: array
+          items: { type: string }
+          default: []
+          description: Commit messages on the PR — metadata only, no diffs.
+        changed_paths:
+          type: array
+          items: { type: string }
+          default: []
+          description: Changed-file paths on the PR — paths only, no contents.
+
+    Proposal:
+      type: object
+      required: [content, type, scope, tags]
+      properties:
+        content:
+          type: string
+          maxLength: 2000
+          description: The proposed memory text.
+        type:
+          type: string
+          enum: [decision, convention, gotcha, context]
+          description: Constrained subset of ThoughtType the PR-merge token may write.
+        scope:
+          type: string
+          const: project
+          description: Always "project" — forced server-side, never taken from the model.
+        tags:
+          type: array
+          items: { type: string }
+
+    ProposeResult:
+      type: object
+      required: [project_slug, count, proposals]
+      properties:
+        project_slug: { type: string }
+        count:
+          type: integer
+          minimum: 0
+          maximum: 3
+        proposals:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/Proposal" }
+
+    SummarizeError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+        kind:
+          type: string
+          enum: [config, upstream, parse]
+          description: |
+            config = server misconfigured (e.g. AI key unset); upstream = LLM
+            provider returned a non-2xx; parse = model output was not usable JSON.

@@ -258,6 +258,51 @@ Revocation takes effect within the 15-minute access-token TTL.
 
 ---
 
+## 9. Propose captures from a merged PR — `teambrain-summarize`
+
+`POST /teambrain-summarize/propose` turns a merged PR's **metadata** (title,
+body, commit messages, changed-file *paths* — never diff contents) into 0–3
+candidate captures. It **writes nothing** — it only proposes. The
+`capture-on-merge` GitHub Action (`examples/github-actions/capture-on-merge.yml`)
+calls this, renders the proposals for human approval, then writes the approved
+set via § 2. Authenticate with any JWT — here the bot JWT from the § 8 exchange
+(`$ACCESS`):
+
+```bash
+curl -sS -H "Authorization: Bearer $ACCESS" -H "Content-Type: application/json" \
+  -X POST "$BASE/teambrain-summarize/propose" -d '{
+    "project_slug": "fabric-testbed/TeamBrain",
+    "title": "Switch all stored timestamps to UTC",
+    "body": "Normalizes every stored timestamp to UTC; the display tier converts to local. Closes the DST off-by-one in the scheduler.",
+    "commits": ["fix(time): store UTC everywhere", "test: DST boundary cases"],
+    "changed_paths": ["src/time.ts", "tests/time_test.ts"]
+  }' | jq .
+```
+
+Returns `200` with 0–3 proposals (`scope` is always `project`; `type` is one of
+`decision | convention | gotcha | context`):
+
+```json
+{
+  "project_slug": "fabric-testbed/TeamBrain",
+  "count": 1,
+  "proposals": [
+    {
+      "content": "All stored timestamps are UTC; convert to local only at the display tier. Prevents DST off-by-one bugs.",
+      "type": "convention",
+      "scope": "project",
+      "tags": ["time", "utc", "timezones"]
+    }
+  ]
+}
+```
+
+A trivial PR (typo, formatting, routine bump) returns `{"count": 0, "proposals": []}`.
+A provider failure returns `502` with a `kind` of `upstream` or `parse`; a
+missing server-side AI key returns `500` (`kind: config`).
+
+---
+
 ## Error shape
 
 All errors return a JSON body:
@@ -273,4 +318,6 @@ All errors return a JSON body:
 | `403` | RLS denied the write, or a registration gate failed. |
 | `404` | Project/repo not found or not accessible to you. |
 | `409` | Project already registered. |
-| `502` | An upstream dependency (DB, embedding provider, GitHub) failed. |
+| `413` | Request payload too large (`teambrain-summarize` PR metadata). |
+| `500` | Server misconfigured (e.g. an unset AI key) or an internal error. |
+| `502` | An upstream dependency (DB, embedding/LLM provider, GitHub) failed. |

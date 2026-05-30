@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "hono": "npm:hono@^4.6.0"
+  },
+  "compilerOptions": {
+    "lib":    ["deno.window", "deno.ns"],
+    "strict": true
+  }
+}

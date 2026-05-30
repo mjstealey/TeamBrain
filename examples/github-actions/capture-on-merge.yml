@@ -1,24 +1,38 @@
-# capture-on-merge.yml — capture a TeamBrain memory when a PR is merged
-# ======================================================================
-# On PR merge, this workflow captures a decision memory into TeamBrain with a
-# link back to the PR. It uses the Phase 5 non-interactive API token: the
-# opaque token is exchanged for a short-lived JWT, then the capture is made
-# with that JWT.
+# capture-on-merge.yml — propose & capture a TeamBrain memory when a PR merges
+# =============================================================================
+# Phase 5 § C. On PR merge this runs a two-job flow:
 #
-# Human-in-the-loop gate: the job targets a GitHub *Environment*
-# (`teambrain-capture`). Configure that Environment in the repo settings with
-# **Required reviewers** so the job pauses for manual approval before any
-# memory is written. (A full setup can add an LLM step that summarizes the PR
-# and proposes 0–3 captures; the Environment approval is the gate either way.)
+#   propose  ──▶  (LLM proposes 0–3 captures, rendered into the run summary)
+#                  │
+#                  ▼
+#   capture  ──▶  [GitHub Environment gate: a human approves]  ──▶  writes them
+#
+# WHY TWO JOBS (decision C-D1): the opaque `tbk_` token is durable, but the JWT
+# it mints lives only 15 minutes — far shorter than a human-approval wait. So
+# each job exchanges its OWN fresh JWT; nothing is reused across the gate.
+#
+# Server-side summarization (decision C-D2): the `propose` job sends only PR
+# METADATA (title, body, commit messages, changed-file PATHS — never diffs, per
+# C-D4) to the `teambrain-summarize` edge function, which holds the AI key and
+# prompt. This workflow carries no AI key.
+#
+# Human-in-the-loop gate: the `capture` job targets a GitHub *Environment*
+# (`teambrain-capture`). Configure it with **Required reviewers** so the job
+# pauses until someone approves — having read the proposals in the run summary.
+# The gate is binary (approve-all / reject-all); it cannot edit the set (C-D5).
+#
+# Injection posture (C-D8): every PR-controlled value reaches the shell only via
+# `env:` + `jq --arg/--argjson`, never spliced into a `run:` script. The PR
+# body/commits are untrusted input to the LLM; the approval gate is the backstop.
 #
 # To adopt:
-#   1. Register the repo as a TeamBrain project (its owner/repo slug must
-#      equal github.repository), then have a project admin issue a token:
+#   1. Register the repo as a TeamBrain project (its owner/repo slug must equal
+#      github.repository), then have a project admin issue a token:
 #        POST https://pr.fabric-testbed.net/functions/v1/teambrain-token/token
 #      Store the returned `tbk_…` value as the repo secret TEAMBRAIN_TOKEN.
 #   2. Add the public anon key as the repo *variable* TEAMBRAIN_ANON_KEY
-#      (it is not a secret — it is the same key the landing page ships to
-#      browsers; it only satisfies the gateway's "some valid JWT" check).
+#      (not a secret — the same key the landing page ships to browsers; it only
+#      satisfies the gateway's "some valid JWT" check on the exchange call).
 #   3. Create an Environment named `teambrain-capture` with Required reviewers.
 #   4. Drop this file into .github/workflows/ of the registered repo.
 
@@ -30,79 +44,189 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+
+# Serialize runs for the same PR so a re-run can't race itself into a duplicate.
+concurrency:
+  group: teambrain-capture-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
-  capture:
-    # Only on actual merges, not every closed PR.
+  # ---------------------------------------------------------------------------
+  # propose — gather PR metadata, ask teambrain-summarize for 0–3 captures,
+  # render them for review. No gate, no writes.
+  # ---------------------------------------------------------------------------
+  propose:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    # Human-approval gate — pauses until a Required reviewer approves.
-    environment: teambrain-capture
+    outputs:
+      has_proposals: ${{ steps.summarize.outputs.has_proposals }}
+      proposals:     ${{ steps.summarize.outputs.proposals }}
     env:
-      TEAMBRAIN_BASE: https://pr.fabric-testbed.net/functions/v1
-      TEAMBRAIN_TOKEN: ${{ secrets.TEAMBRAIN_TOKEN }}     # opaque tbk_ token (secret)
-      TEAMBRAIN_ANON_KEY: ${{ vars.TEAMBRAIN_ANON_KEY }}  # public anon key (gateway pass)
-      PROJECT_SLUG: ${{ github.repository }}
-      PR_TITLE: ${{ github.event.pull_request.title }}
-      PR_URL: ${{ github.event.pull_request.html_url }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      TEAMBRAIN_BASE:     https://pr.fabric-testbed.net/functions/v1
+      TEAMBRAIN_TOKEN:    ${{ secrets.TEAMBRAIN_TOKEN }}     # opaque tbk_ token (secret)
+      TEAMBRAIN_ANON_KEY: ${{ vars.TEAMBRAIN_ANON_KEY }}     # public anon key (gateway pass)
+      GH_TOKEN:           ${{ github.token }}                # for `gh api`
+      PROJECT_SLUG:       ${{ github.repository }}
+      PR_NUMBER:          ${{ github.event.pull_request.number }}
+      PR_TITLE:           ${{ github.event.pull_request.title }}
+      PR_BODY:            ${{ github.event.pull_request.body }}
+      PR_URL:             ${{ github.event.pull_request.html_url }}
     steps:
-      - name: Exchange token and capture merged-PR decision
+      - name: Propose captures from the merged PR
+        id: summarize
         run: |
           set -euo pipefail
 
           if [ -z "${TEAMBRAIN_TOKEN:-}" ] || [ -z "${TEAMBRAIN_ANON_KEY:-}" ]; then
-            echo "::warning::TEAMBRAIN_TOKEN / TEAMBRAIN_ANON_KEY not set — skipping capture."
+            echo "::warning::TEAMBRAIN_TOKEN / TEAMBRAIN_ANON_KEY not set — skipping."
+            echo "has_proposals=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # 1. Exchange the opaque token for a short-lived (15 min) access JWT.
-          #    Two headers: the opaque token in X-TeamBrain-Token, and the
-          #    public anon key as the bearer (the gateway requires a valid JWT;
-          #    the exchange endpoint ignores it).
-          access_token=$(curl -sS -X POST \
-            "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
+          # 1. Gather PR metadata (metadata only — C-D4; no diff contents). gh +
+          #    jq are preinstalled on ubuntu-latest. Emit JSON arrays so the
+          #    values pass to jq --argjson already-escaped (commit messages can
+          #    contain anything). Degrade to [] if the API call hiccups.
+          commits_json=$(gh api "repos/${PROJECT_SLUG}/pulls/${PR_NUMBER}/commits?per_page=100" --jq '[.[].commit.message]' || echo '[]')
+          paths_json=$(gh api "repos/${PROJECT_SLUG}/pulls/${PR_NUMBER}/files?per_page=100"   --jq '[.[].filename]'      || echo '[]')
+          commits_json=${commits_json:-[]}
+          paths_json=${paths_json:-[]}
+
+          # 2. Build the request body — PR-controlled strings via --arg/--argjson.
+          req=$(jq -n \
+            --arg     slug    "$PROJECT_SLUG" \
+            --arg     title   "$PR_TITLE" \
+            --arg     body    "${PR_BODY:-}" \
+            --argjson commits "$commits_json" \
+            --argjson paths   "$paths_json" \
+            '{project_slug: $slug, title: $title, body: $body, commits: $commits, changed_paths: $paths}')
+
+          # 3. Exchange the opaque token for a short-lived JWT (used immediately).
+          access_token=$(curl -sS -X POST "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
             -H "Authorization: Bearer ${TEAMBRAIN_ANON_KEY}" \
             -H "X-TeamBrain-Token: ${TEAMBRAIN_TOKEN}" \
-            | jq -r '.access_token // empty')
-
+            | jq -r '.access_token // empty' || true)
           if [ -z "${access_token}" ]; then
-            echo "::error::token exchange failed (no access_token returned)"
-            exit 1
+            echo "::error::token exchange failed (no access_token returned)"; exit 1
           fi
-          # Keep the minted JWT out of any subsequent log line.
           echo "::add-mask::${access_token}"
 
-          # 2. Build the capture body with jq so the PR title is JSON-escaped
-          #    safely (titles can contain quotes, backslashes, emoji, etc.).
-          #    PR-controlled values are passed via env + --arg, never spliced
-          #    into the script — this avoids shell/script injection.
-          body=$(jq -n \
-            --arg content "Merged PR #${PR_NUMBER}: ${PR_TITLE}" \
-            --arg slug    "${PROJECT_SLUG}" \
-            --arg pr      "${PR_URL}" \
-            --arg sha     "${MERGE_SHA}" \
-            '{
-               content: $content,
-               scope: "project",
-               type: "decision",
-               project_slug: $slug,
-               linked_pr_url: $pr,
-               linked_commit_sha: $sha,
-               tags: ["pr-merge", "auto-capture"]
-             }')
-
-          # 3. Capture with the minted JWT against the REST surface.
-          http_code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
-            -X POST "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+          # 4. Ask teambrain-summarize for 0–3 proposals.
+          http_code=$(curl -sS -o /tmp/propose.json -w '%{http_code}' \
+            -X POST "${TEAMBRAIN_BASE}/teambrain-summarize/propose" \
             -H "Authorization: Bearer ${access_token}" \
             -H "Content-Type: application/json" \
-            -d "${body}")
-
-          echo "TeamBrain responded HTTP ${http_code}"
-          cat /tmp/resp.json
-          # Don't fail the merge pipeline on a capture hiccup.
-          if [ "${http_code}" -ge 300 ]; then
-            echo "::warning::TeamBrain capture failed (HTTP ${http_code})"
+            -d "${req}" || echo "000")
+          if [ "${http_code}" -ge 300 ] || [ "${http_code}" = "000" ]; then
+            echo "::warning::teambrain-summarize returned HTTP ${http_code}"; cat /tmp/propose.json 2>/dev/null || true
+            echo "has_proposals=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
+
+          count=$(jq -r '.count // (.proposals | length) // 0' /tmp/propose.json)
+
+          # 5. Render the proposals into the run summary for the human reviewer.
+          {
+            echo "## TeamBrain — proposed captures for PR #${PR_NUMBER}"
+            echo ""
+            echo "**${count}** proposal(s) for [${PR_URL}](${PR_URL})."
+            echo ""
+            if [ "${count}" -eq 0 ]; then
+              echo "_No durable memories proposed. Nothing to approve._"
+            else
+              echo "Approve the **capture** job to write these; reject to discard all."
+              echo ""
+              jq -r '.proposals[] | "### \(.type)\n\n\(.content)\n\n_tags: \((.tags // []) | tostring)_\n"' /tmp/propose.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 6. Hand the proposals to the capture job as a (small, single-line)
+          #    job output — survives the approval wait without artifact expiry.
+          {
+            echo "proposals=$(jq -c '.proposals // []' /tmp/propose.json)"
+            if [ "${count}" -gt 0 ]; then echo "has_proposals=true"; else echo "has_proposals=false"; fi
+          } >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # capture — gated on human approval; writes the approved proposals.
+  # ---------------------------------------------------------------------------
+  capture:
+    needs: propose
+    if: needs.propose.outputs.has_proposals == 'true'
+    runs-on: ubuntu-latest
+    environment: teambrain-capture          # <-- human-approval gate
+    env:
+      TEAMBRAIN_BASE:     https://pr.fabric-testbed.net/functions/v1
+      TEAMBRAIN_TOKEN:    ${{ secrets.TEAMBRAIN_TOKEN }}
+      TEAMBRAIN_ANON_KEY: ${{ vars.TEAMBRAIN_ANON_KEY }}
+      PROJECT_SLUG:       ${{ github.repository }}
+      PR_NUMBER:          ${{ github.event.pull_request.number }}
+      PR_URL:             ${{ github.event.pull_request.html_url }}
+      MERGE_SHA:          ${{ github.event.pull_request.merge_commit_sha }}
+      PROPOSALS_JSON:     ${{ needs.propose.outputs.proposals }}
+    steps:
+      - name: Capture approved proposals
+        run: |
+          set -euo pipefail
+
+          PR_TAG="${PROJECT_SLUG}#${PR_NUMBER}"          # deterministic dedup key
+          printf '%s' "${PROPOSALS_JSON:-[]}" > /tmp/proposals.json
+
+          # 1. Fresh JWT — the propose job's 15-min token has long since expired
+          #    by the time a human approves.
+          access_token=$(curl -sS -X POST "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
+            -H "Authorization: Bearer ${TEAMBRAIN_ANON_KEY}" \
+            -H "X-TeamBrain-Token: ${TEAMBRAIN_TOKEN}" \
+            | jq -r '.access_token // empty' || true)
+          if [ -z "${access_token}" ]; then
+            echo "::error::token exchange failed (no access_token returned)"; exit 1
+          fi
+          echo "::add-mask::${access_token}"
+
+          # 2. Dedup (C-D7, best-effort): skip if a capture already carries this
+          #    PR's deterministic tag among recent thoughts. Robust for the
+          #    realistic re-run (the original is still recent); a re-run after
+          #    100+ newer captures would miss it — accepted for the pilot. The
+          #    clean fix is a linked_pr_url filter on teambrain-rest GET /thoughts.
+          existing=$(curl -sS -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+            --data-urlencode "project_slug=${PROJECT_SLUG}" \
+            --data-urlencode "limit=100" \
+            -H "Authorization: Bearer ${access_token}" \
+            | jq --arg key "$PR_TAG" '[.results[]? | select((.tags // []) | index($key))] | length' || echo 0)
+          if [ "${existing:-0}" -gt 0 ]; then
+            echo "Already captured for ${PR_TAG} (found ${existing}); skipping to avoid duplicates."
+            exit 0
+          fi
+
+          # 3. Write each approved proposal. Provenance + PR_TAG are added here;
+          #    content/type/tags come from the artifact via jq (never the shell).
+          n=$(jq 'length' /tmp/proposals.json)
+          echo "Capturing ${n} proposal(s) for ${PR_TAG}…"
+          for i in $(jq -r 'keys[]' /tmp/proposals.json); do
+            body=$(jq -c \
+              --arg     slug "$PROJECT_SLUG" \
+              --arg     pr   "$PR_URL" \
+              --arg     sha  "${MERGE_SHA:-}" \
+              --arg     tag  "$PR_TAG" \
+              --argjson i    "$i" \
+              '.[$i] as $p | {
+                 content:           $p.content,
+                 scope:             "project",
+                 type:              ($p.type // "context"),
+                 project_slug:      $slug,
+                 linked_pr_url:     $pr,
+                 linked_commit_sha: $sha,
+                 tags:              ((($p.tags // []) + ["pr-merge", "auto-capture", $tag]) | unique)
+               }' /tmp/proposals.json)
+
+            http_code=$(curl -sS -o /tmp/cap_resp.json -w '%{http_code}' \
+              -X POST "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+              -H "Authorization: Bearer ${access_token}" \
+              -H "Content-Type: application/json" \
+              -d "${body}" || echo "000")
+            if [ "${http_code}" -ge 300 ] || [ "${http_code}" = "000" ]; then
+              echo "::warning::capture ${i} failed (HTTP ${http_code})"; cat /tmp/cap_resp.json 2>/dev/null || true
+            else
+              echo "captured proposal ${i}: $(jq -r '.id' /tmp/cap_resp.json)"
+            fi
+          done
