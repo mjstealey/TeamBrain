@@ -444,7 +444,8 @@ git -C ~/TeamBrain log -1 --oneline    # record the SHA being deployed
 # 2. Copy each edge function into the supabase-stack volumes/functions/ tree.
 #    rsync --delete keeps the destination tree exactly matching source
 #    (removes files that have been deleted upstream).
-for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project teambrain-rest; do
+for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project \
+          teambrain-rest teambrain-token teambrain-summarize; do
   rsync -av --delete \
     ~/TeamBrain/edge-functions/"$fn"/ \
     ~/supabase-stack/volumes/functions/"$fn"/
@@ -460,7 +461,8 @@ If you'd rather push *from your laptop* (e.g., to deploy an in-flight branch wit
 
 ```bash
 # From your laptop. Substitutes for steps 1–2 above.
-for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project teambrain-rest; do
+for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project \
+          teambrain-rest teambrain-token teambrain-summarize; do
   rsync -av --delete \
     --rsync-path='sudo -u nrig-service rsync' \
     ~/GitHub/mjstealey/TeamBrain/edge-functions/"$fn"/ \
