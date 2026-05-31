@@ -5,7 +5,7 @@
 #   propose  ──▶  (LLM proposes 0–3 captures, rendered into the run summary)
 #                  │
 #                  ▼
-#   capture  ──▶  [GitHub Environment gate: a human approves]  ──▶  writes them
+#   capture  ──▶  [approval issue: a human comments "approved"]  ──▶  writes them
 #
 # WHY TWO JOBS (decision C-D1): the opaque `tbk_` token is durable, but the JWT
 # it mints lives only 15 minutes — far shorter than a human-approval wait. So
@@ -16,14 +16,17 @@
 # C-D4) to the `teambrain-summarize` edge function, which holds the AI key and
 # prompt. This workflow carries no AI key.
 #
-# Human-in-the-loop gate: the `capture` job targets a GitHub *Environment*
-# (`teambrain-capture`). Configure it with **Required reviewers** so the job
-# pauses until someone approves — having read the proposals in the run summary.
-# The gate is binary (approve-all / reject-all); it cannot edit the set (C-D5).
+# Human-in-the-loop gate (decision C-D5): GitHub Environment required-reviewers
+# are unavailable on private repos without GitHub Enterprise, so the `capture`
+# job uses an issue-based gate — `trstringer/manual-approval` opens an issue
+# listing the proposals, @-mentions the approver(s), and blocks until one
+# comments "approved" (writes) or "denied" (discards all). Approver defaults to
+# the PR merger; override with the repo variable TEAMBRAIN_APPROVERS.
 #
 # Injection posture (C-D8): every PR-controlled value reaches the shell only via
-# `env:` + `jq --arg/--argjson`, never spliced into a `run:` script. The PR
-# body/commits are untrusted input to the LLM; the approval gate is the backstop.
+# `env:` + `jq --arg/--argjson`, never spliced into a `run:` script. Proposal
+# text flows into the approval-issue body as data (the action calls the GitHub
+# API), not through a shell, so it is not an injection vector.
 #
 # To adopt:
 #   1. Register the repo as a TeamBrain project (its owner/repo slug must equal
@@ -33,7 +36,9 @@
 #   2. Add the public anon key as the repo *variable* TEAMBRAIN_ANON_KEY
 #      (not a secret — the same key the landing page ships to browsers; it only
 #      satisfies the gateway's "some valid JWT" check on the exchange call).
-#   3. Create an Environment named `teambrain-capture` with Required reviewers.
+#   3. (Optional) set the repo *variable* TEAMBRAIN_APPROVERS to a comma- or
+#      newline-separated list of GitHub usernames allowed to approve a capture.
+#      Defaults to the PR merger (github.actor).
 #   4. Drop this file into .github/workflows/ of the registered repo.
 
 name: TeamBrain — capture on merge
@@ -42,9 +47,8 @@ on:
   pull_request:
     types: [closed]
 
-permissions:
-  contents: read
-  pull-requests: read
+# Least privilege: the workflow grants nothing by default; each job opts in.
+permissions: {}
 
 # Serialize runs for the same PR so a re-run can't race itself into a duplicate.
 concurrency:
@@ -59,9 +63,14 @@ jobs:
   propose:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read       # `gh api` reads the PR's commits + changed files
     outputs:
       has_proposals: ${{ steps.summarize.outputs.has_proposals }}
       proposals:     ${{ steps.summarize.outputs.proposals }}
+      count:         ${{ steps.summarize.outputs.count }}
+      proposals_md:  ${{ steps.summarize.outputs.proposals_md }}
     env:
       TEAMBRAIN_BASE:     https://pr.fabric-testbed.net/functions/v1
       TEAMBRAIN_TOKEN:    ${{ secrets.TEAMBRAIN_TOKEN }}     # opaque tbk_ token (secret)
@@ -134,27 +143,35 @@ jobs:
             if [ "${count}" -eq 0 ]; then
               echo "_No durable memories proposed. Nothing to approve._"
             else
-              echo "Approve the **capture** job to write these; reject to discard all."
+              echo "An approval issue will list these; comment **approved** to write them."
               echo ""
               jq -r '.proposals[] | "### \(.type)\n\n\(.content)\n\n_tags: \((.tags // []) | tostring)_\n"' /tmp/propose.json
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # 6. Hand the proposals to the capture job as a (small, single-line)
-          #    job output — survives the approval wait without artifact expiry.
+          # 6. Hand proposals to the capture job. `proposals` (compact JSON)
+          #    drives the writes; `proposals_md` (human-readable) is the approval
+          #    issue body. The heredoc delimiter is per-run (GITHUB_RUN_ID/ATTEMPT)
+          #    so semi-untrusted proposal text can't forge an extra output line.
+          delim="TBPROP_EOF_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           {
             echo "proposals=$(jq -c '.proposals // []' /tmp/propose.json)"
+            echo "count=${count}"
             if [ "${count}" -gt 0 ]; then echo "has_proposals=true"; else echo "has_proposals=false"; fi
+            echo "proposals_md<<${delim}"
+            jq -r '.proposals[] | "- **\(.type)** — \(.content)\n  tags: \((.tags // []) | tostring)"' /tmp/propose.json
+            echo "${delim}"
           } >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # capture — gated on human approval; writes the approved proposals.
+  # capture — gated on issue-based human approval; writes the approved proposals.
   # ---------------------------------------------------------------------------
   capture:
     needs: propose
     if: needs.propose.outputs.has_proposals == 'true'
     runs-on: ubuntu-latest
-    environment: teambrain-capture          # <-- human-approval gate
+    permissions:
+      issues: write             # the approval gate opens / comments on / closes an issue
     env:
       TEAMBRAIN_BASE:     https://pr.fabric-testbed.net/functions/v1
       TEAMBRAIN_TOKEN:    ${{ secrets.TEAMBRAIN_TOKEN }}
@@ -165,6 +182,25 @@ jobs:
       MERGE_SHA:          ${{ github.event.pull_request.merge_commit_sha }}
       PROPOSALS_JSON:     ${{ needs.propose.outputs.proposals }}
     steps:
+      # Human-approval gate: opens an issue with the proposals and blocks until an
+      # approver comments "approved" / "denied". Native Environment reviewers are
+      # unavailable on this plan (private repo, no Enterprise) — see C-D5.
+      - name: Await human approval
+        uses: trstringer/manual-approval@74d99dff7380e3e4b122d4ededcbca2b6ce59367 # v1.12.0
+        with:
+          secret: ${{ github.token }}
+          approvers: ${{ vars.TEAMBRAIN_APPROVERS || github.actor }}
+          minimum-approvals: 1
+          issue-title: "TeamBrain: approve ${{ needs.propose.outputs.count }} capture(s) for PR #${{ github.event.pull_request.number }}"
+          issue-body: |
+            A merged PR proposed the TeamBrain captures below. Comment **approved**
+            to write them, or **denied** to discard all.
+
+            ${{ needs.propose.outputs.proposals_md }}
+
+            Source: ${{ github.event.pull_request.html_url }}
+          exclude-workflow-initiator-as-approver: false
+
       - name: Capture approved proposals
         run: |
           set -euo pipefail
@@ -199,7 +235,7 @@ jobs:
           fi
 
           # 3. Write each approved proposal. Provenance + PR_TAG are added here;
-          #    content/type/tags come from the artifact via jq (never the shell).
+          #    content/type/tags come from the proposals JSON via jq (never the shell).
           n=$(jq 'length' /tmp/proposals.json)
           echo "Capturing ${n} proposal(s) for ${PR_TAG}…"
           for i in $(jq -r 'keys[]' /tmp/proposals.json); do
