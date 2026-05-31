@@ -110,7 +110,7 @@ Adapt OB1's Slack capture pattern, scoped per channel to a `project_id`. Authent
 
 ---
 
-## C — GitHub Action: PR-merge summarization — *consumes A; scoped 2026-05-30*
+## C — GitHub Action: PR-merge summarization — *consumes A; **COMPLETE 2026-05-30** — deployed + smoke-verified end-to-end on the `fabric-testbed/TeamBrain` dogfood repo*
 
 The runnable version of the Phase 4 illustrative example, and the API token's first real consumer. On PR merge, a **server-side** LLM step proposes 0–3 candidate captures from the merged PR's metadata; the proposals are surfaced in the workflow run summary; a **human-approval gate** (GitHub Environment) must pass before anything is written; on approval the approved set is captured against the REST surface under the project bot's short-lived JWT. First target is the dogfood repo `fabric-testbed/TeamBrain`. Shipping this end-to-end satisfies the Phase 6 readiness gate.
 
@@ -153,27 +153,27 @@ The runnable version of the Phase 4 illustrative example, and the API token's fi
 - Add `ANTHROPIC_API_KEY` (and optional `TEAMBRAIN_SUMMARIZE_MODEL`) to the functions service env via `deploy/production/docker-compose.override.yml` passthrough; `cp` the override to `~/supabase-stack/` on the box (copy‑not‑symlink) and recreate the functions service.
 - rsync `teambrain-summarize/` into `~/supabase-stack/volumes/functions/` (**no `--delete`** — the footgun that wiped stock `main/`/`hello/`).
 
-**Done when:** `POST /functions/v1/teambrain-summarize` on `pr.fabric-testbed.net` returns proposals for a sample payload under a bot JWT.
+**Done when:** ✅ `POST /functions/v1/teambrain-summarize/propose` returns proposals for a sample payload. *(Done 2026-05-30 — routed through the FABRIC ai-renci LiteLLM gateway with `gpt-5.4-mini` per C‑D3; user-JWT smoke returned 200 + a clean proposal.)*
 
 ### C5. Dogfood rollout (Michael-driven steps)
 
 - Michael issues a `tbk_` token for `fabric-testbed/TeamBrain` in his own shell (plaintext returned once — not echoed through Claude); store it as the repo **secret** `TEAMBRAIN_TOKEN`; add the public anon key as the repo **variable** `TEAMBRAIN_ANON_KEY`.
-- Create the `teambrain-capture` Environment with Michael as a Required reviewer.
+- ~~Create the `teambrain-capture` Environment with Michael as a Required reviewer.~~ **N/A** — native Environment reviewers aren't available on this plan (see C‑D5); the gate is in-workflow (issue-based). Approver defaults to the PR merger (`github.actor`); override via repo var `TEAMBRAIN_APPROVERS`.
 - Land `capture-on-merge.yml` in `.github/workflows/` of `fabric-testbed/TeamBrain`.
 
-**Done when:** the workflow appears under the repo's Actions and is wired to the secret/variable/environment.
+**Done when:** ✅ the workflow is on `main` (`.github/workflows/capture-on-merge.yml`) and the `TEAMBRAIN_TOKEN` secret + `TEAMBRAIN_ANON_KEY` variable are set (verified 2026-05-30 via `gh secret/variable list`). The vestigial `teambrain-capture` Environment was deleted.
 
 ### C6. End-to-end smoke on a real PR
 
-Open → merge a small real PR in the dogfood repo. The `propose` job posts 0–3 proposals to the run summary; the `capture` job pauses on the gate; Michael approves; the approved captures land; each is retrievable via `search_project_thoughts` with its `linked_pr_url`; a workflow re-run writes no duplicates.
+Open → merge a small real PR in the dogfood repo. The `propose` job posts 0–3 proposals to the run summary; the `capture` job opens an issue-based approval gate; Michael comments `approved`; the captures land tagged `owner/repo#N`; each is retrievable via `search_project_thoughts`; a workflow re-run dedups and writes nothing.
 
-**Done when:** the full propose → gate → capture → retrieve path passes on a real merged PR, with dedup verified on re-run.
+**Done when:** ✅ **DONE 2026-05-30.** Smoke on PR #1 (gitignore `deno.lock`): `gpt-5.4-mini` proposed **3** well-typed captures (convention / context / gotcha) → approved → all 3 landed under the project bot, retrievable at search similarity 0.70–0.79; a re-run wrote **0** duplicates (confirmed from the data — still exactly three `fabric-testbed/TeamBrain#1`-tagged thoughts).
 
 ### C7. Commit
 
-**Done when:** `main` on both remotes contains `teambrain-summarize/`, the rewritten workflow, the spec + curl updates, and this scoped § C; production has the function deployed and the dogfood repo wired; § C6 is green.
+**Done when:** ✅ `main` on both remotes has it all — commits `b8fac12` (§ C build), `faea62c` (gateway), `95c16b2` (issue gate), `1f9e266` (workflow in `.github/workflows/`); production has `teambrain-summarize` deployed and the dogfood repo wired; § C6 green.
 
-**§ C done when:** a merged PR in `fabric-testbed/TeamBrain` produces LLM-proposed captures that, after human approval, land in TeamBrain and are retrievable — satisfying the Phase 6 readiness gate (one working end-to-end capture path).
+**§ C done when:** ✅ **MET 2026-05-30** — a merged PR in `fabric-testbed/TeamBrain` produced LLM-proposed captures that, after human approval, landed in TeamBrain and are retrievable. **The Phase 6 readiness gate is now open.** Remaining in Phase 5: § B (Slack bot) and § D (slash commands).
 
 ---
 
