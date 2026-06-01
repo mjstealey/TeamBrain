@@ -15,13 +15,17 @@ Numbered SQL files that, applied in order via Studio's SQL editor, produce a wor
 | 0007 | `0007_projects_github_teams.sql`        | 3   | Adds `projects.github_team_slugs text[]` so the Phase 3 sync function can UNION direct collaborators with org-team members. Empty default = "direct collaborators only". | always |
 | 0008 | `0008_project_members_soft_delete.sql`  | 3   | Adds `project_members.removed_at timestamptz`; patches the three `app.is_project_*` helpers to filter tombstones; tightens select policy. RLS surface unchanged (helpers absorb the filter). | always |
 | 0009 | `0009_sync_runs.sql`                    | 3   | `public.sync_runs` audit log for every membership-sync invocation (jsonb `report`). RLS scoped to project admins; service_role writes. Required for the scheduled sync to be observable. | always |
-| 0010 | `0010_pg_cron_membership_sync.sql`      | 3   | `pg_cron` schedule (`*/15 * * * *`) calling `/sync-all` via `pg_net`. Reads service-role bearer + URL from GUCs (`alter database … set app.X = …`) so secrets stay out of `cron.job`. | **Production only** (scratch can use on-demand `POST /sync`) |
+| 0010 | `0010_pg_cron_membership_sync.sql`      | 3   | `pg_cron` schedule (`*/15 * * * *`) calling `/sync-all` via `pg_net`. Reads service-role bearer + URL from GUCs (`alter database … set app.X = …`) so secrets stay out of `cron.job`. **Superseded by 0013**, which moves the bearer + URL into `public.app_config`. | **Production only** (scratch can use on-demand `POST /sync`) |
+| 0011 | `0011_project_registration.sql`         | 4   | Drops the placeholder `authenticated`-insert policy on `projects` so the gated `teambrain-register-project` function is the only create path. | always |
+| 0012 | `0012_api_tokens.sql`                   | 5A  | `app.api_tokens` (hashed-at-rest opaque tokens) + `projects.bot_user_id` + `project_members.is_service_account` + `app.is_token_call()`/`token_allowed_scopes()` helpers; amends `thoughts` policies with the capability fence. | always |
+| 0013 | `0013_sync_health_monitoring.sql`       | 6   | `public.app_config` (durable sync config, replaces the 0010 GUCs) + reschedules the sync cron to read it; `public.membership_sync_health()` + `public.health_events` + a `*/30` healthcheck cron. Closes the silent-sync-outage incident. | **Production only** |
+| 0014 | `0014_thoughts_linked_pr_url_index.sql` | 6   | Partial index on `thoughts(linked_pr_url) where not null` — exact PR-merge dedup + Phase 6 staleness-by-PR. | always |
 | —   | `seed.sql`                   | 1   | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. Phase 3's sync function takes over once deployed; `seed.sql` remains useful for fresh deploys before the first sync. | always (apply last) |
 
 ## Apply order
 
 ```
-0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]
+0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014
 ```
 
 `0005` and `0006` can be reordered between themselves (both apply on top of 0004) but the canonical order is `0005` first so anyone tracing the file numbers reads them in the same sequence they apply in.
@@ -49,4 +53,4 @@ These come from `~/.claude/projects/.../memory/project_supabase_function_convent
 
 Pre-pilot iteration produced six numbered files that each represent the final state of their phase's concern (no fix-up migrations, no orphaned columns). At production cutover (Phase 6 / Phase 7 prep), the plan is to **freeze these as a `v1_baseline.sql` consolidation** and start a new migration lineage from `v1_001_*.sql`. Doing it now would force scratch to drift from a fresh deploy with no clean reconciliation; doing it at cutover lets the production-era migrations have a clean starting point while the per-phase set stays as the historical record.
 
-This is recorded in `docs/phase-6-checklist.md` (when written) as a Phase 6 deliverable.
+This is recorded in `docs/phase-6-checklist.md` § E as a Phase 6 deliverable.

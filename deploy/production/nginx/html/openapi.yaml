@@ -132,6 +132,15 @@ paths:
           required: false
           schema: { type: string, format: date-time }
           description: Only rows created strictly after this instant (ISO 8601).
+        - name: linked_pr_url
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Exact-match filter on a thought's `linked_pr_url`. Returns only
+            captures provenanced to that PR — used by the capture-on-merge
+            Action to dedup a PR's auto-captures.
+          example: https://github.com/fabric-testbed/TeamBrain/pull/1
         - name: cross_project
           in: query
           required: false
@@ -700,6 +709,7 @@ components:
           type: array
           items: { type: string }
         confidence: { $ref: "#/components/schemas/Confidence" }
+        linked_pr_url: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
         last_verified_at: { type: [string, "null"], format: date-time }
         expires_at: { type: [string, "null"], format: date-time }

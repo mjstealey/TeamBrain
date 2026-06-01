@@ -130,6 +130,16 @@ curl -sS "${AUTH[@]}" \
 # only rows created after a timestamp:
 curl -sS "${AUTH[@]}" \
   "$BASE/teambrain-rest/thoughts?project_slug=fabric-testbed/TeamBrain&since=2026-05-01T00:00:00Z" | jq '.count'
+
+# dedup by PR: exact-match on linked_pr_url — returns only captures
+# provenanced to that PR. The capture-on-merge Action uses this to skip a PR
+# whose memories already landed (robust no matter how many newer thoughts
+# exist). 0 results ⇒ safe to capture.
+curl -sS -G "${AUTH[@]}" \
+  "$BASE/teambrain-rest/thoughts" \
+  --data-urlencode "project_slug=fabric-testbed/TeamBrain" \
+  --data-urlencode "linked_pr_url=https://github.com/fabric-testbed/TeamBrain/pull/1" \
+  --data-urlencode "limit=1" | jq '.count'
 ```
 
 ---

@@ -25,6 +25,7 @@
 // of the codebase, where each function carries its own JWT decode.
 
 import { Hono }                            from 'npm:hono@^4.6.0';
+import type { ContentfulStatusCode }       from 'npm:hono@^4.6.0/utils/http-status';
 import { z }                               from 'npm:zod@^3.23.0';
 import { createClient, SupabaseClient }    from 'npm:@supabase/supabase-js@^2.45.0';
 
@@ -46,7 +47,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // ---------------------------------------------------------------------------
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: ContentfulStatusCode, message: string) { super(message); }
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +163,10 @@ async function resolveProjectId(
 // Validation helper
 // ---------------------------------------------------------------------------
 
-function parse<T>(schema: z.ZodType<T>, data: unknown): T {
+// Generic over the schema (not its output T) so zod `.default()` fields keep
+// their applied-output type — `z.ZodType<T>` collapses Output and Input, which
+// re-widened defaulted fields back to `| undefined` at every call site.
+function parse<S extends z.ZodTypeAny>(schema: S, data: unknown): z.infer<S> {
   const r = schema.safeParse(data);
   if (!r.success) {
     const msg = r.error.issues
@@ -358,12 +362,14 @@ app.post('/thoughts/search', async (c) => {
 });
 
 // --- GET /thoughts (mirrors `list_recent_project_thoughts`) ----------------
-// Query params: project_slug, scopes (comma-separated), limit, since, cross_project.
+// Query params: project_slug, scopes (comma-separated), limit, since,
+// linked_pr_url, cross_project.
 const ListQuery = z.object({
   project_slug:  z.string().optional(),
   scopes:        z.array(SCOPE).optional(),
   limit:         z.number().int().min(1).max(100).default(20),
   since:         z.string().optional(),
+  linked_pr_url: z.string().optional(),
   cross_project: z.boolean().default(false),
 });
 
@@ -377,6 +383,7 @@ app.get('/thoughts', async (c) => {
     scopes:        scopesRaw ? scopesRaw.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
     limit:         c.req.query('limit')  ? Number(c.req.query('limit'))  : undefined,
     since:         c.req.query('since')  || undefined,
+    linked_pr_url: c.req.query('linked_pr_url') || undefined,
     cross_project: c.req.query('cross_project') === 'true',
   };
   const q = parse(ListQuery, raw);
@@ -392,7 +399,7 @@ app.get('/thoughts', async (c) => {
   let query = userClient
     .from('thoughts')
     .select('id, scope, type, project_id, author_user_id, content, tags, paths, ' +
-            'confidence, created_at, last_verified_at, expires_at')
+            'confidence, linked_pr_url, created_at, last_verified_at, expires_at')
     .order('created_at', { ascending: false })
     .limit(q.limit);
 
@@ -400,6 +407,7 @@ app.get('/thoughts', async (c) => {
   if (caps.isToken)          query = query.in('scope', tokenScopes(caps, q.scopes));
   else if (q.scopes?.length) query = query.in('scope', q.scopes);
   if (q.since)               query = query.gt('created_at', q.since);
+  if (q.linked_pr_url)       query = query.eq('linked_pr_url', q.linked_pr_url);
 
   const { data, error } = await query;
   if (error) throw new HttpError(502, `list failed: ${error.message} (code=${error.code ?? 'n/a'})`);
@@ -484,7 +492,7 @@ app.post('/thoughts/:id/promote', async (c) => {
     return c.json({ ok: false, thought_id: id, reason: 'thought not found, or caller lacks read permission' });
   }
 
-  const t = data as {
+  const t = data as unknown as {
     id: string; scope: string; type: string | null; content: string;
     project_id: string | null; author_user_id: string | null;
     tags: string[]; paths: string[]; linked_commit_sha: string | null;
