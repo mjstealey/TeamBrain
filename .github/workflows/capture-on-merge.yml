@@ -67,10 +67,11 @@ jobs:
       contents: read
       pull-requests: read       # `gh api` reads the PR's commits + changed files
     outputs:
-      has_proposals: ${{ steps.summarize.outputs.has_proposals }}
-      proposals:     ${{ steps.summarize.outputs.proposals }}
-      count:         ${{ steps.summarize.outputs.count }}
-      proposals_md:  ${{ steps.summarize.outputs.proposals_md }}
+      has_proposals:    ${{ steps.summarize.outputs.has_proposals }}
+      already_captured: ${{ steps.summarize.outputs.already_captured }}
+      proposals:        ${{ steps.summarize.outputs.proposals }}
+      count:            ${{ steps.summarize.outputs.count }}
+      proposals_md:     ${{ steps.summarize.outputs.proposals_md }}
     env:
       TEAMBRAIN_BASE:     https://pr.fabric-testbed.net/functions/v1
       TEAMBRAIN_TOKEN:    ${{ secrets.TEAMBRAIN_TOKEN }}     # opaque tbk_ token (secret)
@@ -121,6 +122,30 @@ jobs:
           fi
           echo "::add-mask::${access_token}"
 
+          # 3b. Dedup BEFORE the gate (C-D7, now exact via linked_pr_url): if
+          #     this PR's captures already exist, stop here — no LLM call, no
+          #     approval issue. Robust across re-runs no matter how many newer
+          #     thoughts exist (the old tag-scan missed re-runs past ~100 rows).
+          existing=$(curl -sS -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+            --data-urlencode "project_slug=${PROJECT_SLUG}" \
+            --data-urlencode "linked_pr_url=${PR_URL}" \
+            --data-urlencode "limit=1" \
+            -H "Authorization: Bearer ${access_token}" \
+            | jq '(.results // []) | length' || echo 0)
+          if [ "${existing:-0}" -gt 0 ]; then
+            echo "Already captured for ${PR_URL} (found ${existing}); skipping — no proposal, no approval issue."
+            {
+              echo "## TeamBrain — already captured for PR #${PR_NUMBER}"
+              echo ""
+              echo "Captures for [${PR_URL}](${PR_URL}) already exist; nothing to propose."
+            } >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "has_proposals=false"
+              echo "already_captured=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # 4. Ask teambrain-summarize for 0–3 proposals.
           http_code=$(curl -sS -o /tmp/propose.json -w '%{http_code}' \
             -X POST "${TEAMBRAIN_BASE}/teambrain-summarize/propose" \
@@ -157,6 +182,7 @@ jobs:
           {
             echo "proposals=$(jq -c '.proposals // []' /tmp/propose.json)"
             echo "count=${count}"
+            echo "already_captured=false"
             if [ "${count}" -gt 0 ]; then echo "has_proposals=true"; else echo "has_proposals=false"; fi
             echo "proposals_md<<${delim}"
             jq -r '.proposals[] | "- **\(.type)** — \(.content)\n  tags: \((.tags // []) | tostring)"' /tmp/propose.json
@@ -168,7 +194,7 @@ jobs:
   # ---------------------------------------------------------------------------
   capture:
     needs: propose
-    if: needs.propose.outputs.has_proposals == 'true'
+    if: needs.propose.outputs.has_proposals == 'true' && needs.propose.outputs.already_captured != 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write             # the approval gate opens / comments on / closes an issue
@@ -219,18 +245,17 @@ jobs:
           fi
           echo "::add-mask::${access_token}"
 
-          # 2. Dedup (C-D7, best-effort): skip if a capture already carries this
-          #    PR's deterministic tag among recent thoughts. Robust for the
-          #    realistic re-run (the original is still recent); a re-run after
-          #    100+ newer captures would miss it — accepted for the pilot. The
-          #    clean fix is a linked_pr_url filter on teambrain-rest GET /thoughts.
+          # 2. Dedup (C-D7, exact via linked_pr_url): final guard before writing.
+          #    The propose job already skipped on existing captures; this catches
+          #    a capture that landed during the human-approval wait.
           existing=$(curl -sS -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
             --data-urlencode "project_slug=${PROJECT_SLUG}" \
-            --data-urlencode "limit=100" \
+            --data-urlencode "linked_pr_url=${PR_URL}" \
+            --data-urlencode "limit=1" \
             -H "Authorization: Bearer ${access_token}" \
-            | jq --arg key "$PR_TAG" '[.results[]? | select((.tags // []) | index($key))] | length' || echo 0)
+            | jq '(.results // []) | length' || echo 0)
           if [ "${existing:-0}" -gt 0 ]; then
-            echo "Already captured for ${PR_TAG} (found ${existing}); skipping to avoid duplicates."
+            echo "Already captured for ${PR_URL} (found ${existing}); skipping to avoid duplicates."
             exit 0
           fi
 

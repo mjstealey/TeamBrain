@@ -654,49 +654,70 @@ Per-endpoint recipes, an OpenAI function-calling client, and an (illustrative) G
 
 ---
 
-## 12. Schedule the recurring sync (pg_cron)
+## 12. Schedule the recurring sync (pg_cron) + health monitoring
 
-The two GUCs the cron schedule reads:
+The sync cron reads its target URL and service-role bearer from
+`public.app_config` (migration **0013**) — a durable table that survives the
+`pg_db_role_setting` reset that silently broke the sync for ~2 days in 2026-05.
+Migration 0010 originally read these from per-database GUCs; **0013 supersedes
+that** and reschedules the cron to read the table.
+
+Apply both migrations:
+
+```
+0010_pg_cron_membership_sync.sql      # creates the */15 schedule
+0013_sync_health_monitoring.sql       # app_config + reschedule + */30 healthcheck
+```
+
+0013 seeds the non-secret URL row itself. Seed the **secret** service-role key
+row once (Studio SQL Editor, run as supabase_admin):
 
 ```sql
--- In Studio SQL Editor (run as supabase_admin):
-alter database postgres set app.teambrain_sync_url =
-  'http://kong:8000/functions/v1/teambrain-membership-sync/sync-all';
-
-alter database postgres set app.teambrain_service_role_key =
-  '<paste SERVICE_ROLE_KEY value from .env>';
+insert into public.app_config (key, value)
+values ('teambrain_service_role_key', '<paste SERVICE_ROLE_KEY value from .env>')
+on conflict (key) do update set value = excluded.value, updated_at = now();
 ```
 
-Then apply the schedule:
+> **If the sync ever goes silent again, check this first:**
+> `select key, length(value) from public.app_config;` — a missing row is the
+> 2026-05 root cause. (The old `app.teambrain_*` GUCs, if previously set, are
+> now unused and can be left in place.)
 
-```
-0010_pg_cron_membership_sync.sql
-```
-
-Verify:
+Verify the schedules:
 
 ```sql
-select jobid, schedule, jobname from cron.job where jobname = 'teambrain-membership-sync';
--- expect 1 row, schedule = '*/15 * * * *'
+select jobname, schedule from cron.job
+where jobname in ('teambrain-membership-sync', 'teambrain-sync-healthcheck');
+-- expect 2 rows: '*/15 * * * *' and '*/30 * * * *'
 ```
 
 Wait ~15 minutes past a quarter-hour boundary, then:
 
 ```sql
--- Did the cron worker fire?
-select start_time, status, return_message
-from cron.job_run_details
-where jobid = (select jobid from cron.job where jobname = 'teambrain-membership-sync')
-order by start_time desc
-limit 5;
--- expect: 1+ rows, status = 'succeeded', return_message like '%http_post%request_id%'
-
 -- Did the sync function process it?
 select started_at, project_id is null as is_aggregate, ok, error
 from public.sync_runs
-order by started_at desc
-limit 5;
+order by started_at desc limit 5;
 -- expect: rows landing every 15 min; latest is an aggregate (project_id IS NULL)
+
+-- Is the health classifier green, and the exception log empty?
+select * from public.membership_sync_health();   -- expect status = 'ok'
+select count(*) from public.health_events;        -- expect 0 in steady state
+```
+
+### Health endpoint (external uptime monitoring)
+
+`GET /functions/v1/teambrain-membership-sync/health` returns **200** when the
+sync is healthy and **503** when it is stale/failing — point an uptime monitor
+(UptimeRobot, a cron+curl, …) at it. It needs only the public anon key (it
+clears the gateway with any valid JWT; the payload is non-sensitive — status,
+timestamps, a failure count, and whether the `app_config` rows exist):
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer ${ANON_KEY}" \
+  "https://pr.fabric-testbed.net/functions/v1/teambrain-membership-sync/health"
+# 200 healthy · 503 stale/failing
 ```
 
 ---

@@ -271,12 +271,7 @@ app.post('*', async (c) => {
   //   * project / project_private scope requires the caller to be admin
   //     or contributor on the resolved project (`app.is_project_writer`).
   // No application-layer access checks are performed in this handler.
-  server.tool(
-    'capture_project_thought',
-    'Capture a new thought (decision, convention, gotcha, context, preference, runbook) ' +
-    'into TeamBrain. Embedded for semantic search. Personal scope = author-only; ' +
-    'project = visible to all members; project_private = admin/contributor only.',
-    {
+  const captureSchema = z.object({
       content: z.string().min(1).max(10_000)
         .describe('The memory text. Markdown OK.'),
       scope: z.enum(['personal', 'project', 'project_private'])
@@ -296,8 +291,14 @@ app.post('*', async (c) => {
       linked_commit_sha: z.string().optional(),
       linked_pr_url:     z.string().optional(),
       linked_issue_url:  z.string().optional(),
-    },
-    async (args) => {
+  });
+  server.tool(
+    'capture_project_thought',
+    'Capture a new thought (decision, convention, gotcha, context, preference, runbook) ' +
+    'into TeamBrain. Embedded for semantic search. Personal scope = author-only; ' +
+    'project = visible to all members; project_private = admin/contributor only.',
+    captureSchema.shape,
+    async (args: z.infer<typeof captureSchema>) => {
       const denied = toolDenied(caps, 'capture_project_thought');
       if (denied) return denied;
       if (caps.isToken && !caps.allowedScopes.includes(args.scope)) {
@@ -396,11 +397,7 @@ app.post('*', async (c) => {
   // candidate row before similarity ranking; the caller never sees
   // anything outside their personal + project membership view, no
   // matter what filter args they pass.
-  server.tool(
-    'search_project_thoughts',
-    'Semantic search over TeamBrain. Returns thoughts ranked by cosine ' +
-    'similarity to the query, filtered to what the caller can see (RLS).',
-    {
+  const searchSchema = z.object({
       query: z.string().min(1).max(2_000)
         .describe('Natural-language search query.'),
       project_slug: z.string().optional()
@@ -420,8 +417,13 @@ app.post('*', async (c) => {
                   'wanted 0.7+. Re-tune if the embedding model changes.'),
       cross_project: z.boolean().default(false)
         .describe('If true, ignore project_slug and search every accessible thought.'),
-    },
-    async (args) => {
+  });
+  server.tool(
+    'search_project_thoughts',
+    'Semantic search over TeamBrain. Returns thoughts ranked by cosine ' +
+    'similarity to the query, filtered to what the caller can see (RLS).',
+    searchSchema.shape,
+    async (args: z.infer<typeof searchSchema>) => {
       const denied = toolDenied(caps, 'search_project_thoughts');
       if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
@@ -516,11 +518,7 @@ app.post('*', async (c) => {
   // Plain recency listing — no embedding cost. Useful for "what was the
   // team thinking about lately" queries and as a sanity check that RLS
   // is filtering the same way it does for semantic search.
-  server.tool(
-    'list_recent_project_thoughts',
-    'List the N most recent thoughts visible to the caller, ordered newest-first. ' +
-    'No semantic ranking — pair with search_project_thoughts when you want relevance.',
-    {
+  const listRecentSchema = z.object({
       project_slug: z.string().optional()
         .describe('Limit listing to one project. Falls back to TEAMBRAIN_DEFAULT_PROJECT_SLUG.'),
       scopes: z.array(z.enum(['personal', 'project', 'project_private']))
@@ -530,10 +528,18 @@ app.post('*', async (c) => {
         .describe('Max rows to return.'),
       since: z.string().optional()
         .describe('ISO 8601 timestamp; only return rows created after this instant.'),
+      linked_pr_url: z.string().optional()
+        .describe('Exact-match filter on a thought\'s linked PR URL. Used by the ' +
+                  'capture-on-merge Action to dedup a PR\'s auto-captures.'),
       cross_project: z.boolean().default(false)
         .describe('If true, ignore project_slug and list every accessible thought.'),
-    },
-    async (args) => {
+  });
+  server.tool(
+    'list_recent_project_thoughts',
+    'List the N most recent thoughts visible to the caller, ordered newest-first. ' +
+    'No semantic ranking — pair with search_project_thoughts when you want relevance.',
+    listRecentSchema.shape,
+    async (args: z.infer<typeof listRecentSchema>) => {
       const denied = toolDenied(caps, 'list_recent_project_thoughts');
       if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
@@ -555,7 +561,7 @@ app.post('*', async (c) => {
       let q = userClient
         .from('thoughts')
         .select('id, scope, type, project_id, author_user_id, content, tags, paths, ' +
-                'confidence, created_at, last_verified_at, expires_at')
+                'confidence, linked_pr_url, created_at, last_verified_at, expires_at')
         .order('created_at', { ascending: false })
         .limit(args.limit);
 
@@ -563,6 +569,7 @@ app.post('*', async (c) => {
       if (caps.isToken)        q = q.in('scope', tokenScopes(caps, args.scopes));
       else if (args.scopes?.length) q = q.in('scope', args.scopes);
       if (args.since)          q = q.gt('created_at', args.since);
+      if (args.linked_pr_url)  q = q.eq('linked_pr_url', args.linked_pr_url);
 
       const { data, error } = await q;
       if (error) {
@@ -598,19 +605,20 @@ app.post('*', async (c) => {
   // RLS-blocked updates return zero rows from PostgREST without erroring.
   // We surface that distinctly as `updated: false` rather than leaking
   // "row exists but you can't touch it" vs "row doesn't exist".
-  server.tool(
-    'mark_stale',
-    'Flag a thought as stale (default confidence: "deprecated"). Bumps ' +
-    'last_verified_at. RLS-gated: caller must be the author or a project writer.',
-    {
+  const markStaleSchema = z.object({
       thought_id: z.string().uuid()
         .describe('UUID of the thought to mark.'),
       confidence: z.enum(['tentative', 'deprecated']).default('deprecated')
         .describe('New confidence value.'),
       reason: z.string().optional()
         .describe('Optional reason; appended to metadata.staleness_reason.'),
-    },
-    async (args) => {
+  });
+  server.tool(
+    'mark_stale',
+    'Flag a thought as stale (default confidence: "deprecated"). Bumps ' +
+    'last_verified_at. RLS-gated: caller must be the author or a project writer.',
+    markStaleSchema.shape,
+    async (args: z.infer<typeof markStaleSchema>) => {
       const denied = toolDenied(caps, 'mark_stale');
       if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
@@ -679,20 +687,21 @@ app.post('*', async (c) => {
   // GitHub API. For Phase 2 this tool returns a *preview* payload that
   // shows what would be promoted, without touching GitHub. Calling it is
   // safe — it only reads the thought (RLS-gated) and returns a struct.
-  server.tool(
-    'promote_to_docs',
-    '[Preview only — Phase 2] Returns a structured preview of what a ' +
-    'docs PR for this thought would contain. Does NOT yet create a ' +
-    'branch or open a PR; that lands in Phase 6.',
-    {
+  const promoteSchema = z.object({
       thought_id: z.string().uuid()
         .describe('UUID of the thought to preview promotion for.'),
       target_path: z.string().default('docs/adr/')
         .describe('Repo-relative directory the eventual PR would write into.'),
       target_branch: z.string().default('main')
         .describe('Base branch of the eventual PR.'),
-    },
-    async (args) => {
+  });
+  server.tool(
+    'promote_to_docs',
+    '[Preview only — Phase 2] Returns a structured preview of what a ' +
+    'docs PR for this thought would contain. Does NOT yet create a ' +
+    'branch or open a PR; that lands in Phase 6.',
+    promoteSchema.shape,
+    async (args: z.infer<typeof promoteSchema>) => {
       const denied = toolDenied(caps, 'promote_to_docs');
       if (denied) return denied;
       const { userClient } = getAuthContext(authHeader);
@@ -728,7 +737,7 @@ app.post('*', async (c) => {
         };
       }
 
-      const t = data as {
+      const t = data as unknown as {
         id: string; scope: string; type: string | null; content: string;
         project_id: string | null; author_user_id: string | null;
         tags: string[]; paths: string[]; linked_commit_sha: string | null;

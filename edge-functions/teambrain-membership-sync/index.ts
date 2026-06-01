@@ -31,6 +31,7 @@
 //     job_run_details surfaces back via net.http_post.
 
 import { Hono } from 'npm:hono@^4.6.0';
+import type { ContentfulStatusCode } from 'npm:hono@^4.6.0/utils/http-status';
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@^2.45.0';
 
 import { syncOneProject, SyncReport } from './sync.ts';
@@ -92,7 +93,7 @@ function requireServiceRole(authHeader: string | null): void {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: ContentfulStatusCode, message: string) { super(message); }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,8 +130,9 @@ async function recordRun(service: SupabaseClient, row: SyncRunRow): Promise<void
 // here as `/teambrain-membership-sync/sync`, not `/sync`. `basePath`
 // strips the prefix so the route definitions read naturally.
 //
-// Both routes handle POST only — GET is a no-op (intentional, to
-// avoid accidental triggering via browser navigation).
+// The /sync and /sync-all routes handle POST only — GET is a no-op
+// (intentional, to avoid accidental triggering via browser navigation).
+// GET /health is the one read-only GET: a safe, side-effect-free probe.
 
 const app = new Hono().basePath('/teambrain-membership-sync');
 
@@ -280,6 +282,59 @@ app.post('/sync-all', async (c) => {
   });
 
   return c.json(aggregate, allOk ? 200 : 500);
+});
+
+// --- GET /health ----------------------------------------------------------
+//
+// Membership-sync health for an external uptime monitor. Unlike /sync and
+// /sync-all this is NOT service-role-gated: an UptimeRobot/curl ping carrying
+// only the public anon key (a valid JWT, so it clears the global VERIFY_JWT
+// gateway) can read it. The payload is non-sensitive — status, timestamps, a
+// failure count, and whether the two app_config rows exist. 200 when healthy,
+// 503 otherwise, so the monitor alerts on the status code.
+//
+// This is the watcher for the 2026-05 silent outage: a missing app_config row
+// (the root cause) drives status to stale/failing and flips this to 503.
+app.get('/health', async (c) => {
+  const service = serviceClient();
+
+  const { data, error } = await service.rpc('membership_sync_health');
+  if (error) {
+    return c.json({
+      service: 'teambrain-membership-sync',
+      status:  'unknown',
+      error:   `health probe failed: ${error.message} (code=${error.code ?? 'n/a'})`,
+    }, 503);
+  }
+
+  // membership_sync_health() returns a single-row table.
+  const health = (Array.isArray(data) ? data[0] : data) as {
+    status: string; last_ok_at: string | null;
+    last_run_at: string | null; recent_failures: number;
+  } | undefined;
+
+  // Surface whether the durable config rows exist — a missing row is the exact
+  // root cause of the 2026-05 outage and the most useful thing to see here.
+  const { data: cfg } = await service
+    .from('app_config')
+    .select('key')
+    .in('key', ['teambrain_sync_url', 'teambrain_service_role_key']);
+  const presentKeys = new Set((cfg ?? []).map((r) => (r as { key: string }).key));
+
+  const status = health?.status ?? 'unknown';
+  const ok     = status === 'ok';
+  return c.json({
+    service:         'teambrain-membership-sync',
+    status,
+    last_ok_at:      health?.last_ok_at ?? null,
+    last_run_at:     health?.last_run_at ?? null,
+    recent_failures: health?.recent_failures ?? null,
+    config: {
+      sync_url_set:         presentKeys.has('teambrain_sync_url'),
+      service_role_key_set: presentKeys.has('teambrain_service_role_key'),
+    },
+    checked_at:      new Date().toISOString(),
+  }, ok ? 200 : 503);
 });
 
 // Catch-all 404 — keeps method/path mismatches from surfacing as

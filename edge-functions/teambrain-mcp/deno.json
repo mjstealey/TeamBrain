@@ -9,5 +9,8 @@
   "compilerOptions": {
     "lib": ["deno.window", "deno.ns"],
     "strict": true
+  },
+  "tasks": {
+    "check": "deno check index.ts"
   }
 }

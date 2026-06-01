@@ -38,6 +38,7 @@
 // bypass the 0012 fence. Do not give the bot a credential.
 
 import { Hono }                          from 'npm:hono@^4.6.0';
+import type { ContentfulStatusCode }    from 'npm:hono@^4.6.0/utils/http-status';
 import { createClient, SupabaseClient }  from 'npm:@supabase/supabase-js@^2.45.0';
 import { SignJWT }                       from 'npm:jose@^5.9.0';
 
@@ -92,7 +93,7 @@ function serviceClient(): SupabaseClient {
 // ---------------------------------------------------------------------------
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: ContentfulStatusCode, message: string) { super(message); }
 }
 
 interface Claims { sub: string; role: string; }
