@@ -36,8 +36,8 @@ edge-functions/*/deno.lock
 .vscode/
 !.vscode/settings.json.example
 
-# Local Claude Code state
-.claude/settings.local.json
+# Local Claude Code state (machine-specific — settings, scheduled-task locks, etc.)
+.claude/
 
 # Local Codex state
 .codex/
@@ -45,3 +45,6 @@ edge-functions/*/deno.lock
 # Logs
 *.log
 logs/
+
+# Generated artifacts (presentations, renders, scratch builds) — not part of the repo
+outputs/
