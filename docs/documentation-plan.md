@@ -80,7 +80,9 @@ Mark the whole doc **provisional/living** until pilot evidence lands.
 
 - **MCP** — endpoint (`/functions/v1/teambrain-mcp/mcp`) + per-client config.
 - **REST / OpenAPI** — `/openapi.yaml` + `examples/curl.md`.
-- **GitHub Action** — `examples/github-actions/capture-on-merge.yml` (shipped § C).
+- **GitHub Action** — `examples/github-actions/capture-on-merge.yml` (shipped § C);
+  adoption guide [`capture-on-merge-adoption.md`](capture-on-merge-adoption.md)
+  (written ahead of the rest of § 3 — the per-repo "add capture-on-merge" recipe).
 - ☐ **Slack** *[§ B]* · ☐ **Slash commands** *[§ D]*.
 - **Non-interactive API tokens** — `teambrain-token` for CI/automation (shipped § A).
 

@@ -32,7 +32,7 @@ See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/00
 | Self-service project registration | `https://pr.fabric-testbed.net/functions/v1/teambrain-register-project/register` |
 | API token issue / exchange / revoke | `https://pr.fabric-testbed.net/functions/v1/teambrain-token/*` |
 
-Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`](examples/curl.md)), an OpenAI function-calling Python client, and a runnable PR-merge GitHub Action.
+Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`](examples/curl.md)), an OpenAI function-calling Python client, and a runnable PR-merge GitHub Action. To add the PR-merge capture Action to your own `fabric-testbed` repo, see the step-by-step [capture-on-merge adoption guide](docs/capture-on-merge-adoption.md).
 
 ## Architecture
 
