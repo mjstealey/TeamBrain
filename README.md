@@ -6,7 +6,7 @@ TeamBrain gives a team of developers the same persistent context for a codebase 
 
 ## Status
 
-**Phases 0–4 complete; Phase 5 § A (long-lived non-interactive API tokens) complete.** Deployed and live on `https://pr.fabric-testbed.net` since 2026-05-27. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
+**Phases 0–4 complete; Phase 5 § A (long-lived API tokens) + § C (PR-merge capture) complete; Phase 6 § A (foundation / sync-health paydown) merged to `main` — production deploy pending.** Deployed and live on `https://pr.fabric-testbed.net` since 2026-05-27. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
 
 Per-phase artifacts (each with a `Done when` acceptance criterion):
 
@@ -17,7 +17,8 @@ Per-phase artifacts (each with a `Done when` acceptance criterion):
 | 2 | [phase-2-checklist.md](docs/phase-2-checklist.md) | MCP edge function (`teambrain-mcp`) — 6 tools |
 | 3 | [phase-3-checklist.md](docs/phase-3-checklist.md) | GitHub-App-driven `project_members` sync (`teambrain-membership-sync`, pg_cron) |
 | 4 | [phase-4-checklist.md](docs/phase-4-checklist.md) | REST mirror (`teambrain-rest`) + OpenAPI 3.1 spec + self-service registration (`teambrain-register-project`) |
-| 5 | [phase-5-checklist.md](docs/phase-5-checklist.md) | Capture integrations: API tokens (§ A ✅), Slack bot (§ B), runnable PR-merge Action (§ C), slash commands (§ D) |
+| 5 | [phase-5-checklist.md](docs/phase-5-checklist.md) | Capture integrations: API tokens (§ A ✅), Slack bot (§ B), runnable PR-merge Action (§ C ✅), slash commands (§ D) |
+| 6 | [phase-6-checklist.md](docs/phase-6-checklist.md) | Staleness & promotion: foundation / sync-health paydown (§ A ✅ merged, deploy pending), search-ranking decay (§ B), commit-triggered staleness (§ C), `promote_to_docs` → real ADR/docs PR (§ D) |
 
 See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) for the locked-in decisions, and [`docs/deployment.md`](docs/deployment.md) + [`deploy/production/`](deploy/production/) for the deploy topology.
 
@@ -31,6 +32,7 @@ See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/00
 | REST surface | `https://pr.fabric-testbed.net/functions/v1/teambrain-rest/*` |
 | Self-service project registration | `https://pr.fabric-testbed.net/functions/v1/teambrain-register-project/register` |
 | API token issue / exchange / revoke | `https://pr.fabric-testbed.net/functions/v1/teambrain-token/*` |
+| PR-merge capture summarizer (LLM proposals) | `https://pr.fabric-testbed.net/functions/v1/teambrain-summarize/propose` |
 
 Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`](examples/curl.md)), an OpenAI function-calling Python client, and a runnable PR-merge GitHub Action. To add the PR-merge capture Action to your own `fabric-testbed` repo, see the step-by-step [capture-on-merge adoption guide](docs/capture-on-merge-adoption.md).
 
@@ -55,8 +57,8 @@ Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`
 | 2 | MCP server with project-aware tool surface — `capture / search / list_recent / mark_stale / promote_to_docs` (+ `ping`); validated from Claude Code, Cursor, Codex | ✅ complete |
 | 3 | Automated membership sync — GitHub collaborators + org-team members → `project_members`, pg_cron + manual trigger, `sync_runs` audit | ✅ complete |
 | 4 | REST handlers + OpenAPI 3.1 spec; example clients (OpenAI function calling, curl, illustrative GitHub Action); self-service project registration | ✅ complete |
-| 5 | Capture integrations — long-lived API token mechanism (§ A ✅), Slack bot (§ B), runnable PR-merge GitHub Action (§ C, consumes § A), slash commands (§ D) | § A ✅ — § B / § C / § D upcoming |
-| 6 | Staleness + promotion — `last_verified_at` decay in ranking, commit-triggered staleness via webhook, `promote_to_docs` generating ADR/docs PRs | upcoming |
+| 5 | Capture integrations — long-lived API token mechanism (§ A ✅), Slack bot (§ B), runnable PR-merge GitHub Action (§ C ✅, consumes § A), slash commands (§ D) | § A ✅, § C ✅ — § B / § D upcoming |
+| 6 | Staleness + promotion — foundation / sync-health paydown (§ A), `last_verified_at` decay in ranking (§ B), commit-triggered staleness via webhook (§ C), `promote_to_docs` generating ADR/docs PRs (§ D) | 🟡 in progress — § A merged (deploy pending); § B–D upcoming |
 | 7 | Pilot evaluation on 1 real repo (`fabric-testbed/fabric-core-api`), 2–3 devs — capture / retrieval / staleness / friction metrics | upcoming |
 | Future | CILogon as second GoTrue OIDC provider when non-GitHub collaborators or research-compliance auditing requires it | deferred |
 
