@@ -22,6 +22,16 @@
 # nginx/html/index.html — reload IS sufficient; html is bind-mounted
 # directly with no preprocessing.)
 
+# Suppress the nginx version in the Server response header and on error
+# pages. server_tokens defaults to "on", which emits the full build —
+# e.g. "Server: nginx/1.28.3" — letting version-banner scanners
+# fingerprint the exact release (this is how CVE-2026-1642 was flagged).
+# Hiding it is obscurity, not a fix, but it's a cheap defense-in-depth
+# layer. Declared here at http context (this file is included inside the
+# stock image's http {} block) so it covers both the :80 redirect server
+# and the :443 server below.
+server_tokens off;
+
 server {
     listen 80;
     listen [::]:80;
