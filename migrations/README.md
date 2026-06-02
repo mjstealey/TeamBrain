@@ -21,12 +21,13 @@ Numbered SQL files that, applied in order via Studio's SQL editor, produce a wor
 | 0013 | `0013_sync_health_monitoring.sql`       | 6   | `public.app_config` (durable sync config, replaces the 0010 GUCs) + reschedules the sync cron to read it; `public.membership_sync_health()` + `public.health_events` + a `*/30` healthcheck cron. Closes the silent-sync-outage incident. | **Production only** |
 | 0014 | `0014_thoughts_linked_pr_url_index.sql` | 6   | Partial index on `thoughts(linked_pr_url) where not null` — exact PR-merge dedup + Phase 6 staleness-by-PR. | always |
 | 0015 | `0015_membership_sync_health_lockdown.sql` | 6   | Revokes `PUBLIC`/`anon`/`authenticated` EXECUTE on `public.membership_sync_health(int)`, leaving `service_role` only — clears Security Advisor lints 0028/0029. The `GET /health` edge endpoint (service_role client) is unaffected. | **Production only** (operates on the 0013 function) |
+| 0016 | `0016_advisor_info_deny_all_policies.sql` | 6   | Explicit deny-all `using(false)` RLS policies on `public.api_tokens` + `public.app_config` so the service_role-only lockdown is a visible schema object — clears Security Advisor lint 0008 (INFO). Behavior-identical (service_role bypasses RLS); the `app_config` half self-skips if 0013 wasn't applied. | always (app_config half no-ops pre-0013) |
 | —   | `seed.sql`                   | 1   | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. Phase 3's sync function takes over once deployed; `seed.sql` remains useful for fresh deploys before the first sync. | always (apply last) |
 
 ## Apply order
 
 ```
-0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014  →  [0015 in production]
+0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014  →  [0015 in production]  →  0016
 ```
 
 `0005` and `0006` can be reordered between themselves (both apply on top of 0004) but the canonical order is `0005` first so anyone tracing the file numbers reads them in the same sequence they apply in.
