@@ -4,7 +4,7 @@
 # (Path B — institutional FABRIC SAN cert, no Let's Encrypt).
 #
 # **This is an envsubst template, not a raw nginx conf.** The
-# nginx:1.27-alpine image's /docker-entrypoint.d/20-envsubst-on-templates.sh
+# nginx:1.28-alpine image's /docker-entrypoint.d/20-envsubst-on-templates.sh
 # script processes files matching *.template in /etc/nginx/templates/
 # at container startup, runs envsubst over them, and writes the
 # resulting files into /etc/nginx/conf.d/. We restrict which variables
@@ -21,6 +21,16 @@
 # envsubst step. (For non-templated edits — e.g. tweaking
 # nginx/html/index.html — reload IS sufficient; html is bind-mounted
 # directly with no preprocessing.)
+
+# Suppress the nginx version in the Server response header and on error
+# pages. server_tokens defaults to "on", which emits the full build —
+# e.g. "Server: nginx/1.28.3" — letting version-banner scanners
+# fingerprint the exact release (this is how CVE-2026-1642 was flagged).
+# Hiding it is obscurity, not a fix, but it's a cheap defense-in-depth
+# layer. Declared here at http context (this file is included inside the
+# stock image's http {} block) so it covers both the :80 redirect server
+# and the :443 server below.
+server_tokens off;
 
 server {
     listen 80;
