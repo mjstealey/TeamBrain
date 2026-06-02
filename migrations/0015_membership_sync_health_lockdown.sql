@@ -48,13 +48,19 @@ grant execute on function public.membership_sync_health(int) to service_role;
 
 commit;
 
--- Verification (read-only) — expect exactly one grantee row: service_role.
+-- Verification (read-only) — confirm anon/authenticated/PUBLIC can no longer
+-- execute it. (postgres + supabase_admin retain EXECUTE as the owner/superuser
+-- roles; they are NOT reachable through the PostgREST JWT surface — only
+-- anon/authenticated/service_role are — so they don't trip lints 0028/0029.
+-- A plain `order by grantee` therefore returns three rows, not one; the
+-- meaningful assertion is that the two API-facing roles are absent.)
 --
 --   select grantee, privilege_type
 --   from information_schema.routine_privileges
 --   where routine_schema = 'public'
 --     and routine_name   = 'membership_sync_health'
---   order by grantee;
+--     and grantee in ('anon', 'authenticated', 'PUBLIC');
+--   -- expect: zero rows
 --
 -- Then confirm Supabase Security Advisor lints 0028/0029 no longer list
 -- membership_sync_health, and that the health endpoint still answers:

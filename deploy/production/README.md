@@ -805,6 +805,57 @@ Soft-delete means every recovery is an UPDATE — no row-recovery procedure to d
 
 If the new key fails, the old key still works during step 4 since key revocation is decoupled from key rotation. Always validate before revoking.
 
+### Security Advisor verification (lints 0008 / 0028 / 0029)
+
+Run after applying the advisor-paydown migrations (`0015`, `0016`) or after any fresh deploy, to confirm the `service_role`-only lockdown of `public.api_tokens` / `public.app_config` (RLS-enabled, deny-all policy) and `public.membership_sync_health()`. All read-only — paste into Studio SQL Editor (over the SSH tunnel, §7) as `supabase_admin`:
+
+```sql
+-- 1. Deny-all policies exist on the two service_role-only tables (lint 0008).
+select tablename, policyname, permissive, roles, qual, with_check
+from pg_policies
+where tablename in ('api_tokens', 'app_config')
+order by tablename;
+-- expect 2 rows: *_no_direct_access · PERMISSIVE · {public} · qual=false · with_check=false
+
+-- 2. RLS still enabled on both.
+select relname, relrowsecurity as rls_enabled
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and relname in ('api_tokens', 'app_config');
+-- expect rls_enabled = true for both
+
+-- 3. No anon/authenticated table grants. (service_role holding *all* privileges
+--    — incl. TRUNCATE/REFERENCES, via the 0001 baseline GRANT ALL — is expected
+--    and fine; the security-relevant fact is the absence of the API-facing roles.)
+select table_name, grantee
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and table_name in ('api_tokens', 'app_config')
+  and grantee in ('anon', 'authenticated')
+order by table_name, grantee;
+-- expect: zero rows
+
+-- 4. membership_sync_health() not executable by the API-facing roles (lints
+--    0028/0029). postgres + supabase_admin retaining EXECUTE is expected —
+--    owner/superuser roles, unreachable through the PostgREST JWT surface.
+select grantee, privilege_type
+from information_schema.routine_privileges
+where routine_schema = 'public'
+  and routine_name   = 'membership_sync_health'
+  and grantee in ('anon', 'authenticated', 'PUBLIC');
+-- expect: zero rows
+```
+
+Then open Studio's **Security Advisor** — it should report **0 errors / 0 warnings / 0 info** for these tables/function (lints 0008, 0028, 0029 all gone). Finally, confirm the lockdown didn't disturb the `service_role` read path the edge functions depend on:
+
+```bash
+set -a; source ~/supabase-stack/.env 2>/dev/null; set +a
+curl -sS --max-time 20 -H "Authorization: Bearer $ANON_KEY" \
+  https://pr.fabric-testbed.net/functions/v1/teambrain-membership-sync/health | python3 -m json.tool
+# expect: status="ok", config.sync_url_set=true, config.service_role_key_set=true
+# — the live proof that service_role still reads app_config through the deny-all
+#   policy (the policy applies only to anon/authenticated; service_role bypasses RLS).
+```
+
 ---
 
 ## Troubleshooting
