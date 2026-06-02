@@ -4,7 +4,7 @@
 # (Path B — institutional FABRIC SAN cert, no Let's Encrypt).
 #
 # **This is an envsubst template, not a raw nginx conf.** The
-# nginx:1.27-alpine image's /docker-entrypoint.d/20-envsubst-on-templates.sh
+# nginx:1.28-alpine image's /docker-entrypoint.d/20-envsubst-on-templates.sh
 # script processes files matching *.template in /etc/nginx/templates/
 # at container startup, runs envsubst over them, and writes the
 # resulting files into /etc/nginx/conf.d/. We restrict which variables
