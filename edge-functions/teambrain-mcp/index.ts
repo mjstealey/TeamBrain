@@ -417,11 +417,17 @@ app.post('*', async (c) => {
                   'wanted 0.7+. Re-tune if the embedding model changes.'),
       cross_project: z.boolean().default(false)
         .describe('If true, ignore project_slug and search every accessible thought.'),
+      include_deprecated: z.boolean().default(true)
+        .describe('If true (default), deprecated thoughts are still returned but ' +
+                  'sink to the bottom of the ranking. Set false to filter them out entirely.'),
   });
   server.tool(
     'search_project_thoughts',
-    'Semantic search over TeamBrain. Returns thoughts ranked by cosine ' +
-    'similarity to the query, filtered to what the caller can see (RLS).',
+    'Semantic search over TeamBrain. Results are ranked by a freshness-aware ' +
+    'score (cosine similarity adjusted for recency, confidence, and expiry) so ' +
+    'stale/deprecated thoughts sink and re-verified ones rise; `similarity` is the ' +
+    'raw cosine, `rank_score` is the ordering score. Filtered to what the caller ' +
+    'can see (RLS).',
     searchSchema.shape,
     async (args: z.infer<typeof searchSchema>) => {
       const denied = toolDenied(caps, 'search_project_thoughts');
@@ -458,10 +464,11 @@ app.post('*', async (c) => {
       //    the function does the cosine ranking + threshold cutoff.
       const { data, error } = await userClient.rpc('match_thoughts', {
         query_embedding:   vectorLiteral(queryVec),
-        match_count:       args.limit,
-        match_threshold:   args.threshold,
-        filter_project_id: filterProjectId,
-        filter_scopes:     caps.isToken ? tokenScopes(caps, args.scopes) : (args.scopes ?? null),
+        match_count:        args.limit,
+        match_threshold:    args.threshold,
+        filter_project_id:  filterProjectId,
+        filter_scopes:      caps.isToken ? tokenScopes(caps, args.scopes) : (args.scopes ?? null),
+        include_deprecated: args.include_deprecated,
       });
 
       if (error) {
@@ -484,7 +491,10 @@ app.post('*', async (c) => {
         similarity:       number;
         created_at:       string;
         last_verified_at: string | null;
+        expires_at:       string | null;
+        confidence:       string | null;
         tags:             string[];
+        rank_score:       number | null;
       }>;
 
       return {
@@ -498,13 +508,16 @@ app.post('*', async (c) => {
             count:           rows.length,
             results: rows.map((r) => ({
               id:               r.id,
+              rank_score:       r.rank_score == null ? null : Number(r.rank_score.toFixed(4)),
               similarity:       Number(r.similarity.toFixed(4)),
               scope:            r.scope,
               type:             r.type,
+              confidence:       r.confidence,
               project_id:       r.project_id,
               author_user_id:   r.author_user_id,
               created_at:       r.created_at,
               last_verified_at: r.last_verified_at,
+              expires_at:       r.expires_at,
               tags:             r.tags,
               content:          r.content,
             })),

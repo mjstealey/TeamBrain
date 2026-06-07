@@ -297,12 +297,13 @@ app.post('/thoughts', async (c) => {
 
 // --- POST /thoughts/search (mirrors `search_project_thoughts`) -------------
 const SearchBody = z.object({
-  query:         z.string().min(1).max(2_000),
-  project_slug:  z.string().optional(),
-  scopes:        z.array(SCOPE).optional(),
-  limit:         z.number().int().min(1).max(50).default(10),
-  threshold:     z.number().min(0).max(1).default(0.3),
-  cross_project: z.boolean().default(false),
+  query:              z.string().min(1).max(2_000),
+  project_slug:       z.string().optional(),
+  scopes:             z.array(SCOPE).optional(),
+  limit:              z.number().int().min(1).max(50).default(10),
+  threshold:          z.number().min(0).max(1).default(0.3),
+  cross_project:      z.boolean().default(false),
+  include_deprecated: z.boolean().default(true),
 });
 
 app.post('/thoughts/search', async (c) => {
@@ -326,18 +327,20 @@ app.post('/thoughts/search', async (c) => {
   }
 
   const { data, error } = await userClient.rpc('match_thoughts', {
-    query_embedding:   vectorLiteral(queryVec),
-    match_count:       body.limit,
-    match_threshold:   body.threshold,
-    filter_project_id: filterProjectId,
-    filter_scopes:     caps.isToken ? tokenScopes(caps, body.scopes) : (body.scopes ?? null),
+    query_embedding:    vectorLiteral(queryVec),
+    match_count:        body.limit,
+    match_threshold:    body.threshold,
+    filter_project_id:  filterProjectId,
+    filter_scopes:      caps.isToken ? tokenScopes(caps, body.scopes) : (body.scopes ?? null),
+    include_deprecated: body.include_deprecated,
   });
   if (error) throw new HttpError(502, `search failed: ${error.message} (code=${error.code ?? 'n/a'})`);
 
   const rows = (data ?? []) as Array<{
     id: string; content: string; scope: string; type: string | null;
     project_id: string | null; author_user_id: string | null; similarity: number;
-    created_at: string; last_verified_at: string | null; tags: string[];
+    created_at: string; last_verified_at: string | null; expires_at: string | null;
+    confidence: string | null; tags: string[]; rank_score: number | null;
   }>;
 
   return c.json({
@@ -348,13 +351,16 @@ app.post('/thoughts/search', async (c) => {
     count:         rows.length,
     results: rows.map((r) => ({
       id:               r.id,
+      rank_score:       r.rank_score == null ? null : Number(r.rank_score.toFixed(4)),
       similarity:       Number(r.similarity.toFixed(4)),
       scope:            r.scope,
       type:             r.type,
+      confidence:       r.confidence,
       project_id:       r.project_id,
       author_user_id:   r.author_user_id,
       created_at:       r.created_at,
       last_verified_at: r.last_verified_at,
+      expires_at:       r.expires_at,
       tags:             r.tags,
       content:          r.content,
     })),
