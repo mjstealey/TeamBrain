@@ -20,7 +20,9 @@ Provenance note: the § A items were surfaced from the live TeamBrain MCP (dogfo
 
 ---
 
-## A — Deferred-debt paydown (foundation hardening) — 🟡 *code-complete on `chore/paydown-sync-health-pr-filter-ts`; production deploy + smoke pending*
+## A — Deferred-debt paydown (foundation hardening) — ✅ *shipped + deployed on `pr.fabric-testbed.net`*
+
+> Prod confirms deployed (2026-06-07 schema introspection): `app_config` + `health_events` tables, `membership_sync_health()`, and the `*/30 teambrain-sync-healthcheck` cron are all live alongside the `*/15 teambrain-membership-sync` job.
 
 All of § A is **written and locally verified** (`scripts/deno-check.sh` green on all six functions, `actionlint` clean on both workflow copies, `openapi-spec-validator` OK, both new migrations tail-verified). Production apply + smoke is operator-driven (Michael), per the Phase-5 pattern.
 
@@ -96,15 +98,25 @@ When a commit touches a path a thought is pinned to (`thoughts.paths`), flag tha
 
 **Done when:** ✅ **MET 2026-06-07.** `0018` applied (+ `NOTIFY pgrst`) and all three functions deployed on `pr.fabric-testbed.net`; `scripts/smoke-staleness-flagging.md` steps 1–4 run green. Two thoughts pinned to different paths (`README.md` vs `LICENSE`); `flag_thoughts_for_paths('README.md')` flagged **only** the README thought (`stale_flagged_at` set, one `commit_touched_path` signal row, surfaced via `flagged_only=true`), while the LICENSE control stayed `stale_flagged_at: null` with zero signals — **no false positive**. `mark_stale` on the flagged thought returned `stale_flagged_at: null` (the clear-on-reverify trigger) and `flagged_only` then returned `[]`. The pluggable core + surfacing + clear loop are verified end-to-end.
 
-☐ **Live automation follow-ups (operator, do not gate the § C core):** apply prod `0019` (the `5,20,35,50` scan + `10,40` expiry crons) and grant the GitHub App **`Contents: read`** so the scheduled `/scan` can diff commits. Until then the flag mechanism works on demand (`flag_thoughts_for_paths` / `flag_expired_thoughts` / a manual `/scan`); only the *automatic* commit polling waits on these two.
+✅ **Live automation follow-ups (operator) — done:** prod `0019` is applied (the `teambrain-staleness-scan 5,20,35,50` + `teambrain-staleness-expiry 10,40` crons are scheduled, confirmed 2026-06-07), and the GitHub App has commit-diff access — the **`Contents: write`** grant added for § D is a superset of the `Contents: read` the poller needs. So automatic commit-triggered polling is **live**, not just on-demand.
 
-## D — `promote_to_docs` → real ADR/docs PR — ☐ *not started*
+## D — `promote_to_docs` → real ADR/docs PR — ✅ *shipped + smoke-verified on `pr.fabric-testbed.net` (2026-06-07)*
 
-`promote_to_docs` is currently a **preview-only** stub in `teambrain-mcp` / `teambrain-rest` (returns the proposed branch/filename/markdown, opens no PR). Phase 6 wires the GitHub App to create the branch, commit the generated markdown, and open the PR — the governance loop that graduates a stabilized memory into reviewed repo docs.
+`promote_to_docs` was a **preview-only** stub (returned the proposed branch/filename/markdown, opened no PR). It now opens a **real PR**: generate the ADR-style markdown from the thought, create a branch, commit it, and open a PR in the project's repo via the TeamBrain GitHub App — the governance loop that graduates a stabilized memory into reviewed repo docs. `deno check` clean across all six functions; `openapi-spec-validator` green.
 
-**Decisions to make:** reuse the membership-sync GitHub App installation token vs a separate app; target path/branch conventions (the stub already proposes `docs/adr/<id8>-<type>.md`); whether promotion also marks the source thought (e.g., `confidence: confirmed` + a `promoted_pr_url`).
+**Decisions (resolved 2026-06-07, confirmed with Michael):**
+- **GitHub App:** *reuse the membership-sync App's installation token* (`getInstallationToken()` from `teambrain-membership-sync/github.ts`, the same cross-function import `teambrain-register-project` already uses) — no separate app. Requires bumping that App's permissions to **Contents: write** + **Pull requests: write** (a superset of the § C `Contents: read` grant).
+- **Conventions:** keep the stub's — branch `teambrain/promote-<id8>`, file `docs/adr/<id8>-<type>.md`; `target_path` (default `docs/adr/`) + `target_branch` (default `main`) stay request params.
+- **Who can promote:** **contributor | admin** (the capture floor). The PR write goes to GitHub, not the DB, so RLS can't gate it implicitly — the handler checks `project_members` explicitly (RLS lets a member read their own row). Token/service-account calls stay denied (§ A4 caps + the `0012` update fence).
+- **Source stamp:** on success, stamp the thought `promoted_pr_url` + `confidence: 'confirmed'` (migration `0020` adds the column). The stamp is **best-effort** — a stamp failure never fails an already-opened PR (reported via `stamped:false` + `stamp_error`). A non-null `promoted_pr_url` makes a **re-promote idempotent** (returns the existing PR; opens no duplicate). All GitHub steps are themselves idempotent (branch 422 / file create-or-update by blob SHA / PR 422 → fetch existing).
 
-**Done when:** calling `promote_to_docs` on a real thought opens a docs PR in the target repo containing the generated markdown + provenance; the preview path remains available; RLS still gates who can promote.
+**Surfaced:** `promoted_pr_url` is returned by `list_recent_project_thoughts` / `GET /thoughts` (cheap passthrough). Search via `match_thoughts` is **not** extended — a promoted thought is also `confidence:'confirmed'`, which search already returns; adding the column there would mean another full RPC-recreate migration for marginal value (deferred).
+
+**Files:** `migrations/0020_thoughts_promoted_pr_url.sql` (new), `edge-functions/teambrain-mcp/promote.ts` (new — shared core, imported cross-function by `teambrain-rest`), `edge-functions/teambrain-mcp/index.ts`, `edge-functions/teambrain-rest/index.ts`, `deploy/production/nginx/html/openapi.yaml`, `examples/curl.md` § 6, `scripts/smoke-promote-to-docs.md` (new).
+
+**Done when:** ✅ **MET 2026-06-07.** `0020` applied (+ `NOTIFY pgrst`), `teambrain-mcp` + `teambrain-rest` redeployed, the GitHub App granted **Contents: write** + **Pull requests: write** (and the org **accepted** the permission-change request — see note), and `scripts/smoke-promote-to-docs.md` run on `pr.fabric-testbed.net`. Promoting thought `dc94d691` opened **PR #16** (`docs/adr/dc94d691-decision.md` on `teambrain/promote-dc94d691`) with the generated Content + Provenance; the thought was stamped (`promoted_pr_url` = #16, `confidence: confirmed`, returned via `GET /thoughts`); a re-promote returned the **same** PR with `already_promoted:true` (PR-list count `1`, no duplicate); a `personal`-scope thought was refused **422**. RLS + the explicit writer check gate who can promote.
+
+> **Operator gotcha (cost one smoke iteration):** bumping the GitHub App's permissions to Contents/PR-write only changes what the App *requests* — the installation keeps the old (read-only) perms until the org **accepts the permission-change request** (Org → Settings → GitHub Apps → the install → review/approve). Before acceptance, the first write call 403s and `promote_to_docs` returns a `502` naming the missing permission (by design, not a crash). No redeploy is needed after acceptance — each call mints a fresh installation token.
 
 ## E — Migration baseline consolidation (`v1_baseline.sql`) — ☐ *deferred to cutover*
 

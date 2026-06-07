@@ -6,7 +6,7 @@ TeamBrain gives a team of developers the same persistent context for a codebase 
 
 ## Status
 
-**Phases 0–4 complete; Phase 5 § A (long-lived API tokens) + § C (PR-merge capture) complete; Phase 6 § A (foundation / sync-health paydown) merged to `main` — production deploy pending.** Deployed and live on `https://pr.fabric-testbed.net` since 2026-05-27. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
+**Phases 0–4 complete and live on `https://pr.fabric-testbed.net` (since 2026-05-27). Phase 5: § A (API tokens) + § C (PR-merge capture) shipped; § B (Slack) / § D (slash commands) remain. Phase 6 (staleness & promotion): § A–§ D all shipped + smoke-verified on prod** — sync-health paydown (§ A), search-ranking decay (§ B), commit-triggered staleness flagging (§ C, with the `pg_cron` poller live), and `promote_to_docs` → real ADR/docs PR (§ D); only § E (migration-baseline consolidation) remains, deferred to production cutover. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot.
 
 Per-phase artifacts (each with a `Done when` acceptance criterion):
 
@@ -18,7 +18,7 @@ Per-phase artifacts (each with a `Done when` acceptance criterion):
 | 3 | [phase-3-checklist.md](docs/phase-3-checklist.md) | GitHub-App-driven `project_members` sync (`teambrain-membership-sync`, pg_cron) |
 | 4 | [phase-4-checklist.md](docs/phase-4-checklist.md) | REST mirror (`teambrain-rest`) + OpenAPI 3.1 spec + self-service registration (`teambrain-register-project`) |
 | 5 | [phase-5-checklist.md](docs/phase-5-checklist.md) | Capture integrations: API tokens (§ A ✅), Slack bot (§ B), runnable PR-merge Action (§ C ✅), slash commands (§ D) |
-| 6 | [phase-6-checklist.md](docs/phase-6-checklist.md) | Staleness & promotion: foundation / sync-health paydown (§ A ✅ merged, deploy pending), search-ranking decay (§ B), commit-triggered staleness (§ C), `promote_to_docs` → real ADR/docs PR (§ D) |
+| 6 | [phase-6-checklist.md](docs/phase-6-checklist.md) | Staleness & promotion: sync-health paydown (§ A ✅), search-ranking decay (§ B ✅), commit-triggered staleness flagging (§ C ✅), `promote_to_docs` → real ADR/docs PR (§ D ✅); migration-baseline consolidation (§ E, deferred to cutover) |
 
 See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) for the locked-in decisions, and [`docs/deployment.md`](docs/deployment.md) + [`deploy/production/`](deploy/production/) for the deploy topology.
 
@@ -45,7 +45,7 @@ Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`
 - **Storage model — hybrid:**
   - *In repo (canonical, reviewed, versioned with code):* `AGENTS.md`, `.claude/CLAUDE.md`, `.cursor/rules/`, `docs/adr/`, `docs/context/`.
   - *In TeamBrain (living, ephemeral, cross-developer):* in-flight debugging notes, gotchas not yet promoted to docs, recent decisions still being validated, dev preferences, cross-repo context.
-  - *Promotion workflow:* memories that stabilize get promoted into the repo via PR. That is the governance loop (`promote_to_docs` lands fully in Phase 6).
+  - *Promotion workflow:* memories that stabilize get promoted into the repo via PR. That is the governance loop — `promote_to_docs` opens a real ADR/docs PR via the GitHub App (Phase 6 § D).
 - **Transport:** single backend → two thin **custom** edge functions: `teambrain-mcp` (MCP/JSON-RPC, 6 tools) and `teambrain-rest` (HTTP/JSON mirror of the same tools). PostgREST remains available under the hood but is intentionally not the documented surface — see Phase 4 § A1 for the uniform-custom-vs-PostgREST-hybrid decision. Adding a new AI client = config entry, not adapter code.
 
 ## Phased Roadmap
@@ -58,7 +58,7 @@ Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`
 | 3 | Automated membership sync — GitHub collaborators + org-team members → `project_members`, pg_cron + manual trigger, `sync_runs` audit | ✅ complete |
 | 4 | REST handlers + OpenAPI 3.1 spec; example clients (OpenAI function calling, curl, illustrative GitHub Action); self-service project registration | ✅ complete |
 | 5 | Capture integrations — long-lived API token mechanism (§ A ✅), Slack bot (§ B), runnable PR-merge GitHub Action (§ C ✅, consumes § A), slash commands (§ D) | § A ✅, § C ✅ — § B / § D upcoming |
-| 6 | Staleness + promotion — foundation / sync-health paydown (§ A), `last_verified_at` decay in ranking (§ B), commit-triggered staleness via webhook (§ C), `promote_to_docs` generating ADR/docs PRs (§ D) | 🟡 in progress — § A merged (deploy pending); § B–D upcoming |
+| 6 | Staleness + promotion — sync-health paydown (§ A), `last_verified_at` decay in ranking (§ B), commit-triggered staleness flagging via `pg_cron` poll (§ C), `promote_to_docs` generating ADR/docs PRs (§ D) | ✅ § A–D shipped + smoke-verified; § E (migration baseline) deferred to cutover |
 | 7 | Pilot evaluation on 1 real repo (`fabric-testbed/fabric-core-api`), 2–3 devs — capture / retrieval / staleness / friction metrics | upcoming |
 | Future | CILogon as second GoTrue OIDC provider when non-GitHub collaborators or research-compliance auditing requires it | deferred |
 
