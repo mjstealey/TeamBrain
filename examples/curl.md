@@ -196,17 +196,25 @@ successful mark — re-verifying clears any pending re-verification flag (§ C).
 
 ---
 
-## 6. Promote (preview) — `POST /teambrain-rest/thoughts/{id}/promote`
+## 6. Promote to docs — `POST /teambrain-rest/thoughts/{id}/promote`
 
-Returns a preview of the docs PR that promotion *would* create. It does not
-open a PR yet (Phase 6).
+Graduates a stabilized thought into reviewed repo docs: opens a PR in the
+project's repo with an ADR-style markdown file generated from the thought, then
+stamps the thought (`promoted_pr_url` + `confidence: confirmed`). Requires
+**contributor/admin** on the project; the TeamBrain GitHub App needs
+**Contents: write** + **Pull requests: write** on the target repo.
 
 ```bash
 curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts/$ID/promote" -d '{
   "target_path": "docs/adr/",
   "target_branch": "main"
-}' | jq '{ok, file: .request.proposed_filename, branch: .request.proposed_branch}'
+}' | jq '{ok, already_promoted, pr_url, path, stamped}'
 ```
+
+Idempotent per thought: a second call returns the existing PR with
+`already_promoted: true` instead of opening a duplicate. A non-writer caller
+gets `403 {ok:false, code:"forbidden"}`; a `personal`-scope thought (no repo to
+target) gets `422 {ok:false, code:"not_a_project_thought"}`.
 
 ---
 

@@ -30,6 +30,7 @@ import { z }                               from 'npm:zod@^3.23.0';
 import { createClient, SupabaseClient }    from 'npm:@supabase/supabase-js@^2.45.0';
 
 import { embed, vectorLiteral, currentEmbeddingModelTag } from '../teambrain-mcp/embedding.ts';
+import { promoteThoughtToDocs, PromoteError } from '../teambrain-mcp/promote.ts';
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -408,7 +409,7 @@ app.get('/thoughts', async (c) => {
   let query = userClient
     .from('thoughts')
     .select('id, scope, type, project_id, author_user_id, content, tags, paths, ' +
-            'confidence, linked_pr_url, created_at, last_verified_at, expires_at, stale_flagged_at')
+            'confidence, linked_pr_url, promoted_pr_url, created_at, last_verified_at, expires_at, stale_flagged_at')
     .order('created_at', { ascending: false })
     .limit(q.limit);
 
@@ -476,14 +477,17 @@ app.patch('/thoughts/:id/stale', async (c) => {
   });
 });
 
-// --- POST /thoughts/:id/promote (mirrors `promote_to_docs`, preview only) --
+// --- POST /thoughts/:id/promote (mirrors `promote_to_docs`) -----------------
+// Opens a real docs/ADR PR in the project's repo via the TeamBrain GitHub App,
+// then stamps the source thought (promoted_pr_url + confidence 'confirmed').
+// Requires contributor/admin on the project; idempotent per thought.
 const PromoteBody = z.object({
   target_path:   z.string().default('docs/adr/'),
   target_branch: z.string().default('main'),
 });
 
 app.post('/thoughts/:id/promote', async (c) => {
-  const { userClient, caps } = requireAuth(c.req.header('Authorization') ?? null);
+  const { userClient, userId, caps } = requireAuth(c.req.header('Authorization') ?? null);
   requireToolAllowed(caps, 'promote_to_docs');
   const id = parse(z.string().uuid(), c.req.param('id'));
   const rawBody = c.req.header('content-length') && c.req.header('content-length') !== '0'
@@ -491,63 +495,23 @@ app.post('/thoughts/:id/promote', async (c) => {
     : {};
   const body = parse(PromoteBody, rawBody);
 
-  const { data, error } = await userClient
-    .from('thoughts')
-    .select('id, scope, type, content, project_id, author_user_id, tags, paths, ' +
-            'linked_commit_sha, linked_pr_url, linked_issue_url, created_at, last_verified_at')
-    .eq('id', id)
-    .maybeSingle();
-
-  if (error) throw new HttpError(502, `promote preview failed: ${error.message} (code=${error.code ?? 'n/a'})`);
-  if (!data) {
-    return c.json({ ok: false, thought_id: id, reason: 'thought not found, or caller lacks read permission' });
+  try {
+    const result = await promoteThoughtToDocs({
+      userClient,
+      userId,
+      thoughtId:    id,
+      targetPath:   body.target_path,
+      targetBranch: body.target_branch,
+    });
+    if (result.ok) return c.json(result, 200);
+    const status: ContentfulStatusCode =
+      result.code === 'forbidden'             ? 403 :
+      result.code === 'not_a_project_thought' ? 422 : 404;
+    return c.json(result, status);
+  } catch (e) {
+    if (e instanceof PromoteError) throw new HttpError(e.status as ContentfulStatusCode, e.message);
+    throw e;
   }
-
-  const t = data as unknown as {
-    id: string; scope: string; type: string | null; content: string;
-    project_id: string | null; author_user_id: string | null;
-    tags: string[]; paths: string[]; linked_commit_sha: string | null;
-    linked_pr_url: string | null; linked_issue_url: string | null;
-    created_at: string; last_verified_at: string | null;
-  };
-
-  const filename = `${t.id.slice(0, 8)}-${(t.type ?? 'thought')}.md`;
-  const branch   = `teambrain/promote-${t.id.slice(0, 8)}`;
-  const md = [
-    `# ${t.type ?? 'Thought'}: ${t.content.split('\n')[0].slice(0, 80)}`,
-    '',
-    `> Promoted from TeamBrain thought \`${t.id}\` on ${new Date().toISOString()}.`,
-    '',
-    '## Content',
-    '',
-    t.content,
-    '',
-    '## Provenance',
-    '',
-    `- scope: \`${t.scope}\``,
-    `- captured: ${t.created_at}`,
-    t.last_verified_at ? `- last verified: ${t.last_verified_at}` : null,
-    t.linked_commit_sha ? `- linked commit: \`${t.linked_commit_sha}\`` : null,
-    t.linked_pr_url     ? `- linked PR: ${t.linked_pr_url}`            : null,
-    t.linked_issue_url  ? `- linked issue: ${t.linked_issue_url}`      : null,
-    t.paths.length > 0  ? `- paths: ${t.paths.map((p) => '`' + p + '`').join(', ')}` : null,
-    t.tags.length  > 0  ? `- tags: ${t.tags.map((p)  => '`' + p + '`').join(', ')}`  : null,
-  ].filter((x) => x !== null).join('\n');
-
-  return c.json({
-    ok:      true,
-    preview: true,
-    note:    'Preview only — no PR was created. Phase 6 will wire the GitHub API.',
-    request: {
-      thought_id:         t.id,
-      target_path:        body.target_path,
-      target_branch:      body.target_branch,
-      proposed_branch:    branch,
-      proposed_filename:  filename,
-      proposed_full_path: body.target_path.replace(/\/?$/, '/') + filename,
-    },
-    commit_payload: { filename, markdown: md },
-  });
 });
 
 // Catch-all — clear 404 for path/method mismatches.

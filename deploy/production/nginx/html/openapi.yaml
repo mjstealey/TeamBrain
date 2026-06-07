@@ -227,12 +227,18 @@ paths:
     post:
       operationId: promoteThought
       tags: [thoughts]
-      summary: Preview a docs-promotion
+      summary: Promote a thought into a docs PR
       description: |
-        Returns a structured preview of the docs PR that promoting this
-        thought would create (proposed branch, filename, and markdown body).
-        **Preview only** — it does not create a branch or open a PR; that
-        lands in Phase 6.
+        Graduates a stabilized thought into reviewed repo docs: generates an
+        ADR-style markdown file from the thought, creates a branch, commits it,
+        and opens a pull request in the project's repo via the TeamBrain GitHub
+        App. On success the source thought is stamped (`promoted_pr_url` plus
+        `confidence: confirmed`), which also makes a re-promote idempotent —
+        calling again returns the existing PR rather than opening a duplicate.
+
+        The caller must be a **contributor or admin** on the project (the same
+        floor as capture); API-token callers are denied. The GitHub App must
+        have **Contents: write** and **Pull requests: write** on the target repo.
       parameters:
         - $ref: "#/components/parameters/ThoughtId"
       requestBody:
@@ -242,12 +248,27 @@ paths:
             schema: { $ref: "#/components/schemas/PromoteRequest" }
       responses:
         "200":
-          description: Promotion preview (or not-found no-op).
+          description: PR opened (or, if already promoted, the existing PR).
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PromoteResult" }
+              schema: { $ref: "#/components/schemas/PromoteSuccess" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not a contributor/admin on the project (or the API token forbids this tool).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoteFailure" }
+        "404":
+          description: Thought not found, or not visible to the caller.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoteFailure" }
+        "422":
+          description: Thought has no project (personal scope) and cannot be promoted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PromoteFailure" }
         "502": { $ref: "#/components/responses/UpstreamError" }
 
   /teambrain-register-project/register:
@@ -747,6 +768,12 @@ components:
           items: { type: string }
         confidence: { $ref: "#/components/schemas/Confidence" }
         linked_pr_url: { type: [string, "null"] }
+        promoted_pr_url:
+          type: [string, "null"]
+          description: >-
+            Phase 6 § D: when non-null, the docs/ADR PR this thought was
+            promoted into via promote_to_docs (also sets confidence:'confirmed').
+            Inverse of linked_pr_url.
         created_at: { type: string, format: date-time }
         last_verified_at: { type: [string, "null"], format: date-time }
         expires_at: { type: [string, "null"], format: date-time }
@@ -819,45 +846,47 @@ components:
         target_path:
           type: string
           default: docs/adr/
-          description: Repo-relative directory the eventual PR would write into.
+          description: Repo-relative directory the PR writes the markdown file into.
         target_branch:
           type: string
           default: main
-          description: Base branch of the eventual PR.
+          description: Base branch the PR targets.
 
-    PromoteResult:
-      oneOf:
-        - $ref: "#/components/schemas/PromotePreview"
-        - $ref: "#/components/schemas/PromoteNotFound"
-
-    PromotePreview:
+    PromoteSuccess:
       type: object
-      required: [ok, preview, request, commit_payload]
+      required: [ok, already_promoted, pr_url, branch, path, repo_slug, stamped]
       properties:
         ok: { type: boolean, const: true }
-        preview: { type: boolean, const: true }
-        note: { type: string }
-        request:
-          type: object
-          properties:
-            thought_id: { type: string, format: uuid }
-            target_path: { type: string }
-            target_branch: { type: string }
-            proposed_branch: { type: string }
-            proposed_filename: { type: string }
-            proposed_full_path: { type: string }
-        commit_payload:
-          type: object
-          properties:
-            filename: { type: string }
-            markdown: { type: string }
+        already_promoted:
+          type: boolean
+          description: >-
+            true when the thought was already promoted; pr_url is the existing
+            PR and no new PR was opened (idempotent re-promote).
+        pr_url:
+          type: string
+          format: uri
+          description: URL of the opened (or pre-existing) docs PR.
+        branch: { type: string, description: "Head branch the PR was opened from (teambrain/promote-<id8>)." }
+        path: { type: string, description: "Repo-relative path of the committed markdown file." }
+        repo_slug: { type: string, description: "owner/repo the PR was opened in." }
+        stamped:
+          type: boolean
+          description: >-
+            Whether the source thought was stamped (promoted_pr_url +
+            confidence:'confirmed'). Best-effort — false on a fresh promote
+            means the PR opened but the stamp write failed (see stamp_error).
+        stamp_error:
+          type: string
+          description: Present only when stamped is false on a fresh promote.
 
-    PromoteNotFound:
+    PromoteFailure:
       type: object
-      required: [ok, thought_id, reason]
+      required: [ok, code, reason]
       properties:
         ok: { type: boolean, const: false }
-        thought_id: { type: string, format: uuid }
+        code:
+          type: string
+          enum: [not_found, not_a_project_thought, forbidden]
         reason: { type: string }
 
     RegisterRequest:

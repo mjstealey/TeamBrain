@@ -33,6 +33,7 @@ import { z }                       from 'npm:zod@^3.23.0';
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@^2.45.0';
 
 import { embed, vectorLiteral, currentEmbeddingModelTag } from './embedding.ts';
+import { promoteThoughtToDocs, PromoteError } from './promote.ts';
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -580,7 +581,7 @@ app.post('*', async (c) => {
       let q = userClient
         .from('thoughts')
         .select('id, scope, type, project_id, author_user_id, content, tags, paths, ' +
-                'confidence, linked_pr_url, created_at, last_verified_at, expires_at, stale_flagged_at')
+                'confidence, linked_pr_url, promoted_pr_url, created_at, last_verified_at, expires_at, stale_flagged_at')
         .order('created_at', { ascending: false })
         .limit(args.limit);
 
@@ -702,118 +703,52 @@ app.post('*', async (c) => {
     },
   );
 
-  // Tool: promote_to_docs (Phase 2 placeholder)
-  // Phase 6 will fully implement promotion: generate an ADR-style markdown
-  // file from the thought, create a branch, commit, and open a PR via the
-  // GitHub API. For Phase 2 this tool returns a *preview* payload that
-  // shows what would be promoted, without touching GitHub. Calling it is
-  // safe — it only reads the thought (RLS-gated) and returns a struct.
+  // Tool: promote_to_docs (Phase 6 § D)
+  // Graduate a stabilized thought into reviewed repo docs: generate an
+  // ADR-style markdown file from the thought, create a branch, commit it,
+  // and open a PR in the project's repo via the TeamBrain GitHub App.
+  // On success the source thought is stamped (`promoted_pr_url` +
+  // confidence 'confirmed') so the promotion is visible and idempotent.
+  // The caller must be a project writer (contributor | admin); the GitHub
+  // App needs Contents:write + Pull-requests:write on the target repo.
   const promoteSchema = z.object({
       thought_id: z.string().uuid()
-        .describe('UUID of the thought to preview promotion for.'),
+        .describe('UUID of the thought to promote into a docs PR.'),
       target_path: z.string().default('docs/adr/')
-        .describe('Repo-relative directory the eventual PR would write into.'),
+        .describe('Repo-relative directory the PR writes the markdown into.'),
       target_branch: z.string().default('main')
-        .describe('Base branch of the eventual PR.'),
+        .describe('Base branch the PR targets.'),
   });
   server.tool(
     'promote_to_docs',
-    '[Preview only — Phase 2] Returns a structured preview of what a ' +
-    'docs PR for this thought would contain. Does NOT yet create a ' +
-    'branch or open a PR; that lands in Phase 6.',
+    'Promote a stabilized thought into reviewed repo docs: opens a PR in ' +
+    "the project's repo with an ADR-style markdown file generated from the " +
+    'thought, then stamps the thought as promoted (confidence: confirmed). ' +
+    'Requires contributor/admin on the project; idempotent per thought.',
     promoteSchema.shape,
     async (args: z.infer<typeof promoteSchema>) => {
       const denied = toolDenied(caps, 'promote_to_docs');
       if (denied) return denied;
-      const { userClient } = getAuthContext(authHeader);
+      const { userClient, userId } = getAuthContext(authHeader);
 
-      const { data, error } = await userClient
-        .from('thoughts')
-        .select('id, scope, type, content, project_id, author_user_id, ' +
-                'tags, paths, linked_commit_sha, linked_pr_url, ' +
-                'linked_issue_url, created_at, last_verified_at')
-        .eq('id', args.thought_id)
-        .maybeSingle();
-
-      if (error) {
+      try {
+        const result = await promoteThoughtToDocs({
+          userClient,
+          userId,
+          thoughtId:    args.thought_id,
+          targetPath:   args.target_path,
+          targetBranch: args.target_branch,
+        });
         return {
-          content: [{
-            type: 'text',
-            text: `promote_to_docs ERROR: ${error.message} (code=${error.code ?? 'n/a'})`,
-          }],
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (e) {
+        const msg = e instanceof PromoteError ? e.message : (e as Error).message;
+        return {
+          content: [{ type: 'text', text: `promote_to_docs ERROR: ${msg}` }],
           isError: true,
         };
       }
-
-      if (!data) {
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              ok: false,
-              thought_id: args.thought_id,
-              reason: 'thought not found, or caller lacks read permission',
-            }, null, 2),
-          }],
-        };
-      }
-
-      const t = data as unknown as {
-        id: string; scope: string; type: string | null; content: string;
-        project_id: string | null; author_user_id: string | null;
-        tags: string[]; paths: string[]; linked_commit_sha: string | null;
-        linked_pr_url: string | null; linked_issue_url: string | null;
-        created_at: string; last_verified_at: string | null;
-      };
-
-      // Generate the markdown body that the future PR would commit.
-      // Same shape as `docs/adr/0001-teambrain-architecture.md` so the
-      // promoted artifact slots into existing docs without reformatting.
-      const filename = `${t.id.slice(0, 8)}-${(t.type ?? 'thought')}.md`;
-      const branch   = `teambrain/promote-${t.id.slice(0, 8)}`;
-      const md = [
-        `# ${t.type ?? 'Thought'}: ${t.content.split('\n')[0].slice(0, 80)}`,
-        '',
-        `> Promoted from TeamBrain thought \`${t.id}\` on ${new Date().toISOString()}.`,
-        '',
-        '## Content',
-        '',
-        t.content,
-        '',
-        '## Provenance',
-        '',
-        `- scope: \`${t.scope}\``,
-        `- captured: ${t.created_at}`,
-        t.last_verified_at ? `- last verified: ${t.last_verified_at}` : null,
-        t.linked_commit_sha ? `- linked commit: \`${t.linked_commit_sha}\`` : null,
-        t.linked_pr_url     ? `- linked PR: ${t.linked_pr_url}`            : null,
-        t.linked_issue_url  ? `- linked issue: ${t.linked_issue_url}`      : null,
-        t.paths.length > 0  ? `- paths: ${t.paths.map((p) => '`' + p + '`').join(', ')}` : null,
-        t.tags.length  > 0  ? `- tags: ${t.tags.map((p)  => '`' + p + '`').join(', ')}`  : null,
-      ].filter((x) => x !== null).join('\n');
-
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            ok: true,
-            preview: true,
-            note:  'Phase 2 preview only — no PR was created. Phase 6 will wire the GitHub API.',
-            request: {
-              thought_id:    t.id,
-              target_path:   args.target_path,
-              target_branch: args.target_branch,
-              proposed_branch:    branch,
-              proposed_filename:  filename,
-              proposed_full_path: args.target_path.replace(/\/?$/, '/') + filename,
-            },
-            commit_payload: {
-              filename,
-              markdown: md,
-            },
-          }, null, 2),
-        }],
-      };
     },
   );
 
