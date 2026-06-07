@@ -60,7 +60,7 @@ The Edge Runtime ships JS without type-checking, so latent strict-TS errors hid 
 
 ---
 
-## B — Staleness decay in search ranking — 🟡 *code-complete on `feat/phase6-staleness-decay`; production apply + smoke pending*
+## B — Staleness decay in search ranking — ✅ *shipped + smoke-verified on `pr.fabric-testbed.net` (2026-06-07)*
 
 `match_thoughts` now ranks on a **freshness-aware score** instead of raw cosine alone, so a confidently-stale memory loses to a fresh one. Inputs (all already on the schema): `last_verified_at`, `expires_at`, `confidence` (`tentative|confirmed|deprecated`).
 
@@ -77,7 +77,7 @@ The Edge Runtime ships JS without type-checking, so latent strict-TS errors hid 
 
 **Files:** `migrations/0017_match_thoughts_staleness_decay.sql` (new), `edge-functions/teambrain-mcp/index.ts`, `edge-functions/teambrain-rest/index.ts`, `deploy/production/nginx/html/openapi.yaml`, `examples/curl.md`, `scripts/smoke-staleness-decay.md` (new). 768-dim deployments apply the same `0017` edit with `vector(768)` swapped in (header note, mirroring how `0005` is the 768 rewrite of `0004`).
 
-**Done when:** a `deprecated` / long-unverified thought ranks below a fresh `confirmed` one for the same query; covered by the repeatable smoke `scripts/smoke-staleness-decay.md` (capture two near-identical thoughts, age/deprecate one, confirm `rank_score` ordering + `include_deprecated:false` removal). ☐ **Remaining:** operator apply of `0017` (+ `NOTIFY pgrst, 'reload schema'`), redeploy `teambrain-mcp` / `teambrain-rest`, run the smoke on `pr.fabric-testbed.net`.
+**Done when:** ✅ **MET 2026-06-07.** `0017` applied (+ `NOTIFY pgrst, 'reload schema'`), `teambrain-mcp` / `teambrain-rest` redeployed, and `scripts/smoke-staleness-decay.md` run on `pr.fabric-testbed.net`: two near-identical thoughts captured, one aged 400 days + `deprecated`, the other re-verified + `confirmed`. Search (`threshold 0.5` to isolate the pair) returned the **confirmed** thought first (`rank_score 1.0327` = sim `0.898` × 1.15) and the **deprecated** one second (`rank_score 0.189` = sim `0.9036` × 0.40 × recency `0.523`) — i.e. the deprecated row sank **below** the fresh one *despite a higher raw cosine similarity*; raw-cosine ranking would have inverted them. `include_deprecated:false` dropped the deprecated row entirely. Returned scores matched the formula to 4 dp.
 
 ## C — Commit-triggered staleness flagging (GitHub webhook) — ☐ *not started*
 
