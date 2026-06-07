@@ -340,7 +340,7 @@ app.post('/thoughts/search', async (c) => {
     id: string; content: string; scope: string; type: string | null;
     project_id: string | null; author_user_id: string | null; similarity: number;
     created_at: string; last_verified_at: string | null; expires_at: string | null;
-    confidence: string | null; tags: string[]; rank_score: number | null;
+    confidence: string | null; stale_flagged_at: string | null; tags: string[]; rank_score: number | null;
   }>;
 
   return c.json({
@@ -361,6 +361,7 @@ app.post('/thoughts/search', async (c) => {
       created_at:       r.created_at,
       last_verified_at: r.last_verified_at,
       expires_at:       r.expires_at,
+      stale_flagged_at: r.stale_flagged_at,
       tags:             r.tags,
       content:          r.content,
     })),
@@ -369,13 +370,14 @@ app.post('/thoughts/search', async (c) => {
 
 // --- GET /thoughts (mirrors `list_recent_project_thoughts`) ----------------
 // Query params: project_slug, scopes (comma-separated), limit, since,
-// linked_pr_url, cross_project.
+// linked_pr_url, flagged_only, cross_project.
 const ListQuery = z.object({
   project_slug:  z.string().optional(),
   scopes:        z.array(SCOPE).optional(),
   limit:         z.number().int().min(1).max(100).default(20),
   since:         z.string().optional(),
   linked_pr_url: z.string().optional(),
+  flagged_only:  z.boolean().default(false),
   cross_project: z.boolean().default(false),
 });
 
@@ -390,6 +392,7 @@ app.get('/thoughts', async (c) => {
     limit:         c.req.query('limit')  ? Number(c.req.query('limit'))  : undefined,
     since:         c.req.query('since')  || undefined,
     linked_pr_url: c.req.query('linked_pr_url') || undefined,
+    flagged_only:  c.req.query('flagged_only') === 'true',
     cross_project: c.req.query('cross_project') === 'true',
   };
   const q = parse(ListQuery, raw);
@@ -405,7 +408,7 @@ app.get('/thoughts', async (c) => {
   let query = userClient
     .from('thoughts')
     .select('id, scope, type, project_id, author_user_id, content, tags, paths, ' +
-            'confidence, linked_pr_url, created_at, last_verified_at, expires_at')
+            'confidence, linked_pr_url, created_at, last_verified_at, expires_at, stale_flagged_at')
     .order('created_at', { ascending: false })
     .limit(q.limit);
 
@@ -414,6 +417,7 @@ app.get('/thoughts', async (c) => {
   else if (q.scopes?.length) query = query.in('scope', q.scopes);
   if (q.since)               query = query.gt('created_at', q.since);
   if (q.linked_pr_url)       query = query.eq('linked_pr_url', q.linked_pr_url);
+  if (q.flagged_only)        query = query.not('stale_flagged_at', 'is', null);
 
   const { data, error } = await query;
   if (error) throw new HttpError(502, `list failed: ${error.message} (code=${error.code ?? 'n/a'})`);
@@ -446,7 +450,7 @@ app.patch('/thoughts/:id/stale', async (c) => {
     .from('thoughts')
     .update({ confidence: body.confidence, last_verified_at: new Date().toISOString() })
     .eq('id', id)
-    .select('id, confidence, last_verified_at')
+    .select('id, confidence, last_verified_at, stale_flagged_at')
     .maybeSingle();
 
   if (error) throw new HttpError(502, `mark_stale failed: ${error.message} (code=${error.code ?? 'n/a'})`);
@@ -461,12 +465,13 @@ app.patch('/thoughts/:id/stale', async (c) => {
     });
   }
 
-  const row = data as { id: string; confidence: string; last_verified_at: string };
+  const row = data as { id: string; confidence: string; last_verified_at: string; stale_flagged_at: string | null };
   return c.json({
     updated:          true,
     id:               row.id,
     new_confidence:   row.confidence,
     last_verified_at: row.last_verified_at,
+    stale_flagged_at: row.stale_flagged_at,
     reason_received:  body.reason ?? null,
   });
 });
