@@ -493,6 +493,7 @@ app.post('*', async (c) => {
         last_verified_at: string | null;
         expires_at:       string | null;
         confidence:       string | null;
+        stale_flagged_at: string | null;
         tags:             string[];
         rank_score:       number | null;
       }>;
@@ -518,6 +519,7 @@ app.post('*', async (c) => {
               created_at:       r.created_at,
               last_verified_at: r.last_verified_at,
               expires_at:       r.expires_at,
+              stale_flagged_at: r.stale_flagged_at,
               tags:             r.tags,
               content:          r.content,
             })),
@@ -544,6 +546,10 @@ app.post('*', async (c) => {
       linked_pr_url: z.string().optional()
         .describe('Exact-match filter on a thought\'s linked PR URL. Used by the ' +
                   'capture-on-merge Action to dedup a PR\'s auto-captures.'),
+      flagged_only: z.boolean().default(false)
+        .describe('If true, return only thoughts flagged for re-verification ' +
+                  '(stale_flagged_at is set — a commit touched a pinned path, or an ' +
+                  'expiry passed). The "what needs re-checking?" view.'),
       cross_project: z.boolean().default(false)
         .describe('If true, ignore project_slug and list every accessible thought.'),
   });
@@ -574,7 +580,7 @@ app.post('*', async (c) => {
       let q = userClient
         .from('thoughts')
         .select('id, scope, type, project_id, author_user_id, content, tags, paths, ' +
-                'confidence, linked_pr_url, created_at, last_verified_at, expires_at')
+                'confidence, linked_pr_url, created_at, last_verified_at, expires_at, stale_flagged_at')
         .order('created_at', { ascending: false })
         .limit(args.limit);
 
@@ -583,6 +589,7 @@ app.post('*', async (c) => {
       else if (args.scopes?.length) q = q.in('scope', args.scopes);
       if (args.since)          q = q.gt('created_at', args.since);
       if (args.linked_pr_url)  q = q.eq('linked_pr_url', args.linked_pr_url);
+      if (args.flagged_only)   q = q.not('stale_flagged_at', 'is', null);
 
       const { data, error } = await q;
       if (error) {
@@ -648,7 +655,7 @@ app.post('*', async (c) => {
         .from('thoughts')
         .update(patch)
         .eq('id', args.thought_id)
-        .select('id, confidence, last_verified_at')
+        .select('id, confidence, last_verified_at, stale_flagged_at')
         .maybeSingle();
 
       if (error) {
@@ -687,6 +694,7 @@ app.post('*', async (c) => {
             id:               (data as { id: string }).id,
             new_confidence:   (data as { confidence: string }).confidence,
             last_verified_at: (data as { last_verified_at: string }).last_verified_at,
+            stale_flagged_at: (data as { stale_flagged_at: string | null }).stale_flagged_at,
             reason_received:  args.reason ?? null,
           }, null, 2),
         }],

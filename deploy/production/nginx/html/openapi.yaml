@@ -141,6 +141,14 @@ paths:
             captures provenanced to that PR — used by the capture-on-merge
             Action to dedup a PR's auto-captures.
           example: https://github.com/fabric-testbed/TeamBrain/pull/1
+        - name: flagged_only
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: >-
+            If `true`, return only thoughts flagged for re-verification
+            (`stale_flagged_at` is set — a commit touched a pinned path, or an
+            `expires_at` passed). The "what needs re-checking?" view.
         - name: cross_project
           in: query
           required: false
@@ -692,6 +700,13 @@ components:
         created_at: { type: string, format: date-time }
         last_verified_at: { type: [string, "null"], format: date-time }
         expires_at: { type: [string, "null"], format: date-time }
+        stale_flagged_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            When non-null, this thought is flagged for human re-verification
+            (a commit touched a pinned path, or an expiry passed). Distinct from
+            last_verified_at / confidence; cleared when a human re-verifies.
         tags:
           type: array
           items: { type: string }
@@ -735,6 +750,13 @@ components:
         created_at: { type: string, format: date-time }
         last_verified_at: { type: [string, "null"], format: date-time }
         expires_at: { type: [string, "null"], format: date-time }
+        stale_flagged_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Phase 6 § C: when non-null, flagged for re-verification (a commit
+            touched a pinned path, or an expiry passed). Filter the list to these
+            with `flagged_only=true`.
 
     ListResult:
       type: object
@@ -772,6 +794,12 @@ components:
         id: { type: string, format: uuid }
         new_confidence: { type: string, enum: [tentative, deprecated] }
         last_verified_at: { type: string, format: date-time }
+        stale_flagged_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Always null after a successful mark — re-verifying clears any
+            pending re-verification flag (Phase 6 § C).
         reason_received: { type: [string, "null"] }
 
     StaleNoop:

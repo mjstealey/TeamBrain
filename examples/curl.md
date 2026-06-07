@@ -157,7 +157,18 @@ curl -sS -G "${AUTH[@]}" \
   --data-urlencode "project_slug=fabric-testbed/TeamBrain" \
   --data-urlencode "linked_pr_url=https://github.com/fabric-testbed/TeamBrain/pull/1" \
   --data-urlencode "limit=1" | jq '.count'
+
+# what needs re-checking? flagged_only=true returns thoughts a commit (or an
+# expiry) flagged for re-verification — each carries a non-null stale_flagged_at.
+curl -sS "${AUTH[@]}" \
+  "$BASE/teambrain-rest/thoughts?project_slug=fabric-testbed/TeamBrain&flagged_only=true" \
+  | jq '.results[] | {id, stale_flagged_at, paths}'
 ```
+
+Every listed/searched thought now carries `stale_flagged_at` (null = not flagged).
+A flag is raised by the staleness poller (a commit touched a pinned `paths` entry)
+or by the expiry sweep (`expires_at` passed), and **cleared** the next time a human
+re-verifies (`PATCH …/stale`, which bumps `last_verified_at`).
 
 ---
 
@@ -173,13 +184,15 @@ curl -sS "${AUTH[@]}" -X PATCH "$BASE/teambrain-rest/thoughts/$ID/stale" -d '{
 
 ```json
 { "updated": true, "id": "d5dfab3a-...", "new_confidence": "deprecated",
-  "last_verified_at": "2026-05-28T21:02:42.137+00:00", "reason_received": "superseded by PR #1234" }
+  "last_verified_at": "2026-05-28T21:02:42.137+00:00", "stale_flagged_at": null,
+  "reason_received": "superseded by PR #1234" }
 ```
 
 If the thought doesn't exist *or* you lack permission, the response is
 `{ "updated": false, ... }` — the two cases are intentionally not
 distinguished (that would leak existence). `confidence` defaults to
-`deprecated`; the body is optional.
+`deprecated`; the body is optional. `stale_flagged_at` is always `null` after a
+successful mark — re-verifying clears any pending re-verification flag (§ C).
 
 ---
 
