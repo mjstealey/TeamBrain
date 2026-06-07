@@ -163,9 +163,14 @@ paths:
       tags: [thoughts]
       summary: Semantic search
       description: |
-        Embeds `query` and ranks thoughts by cosine similarity, filtered to
-        what the caller can see (RLS). `threshold` defaults to 0.3, tuned for
-        `openai:text-embedding-3-small` (relevant matches cluster 0.4–0.6).
+        Embeds `query` and ranks thoughts by a freshness-aware score, filtered
+        to what the caller can see (RLS). `threshold` (default 0.3, tuned for
+        `openai:text-embedding-3-small`, relevant matches cluster 0.4–0.6) cuts
+        off on raw cosine `similarity`; results are then ordered by `rank_score`,
+        which adjusts similarity for recency (90-day half-life on
+        `last_verified_at`), `confidence` (confirmed rises, deprecated sinks),
+        and a past `expires_at`. Deprecated thoughts sink but are still returned
+        unless `include_deprecated` is `false`.
       requestBody:
         required: true
         content:
@@ -652,24 +657,41 @@ components:
           type: boolean
           default: false
           description: If true, ignore project_slug and search every accessible thought.
+        include_deprecated:
+          type: boolean
+          default: true
+          description: >-
+            If true (default), deprecated thoughts are returned but sink to the
+            bottom of the ranking. Set false to filter them out entirely.
 
     SearchHit:
       type: object
       required: [id, similarity, scope, created_at, content]
       properties:
         id: { type: string, format: uuid }
+        rank_score:
+          type: [number, "null"]
+          description: >-
+            Freshness-aware ordering score (similarity adjusted for recency,
+            confidence, and expiry), rounded to 4 dp. Results are sorted by this
+            descending; it is not a similarity and may exceed 1.
         similarity:
           type: number
-          description: Cosine similarity (0–1), rounded to 4 dp.
+          description: Raw cosine similarity (0–1), rounded to 4 dp; the value `threshold` filters on.
         scope: { $ref: "#/components/schemas/Scope" }
         type:
           oneOf:
             - { $ref: "#/components/schemas/ThoughtType" }
             - { type: "null" }
+        confidence:
+          oneOf:
+            - { $ref: "#/components/schemas/Confidence" }
+            - { type: "null" }
         project_id: { type: [string, "null"], format: uuid }
         author_user_id: { type: [string, "null"], format: uuid }
         created_at: { type: string, format: date-time }
         last_verified_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
         tags:
           type: array
           items: { type: string }

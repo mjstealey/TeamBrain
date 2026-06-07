@@ -86,7 +86,7 @@ Notes:
 
 ## 3. Search — `POST /teambrain-rest/thoughts/search`
 
-Semantic (vector) search, ranked by cosine similarity, RLS-filtered.
+Semantic (vector) search, **freshness-aware** ranking, RLS-filtered.
 
 ```bash
 curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts/search" -d '{
@@ -105,14 +105,31 @@ curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts/search" -d '{
   "threshold": 0.3,
   "count": 1,
   "results": [
-    { "id": "d5dfab3a-...", "similarity": 0.71, "scope": "project",
-      "type": "convention", "content": "We standardized on UTC ...", "tags": ["timestamps","convention"] }
+    { "id": "d5dfab3a-...", "rank_score": 0.7702, "similarity": 0.71, "scope": "project",
+      "type": "convention", "confidence": "confirmed", "content": "We standardized on UTC ...",
+      "last_verified_at": "2026-06-01T00:00:00Z", "expires_at": null, "tags": ["timestamps","convention"] }
   ]
 }
 ```
 
 - `threshold` defaults to `0.3` (tuned for `text-embedding-3-small`; relevant
-  matches cluster 0.4–0.6).
+  matches cluster 0.4–0.6). It cuts off on the raw cosine `similarity`.
+- **Ranking is by `rank_score`, not `similarity`.** `rank_score` adjusts similarity
+  for recency (90-day half-life on `last_verified_at`, falling back to `created_at`),
+  `confidence` (confirmed rises, deprecated sinks), and a past `expires_at` — so a
+  freshly re-verified thought outranks a stale or deprecated near-duplicate. `similarity`
+  is still returned as the raw cosine; `rank_score` is ordering-only and may exceed 1.
+- `include_deprecated` defaults to `true` (deprecated thoughts sink but are returned).
+  Set it `false` to drop them entirely:
+
+```bash
+curl -sS "${AUTH[@]}" -X POST "$BASE/teambrain-rest/thoughts/search" -d '{
+  "query": "how do we handle timestamps?",
+  "project_slug": "fabric-testbed/TeamBrain",
+  "include_deprecated": false
+}' | jq '.results[] | {id, rank_score, confidence}'
+```
+
 - `cross_project: true` searches everything you can see and ignores `project_slug`.
 - `scopes: ["project","project_private"]` restricts which scopes to return.
 

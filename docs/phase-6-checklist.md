@@ -60,13 +60,24 @@ The Edge Runtime ships JS without type-checking, so latent strict-TS errors hid 
 
 ---
 
-## B — Staleness decay in search ranking — ☐ *not started*
+## B — Staleness decay in search ranking — 🟡 *code-complete on `feat/phase6-staleness-decay`; production apply + smoke pending*
 
-Make `match_thoughts` ranking factor freshness, not just cosine similarity, so a confidently-stale memory loses to a fresh one. Inputs already on the schema: `last_verified_at`, `expires_at`, `confidence` (`tentative|confirmed|deprecated`).
+`match_thoughts` now ranks on a **freshness-aware score** instead of raw cosine alone, so a confidently-stale memory loses to a fresh one. Inputs (all already on the schema): `last_verified_at`, `expires_at`, `confidence` (`tentative|confirmed|deprecated`).
 
-**Decisions to make:** the decay shape (linear vs exponential half-life on `last_verified_at`); how `confidence` and a passed `expires_at` weight the score; whether decay is applied in the RPC (`0004_match_thoughts.sql` → a new migration) or post-ranked in the edge function; whether deprecated rows are filtered out or just sink.
+**Decisions (resolved 2026-06-07, confirmed with Michael):**
+- **Decay shape:** *exponential, 90-day half-life* on `coalesce(last_verified_at, created_at)`, bounded below by a `decay_floor` (0.5) so freshness breaks near-ties but cannot override a much stronger cosine match. `half_life_days` / `decay_floor` are RPC parameters (defaulted) — tunable later **without** a schema change.
+- **Confidence / expiry weighting:** multiplicative factors on similarity — `confirmed ×1.15`, `tentative ×1.00`, `deprecated ×0.40`; a past `expires_at` applies an additional `×0.40`.
+- **Where applied:** *in the RPC* (a new migration), not post-ranked in the edge function — both MCP + REST call the one RPC and preserve its ordering, so the change reaches both for free.
+- **Deprecated rows:** *sink but stay returned*; a new `include_deprecated` param (default `true`) lets a caller filter them out entirely.
 
-**Done when:** a `deprecated` / long-unverified thought ranks below a fresh `confirmed` one for the same query; the behavior is covered by a repeatable smoke (capture two near-identical thoughts, age/deprecate one, confirm ordering).
+**Score** (`migrations/0017_match_thoughts_staleness_decay.sql`):
+`rank_score = similarity × confidence_factor × expiry_factor × (decay_floor + (1−decay_floor)·freshness)`, where `freshness = exp(−ln2 · age_days / half_life_days) ∈ (0,1]`. The cosine `match_threshold` cutoff is **unchanged** (still on raw `similarity`), so freshness re-ranks within the relevant set and never resurrects an irrelevant row. An inner `candidates` CTE keeps the HNSW index doing the ANN step and over-fetches a bounded pool before the outer re-rank, so index acceleration is preserved and a weakly-relevant fresh row outside the pool can't jump in.
+
+**Surfaced:** `match_thoughts` returns three new columns — `expires_at`, `confidence`, `rank_score` — exposed through `teambrain-mcp` / `teambrain-rest` search results (`results[]` now carries `rank_score` + `confidence` + `expires_at`; `similarity` stays the raw cosine). Both search surfaces accept the new `include_deprecated` flag. OpenAPI (`SearchRequest` + `SearchHit`) and `examples/curl.md` § 3 updated; `openapi-spec-validator` green.
+
+**Files:** `migrations/0017_match_thoughts_staleness_decay.sql` (new), `edge-functions/teambrain-mcp/index.ts`, `edge-functions/teambrain-rest/index.ts`, `deploy/production/nginx/html/openapi.yaml`, `examples/curl.md`, `scripts/smoke-staleness-decay.md` (new). 768-dim deployments apply the same `0017` edit with `vector(768)` swapped in (header note, mirroring how `0005` is the 768 rewrite of `0004`).
+
+**Done when:** a `deprecated` / long-unverified thought ranks below a fresh `confirmed` one for the same query; covered by the repeatable smoke `scripts/smoke-staleness-decay.md` (capture two near-identical thoughts, age/deprecate one, confirm `rank_score` ordering + `include_deprecated:false` removal). ☐ **Remaining:** operator apply of `0017` (+ `NOTIFY pgrst, 'reload schema'`), redeploy `teambrain-mcp` / `teambrain-rest`, run the smoke on `pr.fabric-testbed.net`.
 
 ## C — Commit-triggered staleness flagging (GitHub webhook) — ☐ *not started*
 
