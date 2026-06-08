@@ -4,6 +4,8 @@ Multi-tenant, project-scoped, AI-agnostic shared memory for development teams.
 
 TeamBrain gives a team of developers the same persistent context for a codebase across whichever AI tools each developer uses (Claude Code, Cursor, Codex, ChatGPT, gemini-cli, Copilot). The primary transport is **MCP**; a parallel **REST/OpenAPI** surface covers non-MCP-native clients (GitHub Actions, OpenAI function calling, custom agents).
 
+**New here?** → [**Getting Started**](docs/getting-started.md) — connect your AI tool and make your first capture in ~5 minutes.
+
 ## Status
 
 **Phases 0–4 complete and live on `https://pr.fabric-testbed.net` (since 2026-05-27). Phase 5: § A (API tokens) + § C (PR-merge capture) shipped; § B (Slack) / § D (slash commands) remain. Phase 6 (staleness & promotion): § A–§ D all shipped + smoke-verified on prod** — sync-health paydown (§ A), search-ranking decay (§ B), commit-triggered staleness flagging (§ C, with the `pg_cron` poller live), and `promote_to_docs` → real ADR/docs PR (§ D); only § E (migration-baseline consolidation) remains, deferred to production cutover. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot.

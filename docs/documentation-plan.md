@@ -28,7 +28,7 @@ surface's guide until that surface exists.
 
 | Doc piece | Write when | Why then |
 |---|---|---|
-| Getting Started (§ 1) | **Phase 7 kickoff** (hard deadline) | onboarding prerequisite; mechanics are settled |
+| Getting Started (§ 1) | ✅ **shipped 2026-06-08** ([`getting-started.md`](getting-started.md)) | onboarding prerequisite; mechanics are settled |
 | Best Practices (§ 2) | seed at Phase 7 kickoff (🟡), harden at Phase 7 wrap | needs pilot evidence to be authoritative |
 | "Connect from every surface" reference (§ 3) | after **§ B (Slack) + § D (slash commands)** ship | a "from any tool" guide is incomplete until all surfaces exist |
 | Staleness + promotion best practices (§ 2.5, 2.6) | with **Phase 6** | can't document mechanisms that don't exist yet |
@@ -36,7 +36,7 @@ surface's guide until that surface exists.
 
 ---
 
-## 1. Getting Started (end-user guide) — ☐ *[Phase 7 kickoff]*
+## 1. Getting Started (end-user guide) — ✅ *[shipped 2026-06-08 — [`getting-started.md`](getting-started.md)]*
 
 Audience: a developer who wants to read/write team memory from their AI tool.
 
