@@ -40,17 +40,28 @@ cp path/to/TeamBrain/.claude/commands/tb-*.md  your-repo/.claude/commands/
 Then `/tb-remember`, `/tb-recall`, `/tb-recent` appear in the `/` menu. (Claude Code
 pre-resolves the repo slug via an inline `` !`git remote get-url origin` `` step.)
 
-### Codex &nbsp;✅ tested
+### Codex &nbsp;✅ committed as skills
 
-Codex reads custom prompts from your **home** directory (`~/.codex/prompts/`) — not the repo
-— and only top-level `.md` files. Copy the Codex variants there:
+Codex [**custom prompts are deprecated**](https://developers.openai.com/codex/custom-prompts)
+in favor of [**skills**](https://developers.openai.com/codex/skills), which — unlike the old
+`~/.codex/prompts/` files — are **discovered from the repo** (`$REPO_ROOT/.agents/skills/`),
+so they're committed and shared like the Claude Code commands, with no per-developer install.
+
+The skills live in this repo at [`.agents/skills/`](../../.agents/skills/) —
+`tb-remember/`, `tb-recall/`, `tb-recent/`, each a directory with a `SKILL.md`. Open Codex
+in this repo and invoke them with `/skills` (or by `$`-mentioning the name); Codex can also
+trigger them implicitly from their `description`.
+
+To use them in another repo, copy the skill directories into that repo's `.agents/skills/`
+(or into `~/.agents/skills/` to make them available across all your repos):
 
 ```bash
-cp codex/tb-*.md  ~/.codex/prompts/
+cp -r path/to/TeamBrain/.agents/skills/tb-*  your-repo/.agents/skills/
 ```
 
-Restart Codex (or open a new chat) and the `/tb-*` prompts load. (OpenAI now nudges toward
-"skills" over custom prompts, but custom prompts still work.)
+Codex skills don't take a `$ARGUMENTS` placeholder the way custom prompts did — the skill is
+instructions, and your surrounding message supplies the specifics (the text to remember, the
+query to search). The bodies derive `project_slug` from `git remote get-url origin` in prose.
 
 ### Cursor &nbsp;⚠️ untested
 

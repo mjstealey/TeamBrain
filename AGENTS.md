@@ -105,8 +105,10 @@ mis-routed thought from landing in another project you *do* belong to.
 Once the MCP server is connected, optional one-keystroke shortcuts wrap the capture/recall
 tools: `/tb-remember <text>`, `/tb-recall <query>`, `/tb-recent [N]`. They're sugar over the
 same MCP doorway, not a separate path. Claude Code commands are committed at
-[`.claude/commands/`](.claude/commands/); copy-anywhere templates for Codex and Cursor live
-under [`examples/slash-commands/`](examples/slash-commands/) with per-client install notes.
+[`.claude/commands/`](.claude/commands/) and Codex skills at
+[`.agents/skills/`](.agents/skills/) — both repo-discovered, no install. A copy-anywhere
+Cursor template lives under [`examples/slash-commands/`](examples/slash-commands/); see its
+[README](examples/slash-commands/README.md) for per-client install notes.
 
 ## Capture conventions
 

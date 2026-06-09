@@ -201,10 +201,11 @@ lighter lift than § B.
   surfaces the existing memory and asks before writing; otherwise captures (`scope: project`
   default, type inferred, content from the argument string, tag `slash-capture`).
 - **D‑D4. Client scope + the "don't ship untested instructions" rule:** Claude Code and
-  Codex are smoke-testable today (both in active use on this repo) and ship **tested**;
-  **Cursor is not** (no account yet — the same gap that defers the Cursor entry in
-  `AGENTS.md` → "How to connect", thought `5fc671cf`), so it ships as a clearly-marked
-  **untested template**, ready to flip on once an account exists.
+  Codex are smoke-testable today (both in active use on this repo) — Claude Code's tool path
+  is verified this session (§ D5), Codex's is a Michael-driven confirmation; **Cursor is not**
+  (no account yet — the same gap that defers the Cursor entry in `AGENTS.md` → "How to
+  connect", thought `5fc671cf`), so it ships as a clearly-marked **untested template**, ready
+  to flip on once an account exists.
 - **D‑D5. AI-agnostic posture:** slash commands are client-specific (like the `.mcp.json`
   we deliberately did *not* commit, thought `5fc671cf`), so the mitigation is **parity**
   across clients + framing them as **optional sugar** over the canonical MCP doorway, with
@@ -220,15 +221,21 @@ URL, derives the slug, and drives its tool. `tb-remember` does the search-first 
 retrievable via `/tb-recall`; `/tb-recent` lists. (Claude-driven tool-path smoke green
 2026-06-09 — see § D5; the `/`-keystroke confirmation is a Michael-driven step.)
 
-### D2. Codex prompt templates — *committed templates; user-level install*
+### D2. Codex skills — *committed, repo-discovered*
 
-`examples/slash-commands/codex/{tb-remember,tb-recall,tb-recent}.md`. Codex reads custom
-prompts from `~/.codex/prompts/` (home dir, **not** repo-auto-discovered; top-level `.md`
-only), so they ship as templates the user copies there. Prose slug-detection (no inline
-injection). Deprecation-in-favor-of-skills noted; prompts still work.
+`.agents/skills/{tb-remember,tb-recall,tb-recent}/SKILL.md`. Codex
+[custom prompts are deprecated](https://developers.openai.com/codex/custom-prompts) in favor
+of [skills](https://developers.openai.com/codex/skills), which — unlike `~/.codex/prompts/`
+— are discovered from `$REPO_ROOT/.agents/skills/`, so they're **committed and shared** (no
+per-developer install), at parity with the Claude Code commands. Each skill is a directory
+with a `SKILL.md` (`name` + `description` frontmatter). Invoked via `/skills` / `$`-mention,
+or triggered implicitly from the `description`. No `$ARGUMENTS` placeholder (skills are
+instructions; the user's message supplies specifics); prose slug-detection from
+`git remote get-url origin`. *(Converted from the deprecated custom-prompt format 2026-06-09.)*
 
-**Done when:** `cp examples/slash-commands/codex/*.md ~/.codex/prompts/` → restart Codex →
-`/tb-remember …` captures against this repo (Michael-driven).
+**Done when:** in Codex opened on this repo, `/tb-remember …` captures and `/tb-recall …`
+retrieves against `fabric-testbed/TeamBrain` (Michael-driven). Copy-anywhere:
+`cp -r .agents/skills/tb-* <other-repo>/.agents/skills/`.
 
 ### D3. Cursor command templates — *committed, marked untested*
 
@@ -258,18 +265,19 @@ bump.
   `capture_project_thought` (the § D milestone memory) → `search_project_thoughts` confirmed
   retrievable. Exercises the exact tool sequence `/tb-remember` drives.
 - **Michael-driven:** `/tb-remember` / `/tb-recall` / `/tb-recent` in a fresh Claude Code
-  session; the Codex copy-and-run path.
+  session; the same three as Codex skills (`/skills`) with Codex opened on this repo.
 
 **Done when:** the Claude-driven path is green (✅) and the Michael-driven confirmations pass.
 
 ### D6. Commit
 
-**Done when:** `main` on both remotes carries the `.claude/commands/`, the
-`examples/slash-commands/` kit, and the doc updates; PR merged.
+**Done when:** `main` on both remotes carries the `.claude/commands/`, the `.agents/skills/`
+Codex skills, the `examples/slash-commands/` kit, and the doc updates; PR merged.
 
-**§ D done when:** the three commands ship for Claude Code (tested) + Codex (tested) with a
-marked Cursor template, the adoption kit + docs are in place, and the Claude-driven smoke is
-green. Cursor's live smoke is the only piece deferred (no account).
+**§ D done when:** the three commands ship for Claude Code (committed commands) + Codex
+(committed `.agents/skills/`) with a marked Cursor template, the adoption kit + docs are in
+place, and the Claude-driven tool-path smoke is green. Codex's in-Codex smoke is a
+Michael-driven confirmation; Cursor's live smoke is deferred (no account).
 
 ---
 
