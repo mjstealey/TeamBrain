@@ -38,7 +38,7 @@ All four major architectural decisions are locked in (see `docs/adr/0001-teambra
 
 ## Open Decisions / Active Blockers
 
-Pre-pilot social-coordination blocker still open: Komal's buy-in (one-time GitHub OAuth login on `pr.fabric-testbed.net`, willingness to read `AGENTS.md`, review cadence during the pilot window). Sub-questions tracked in `docs/phase-0-checklist.md` B1. Confirmed her GitHub handle is `kthare10` (seed commit `4d079e2`).
+Pre-pilot social-coordination blocker **resolved 2026-06-09**: Komal's buy-in is met. She is actively participating on `fabric-testbed/loomai-dev`, which runs TeamBrain in production via the Phase 5 § C capture-on-merge Action — a second developer engaging with TeamBrain on a live repo, which is exactly the signal B1 was gating on. Her GitHub handle is `kthare10` (seed commit `4d079e2`). The formal Phase 7 *evaluation* pilot repo remains `fabric-testbed/fabric-core-api` with Komal as primary reviewer; loomai-dev is the lower-stakes live proof that the buy-in is real. Full rationale captured in TeamBrain (`fabric-testbed/TeamBrain`, thought `518c0395`) and Open Brain (`PROJECT: TeamBrain —`). Sub-questions and detail in `docs/phase-0-checklist.md` B1.
 
 Phase 5 § A (the long-lived non-interactive API token) shipped 2026-05-29; end-to-end smoke green on `pr.fabric-testbed.net`. The remaining halves — Slack bot (§ B), runnable GitHub Action (§ C, the token's first consumer), slash commands (§ D) — have no architectural blockers.
 
