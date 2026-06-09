@@ -37,7 +37,9 @@ edge-functions/*/deno.lock
 !.vscode/settings.json.example
 
 # Local Claude Code state (machine-specific — settings, scheduled-task locks, etc.)
-.claude/
+# but DO track shared, repo-committed slash commands under .claude/commands/.
+.claude/*
+!.claude/commands/
 
 # Local Codex state
 .codex/
