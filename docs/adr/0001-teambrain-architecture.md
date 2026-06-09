@@ -116,6 +116,8 @@ For Phase 1 pilot, `project_members` rows are hand-seeded — auth stays GitHub 
 
 (Resolved 2026-05-05. Replaces an "Open Decision" entry that was open for ~hours during the same Phase 2 review session.)
 
+> **Update (2026-06-09) — production shipped OpenAI, not ollama.** The "Default for" column in the table below and the first Consequence record the *intent* at decision time (production → ollama 768-dim for zero egress). In practice the FABRIC production deploy on `pr.fabric-testbed.net` shipped on the **OpenAI `vector(1536)`** variant — the Phase 5 § C work kept a 1536-dim model to avoid the `0005` schema migration, and it was never switched. **Standing decision (confirmed 2026-06-09): stay on OpenAI for the pilot**, consciously accepting the third-party data-path tradeoff, with the **ollama 768-dim variant retained as the documented zero-egress future option** (migration `0005`, `embedding.ts`'s ollama arm, and the compose fragment are kept current and must survive the `v1_baseline` consolidation — Phase 6 § E). The pluggable design and the rest of this decision stand unchanged. Detail: `docs/deployment.md` § "Choose an embedding provider".
+
 ### Context
 
 Phase 2's MCP edge function originally hard-coded OpenAI `text-embedding-3-small` (1536 dims, matching the `thoughts.embedding vector(1536)` column inherited from OB1). Once the Phase 2 build made that implicit choice visible, three problems with it were obvious for a multi-tenant team service: a personal-account API key paying for team-wide usage, every captured thought's content transiting a third-party vendor's servers (a compliance posture mismatch with FABRIC's existing research-infra norms), and TeamBrain availability coupling to OpenAI rate limits and uptime.

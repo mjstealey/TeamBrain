@@ -58,4 +58,6 @@ These come from `~/.claude/projects/.../memory/project_supabase_function_convent
 
 Pre-pilot iteration produced six numbered files that each represent the final state of their phase's concern (no fix-up migrations, no orphaned columns). At production cutover (Phase 6 / Phase 7 prep), the plan is to **freeze these as a `v1_baseline.sql` consolidation** and start a new migration lineage from `v1_001_*.sql`. Doing it now would force scratch to drift from a fresh deploy with no clean reconciliation; doing it at cutover lets the production-era migrations have a clean starting point while the per-phase set stays as the historical record.
 
+`v1_baseline.sql` encodes the **OpenAI `vector(1536)`** production path (the 2026-06-09 standing decision in `docs/deployment.md`); the **optional `0005_resize_embedding_768.sql` is NOT folded in** — it is retained as a standalone optional overlay (the ollama / zero-egress future path), re-expressed against the new lineage if needed. See `docs/phase-6-checklist.md` § E.
+
 This is recorded in `docs/phase-6-checklist.md` § E as a Phase 6 deliverable.
