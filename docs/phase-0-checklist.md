@@ -64,6 +64,8 @@ git push origin main           # only if you also want the canonical org remote 
 
 ### B1. Confirm Komal Thareja's participation in the fabric-core-api pilot
 
+> **RESOLVED 2026-06-09 — buy-in met.** Komal is actively participating on `fabric-testbed/loomai-dev`, which runs TeamBrain in production via the Phase 5 § C capture-on-merge Action. A second developer engaging with TeamBrain on a live repo is exactly the signal this item was gating on, so her loomai-dev participation counts as buy-in. The formal Phase 7 *evaluation* pilot repo remains `fabric-testbed/fabric-core-api` (Komal as primary reviewer); loomai-dev is the lower-stakes live proof. The sub-questions below stay as a reference for the formal fabric-core-api pilot kickoff but no longer gate Phase 7. Rationale captured in TeamBrain (thought `518c0395`) + Open Brain (`PROJECT: TeamBrain —`).
+
 Pilot repo decided 2026-05-03: **`~/github/fabric/fabric-core-api`** (remote `fabric-testbed/fabric-core-api`). Refactoring will be done solo by Michael with Claude Code; Komal is the primary reviewer. The team-coordination signal being tested is multi-developer **commentary** on a single committer's changes, not multi-committer coordination. (Workflow-monitor remains an optional Phase 2 plumbing pilot before graduating to fabric-core-api for Phase 7.)
 
 Sub-questions to ask Komal (covers social coordination + compliance + reviewer-pool sizing — the four things that can still derail the pilot now that the repo is chosen):
@@ -78,7 +80,7 @@ Optional follow-ups if Komal agrees:
 - Any existing tribal knowledge about fabric-core-api that should be **seeded as initial memories** before the pilot opens (so Claude has the v1.9 → v1.10 migration context, COU semantics, role-removal history loaded from day one rather than discovering it via repeated reviewer corrections)?
 - Preferred review-comment format for capture-friendliness — does she want to keep commenting in GitHub PR threads as usual (TeamBrain pulls them via webhook in Phase 5), or is she open to a `/capture` slash command in her AI tool of choice?
 
-**Done when:** Komal answers questions 1–5; if any answer is "no", revisit (workflow-monitor as Phase 2 plumbing pilot is the obvious fallback). Update this checklist with the answers and capture them as a follow-up `PROJECT: TeamBrain — ` thought in Open Brain.
+**Done when:** ~~Komal answers questions 1–5~~ — **resolved 2026-06-09** via her live loomai-dev participation (see banner above). Questions 1–5 remain useful to walk through at the formal fabric-core-api pilot kickoff, but are no longer a gate. If any later answer is "no", revisit (workflow-monitor as Phase 2 plumbing pilot is the obvious fallback).
 
 ---
 
@@ -421,7 +423,7 @@ console.log('auth.uid() →', data)   // should match auth.users.id
 Before moving to Phase 1, confirm:
 
 - [x] A1–A4 complete (clean repo, Apache-2.0, initial commit, remotes configured)
-- [x] B1 — pilot repo decided (fabric-core-api); Komal's buy-in answers still pending but not blocking schema work
+- [x] B1 — pilot repo decided (fabric-core-api); Komal's buy-in **resolved 2026-06-09** via her live loomai-dev participation
 - [x] C1–C2 complete (both OAuth apps registered: `TeamBrain` for prod, `TeamBrain-scratch` for `https://127.0.0.1:8443`)
 - [ ] D1–D8 all green on scratch instance
 
