@@ -100,6 +100,14 @@ mis-routed thought from landing in another project you *do* belong to.
 | `mark_stale` | A memory contradicted by current code or a recent decision. Flag it (don't delete — provenance matters). |
 | `promote_to_docs` | A memory has stabilized and belongs in `CLAUDE.md` / `docs/`. Phase 6 wires this to a real PR; for now it returns a preview. |
 
+## Slash commands (optional)
+
+Once the MCP server is connected, optional one-keystroke shortcuts wrap the capture/recall
+tools: `/tb-remember <text>`, `/tb-recall <query>`, `/tb-recent [N]`. They're sugar over the
+same MCP doorway, not a separate path. Claude Code commands are committed at
+[`.claude/commands/`](.claude/commands/); copy-anywhere templates for Codex and Cursor live
+under [`examples/slash-commands/`](examples/slash-commands/) with per-client install notes.
+
 ## Capture conventions
 
 **Capture:** architecture/design decisions made on a branch; conventions

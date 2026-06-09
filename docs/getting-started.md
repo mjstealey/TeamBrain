@@ -155,12 +155,23 @@ Non-MCP clients use the REST/OpenAPI surface against the same backend:
 - Worked client: [`examples/openai_function_calling.py`](../examples/openai_function_calling.py)
 - Every endpoint as copy-paste curl: [`examples/curl.md`](../examples/curl.md)
 
-### Slack and slash commands — *coming soon*
+### Slash commands — *shipped (Claude Code + Codex)*
+
+Optional one-keystroke shortcuts over the connected MCP server:
+
+- `/tb-remember <text>` — capture (searches first to avoid duplicates)
+- `/tb-recall <query>` — semantic search
+- `/tb-recent [N]` — newest-first list
+
+Install per client (and the Cursor template, marked untested) is in
+[`examples/slash-commands/README.md`](../examples/slash-commands/README.md). They wrap the
+same tools you already have over MCP — connect the server first (§ 3 above).
+
+### Slack — *coming soon*
 
 - ☐ **Slack capture bot** (one channel → one project) — Phase 5 § B, not yet shipped.
-- ☐ **`/remember` slash commands** for Claude Code / Cursor — Phase 5 § D, not yet shipped.
 
-This section will gain copy-paste setup for each when they land.
+This section will gain copy-paste Slack setup when it lands.
 
 ---
 
