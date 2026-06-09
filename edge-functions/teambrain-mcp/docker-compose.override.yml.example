@@ -15,9 +15,13 @@
 # Variant 1 — OpenAI (default; vector(1536); applies on top of 0001_init.sql)
 # ===========================================================================
 #
-# Use this for scratch / dev / teams choosing OpenAI. The functions
-# container needs OPENAI_API_KEY and an EMBEDDING_PROVIDER=openai signal
-# (default if unset, but explicit is clearer in production).
+# Use this for pr.fabric-testbed.net PRODUCTION (the current default per
+# the 2026-06-09 standing decision in docs/deployment.md) and for scratch /
+# dev. The functions container needs OPENAI_API_KEY and an
+# EMBEDDING_PROVIDER=openai signal (default if unset, but explicit is
+# clearer in production). Optional OPENAI_BASE_URL routes via an
+# OpenAI-compatible gateway (e.g. FABRIC ai-renci) for FABRIC-owned key/
+# billing — only if it serves a 1536-dim model.
 
 # services:
 #   functions:
@@ -32,8 +36,9 @@
 # Variant 2 — ollama / nomic-embed-text (vector(768); requires 0005 migration)
 # ===========================================================================
 #
-# Use this for pr.fabric-testbed.net production and for any deployment
-# preferring zero third-party data egress. Apply
+# RETAINED OPTION — not the current production path (production runs
+# Variant 1 / OpenAI per the 2026-06-09 standing decision). Kept ready for a
+# future deployment preferring zero third-party data egress. Apply
 # migrations/0005_resize_embedding_768.sql BEFORE the first thought is
 # captured (or accept re-embedding all existing thoughts after applying).
 

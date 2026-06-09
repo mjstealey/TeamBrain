@@ -180,10 +180,12 @@ rsync -av --delete \
 
 ADR 0001 § Decision 5 makes the embedding provider pluggable. Each deployment picks one of two shipped variants and applies the matching schema. The choice is fixed for the life of the deployment — switching post-data requires re-embedding every thought.
 
+> **Standing decision (2026-06-09):** `pr.fabric-testbed.net` production runs the **OpenAI variant** (`text-embedding-3-small`, `vector(1536)`) — confirmed live, every captured row tags `openai:text-embedding-3-small`. The data-path tradeoff (thought content embeds via OpenAI) is **consciously accepted** for now. The **ollama / self-host variant is retained as a documented, ready-to-use option** for a future zero-third-party-egress deployment — its migration (`0005`), provider code (`embedding.ts`), and compose fragment are kept current and must survive the `v1_baseline` consolidation (Phase 6 § E). A lighter-weight governance step short of self-hosting is to point `OPENAI_BASE_URL` at the FABRIC ai-renci gateway so the key/billing is FABRIC-owned (only if it serves a 1536-dim model — else the schema's `vector(1536)` column won't match).
+
 | Variant | Use for | Schema | Provider config |
 |---|---|---|---|
-| **OpenAI** (`vector(1536)`) | scratch / dev / teams choosing OpenAI | apply `0001_init.sql` only | `EMBEDDING_PROVIDER=openai`, `OPENAI_API_KEY=...` |
-| **ollama / self-host** (`vector(768)`) | `pr.fabric-testbed.net` production; teams preferring zero third-party data egress | apply `0001_init.sql` **then** `0005_resize_embedding_768.sql` | `EMBEDDING_PROVIDER=ollama`, `OLLAMA_URL=http://ollama:11434`, plus an ollama sidecar in compose |
+| **OpenAI** (`vector(1536)`) — *production default* | `pr.fabric-testbed.net` production; scratch / dev | apply `0001_init.sql` only | `EMBEDDING_PROVIDER=openai`, `OPENAI_API_KEY=...` |
+| **ollama / self-host** (`vector(768)`) — *retained option* | a future deployment preferring zero third-party data egress | apply `0001_init.sql` **then** `0005_resize_embedding_768.sql` | `EMBEDDING_PROVIDER=ollama`, `OLLAMA_URL=http://ollama:11434`, plus an ollama sidecar in compose |
 
 Other dim variants (Cohere 1024, Voyage 512, etc.) are supported by writing a new dispatch arm in `embedding.ts` and a copy-and-edit of `0005_resize_embedding_768.sql` for the new dim — TeamBrain does not ship every variant in-repo.
 
@@ -257,16 +259,18 @@ The Phase 2 checklist's curl matrix passing is sufficient — see `docs/phase-2-
 
 ### Applying to `pr.fabric-testbed.net`
 
-Production deploys the **ollama / self-host variant** per ADR 0001 § Decision 5. Procedure:
+Production runs the **OpenAI variant** (`vector(1536)`) per the standing decision above. Procedure:
 
-1. Apply `0001_init.sql` through `0004_match_thoughts.sql` (Studio SQL editor) — same as scratch.
-2. Apply `0005_resize_embedding_768.sql` **before** any thoughts are captured.
+1. Apply `0001_init.sql` through `0004_match_thoughts.sql` (Studio SQL editor) — same as scratch. Do **not** apply `0005_resize_embedding_768.sql` (that is the ollama 768-dim path).
+2. Apply `0006_embedding_model.sql` (the model-tag column; applies to every variant).
 3. rsync `edge-functions/teambrain-mcp/` from this repo into the production stack's `volumes/functions/` mount.
-4. Wire production `docker-compose.override.yml` with the ollama variant fragment (see `docker-compose.override.yml.example`).
-5. `docker compose up -d ollama functions` — ollama's healthcheck blocks the functions container until `nomic-embed-text` is pulled and ready.
-6. Run the Phase 2 curl matrix against the production URL. All five tools should pass identically to scratch; the only observable difference is `embedding_dims=768` in capture responses (vs. 1536 on the OpenAI scratch variant).
+4. Wire production `docker-compose.override.yml` with the **OpenAI** variant fragment (`EMBEDDING_PROVIDER=openai`, `EMBEDDING_DIMS=1536`, `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`; optional `OPENAI_BASE_URL` for the FABRIC gateway). See `docker-compose.override.yml.example` Variant 1.
+5. `docker compose up -d functions`.
+6. Run the Phase 2 curl matrix against the production URL. All tools should pass identically to scratch; capture responses report `embedding_dims=1536` and rows tag `openai:text-embedding-3-small`.
 
-**Do not deploy to production until scratch passes the Phase 2 curl matrix on the same source** *and* a separate scratch run validates the ollama variant end-to-end (recommended: spin up a second scratch instance for the ollama smoke test before going to `pr.fabric-testbed.net`).
+**Do not deploy to production until scratch passes the Phase 2 curl matrix on the same source.**
+
+> **Retained alternative — switching production to ollama (zero-egress) later.** Not the current path, but kept ready. To move an *existing* OpenAI deployment to ollama you must re-embed: apply `0005_resize_embedding_768.sql` (which nulls all `vector(1536)` values — they can't be reinterpreted as `vector(768)`), wire the **ollama** variant fragment + sidecar (`docker compose up -d ollama functions`; the healthcheck blocks functions until `nomic-embed-text` is pulled), then run a re-embed pass over every existing thought before relying on search. For a *fresh* zero-egress deployment, apply `0005` before the first capture (no re-embed needed). Validate end-to-end on a second scratch instance before touching production.
 
 ## Phase 3 — automated GitHub-collaborator membership sync
 

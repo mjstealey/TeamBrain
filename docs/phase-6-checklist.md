@@ -122,7 +122,9 @@ When a commit touches a path a thought is pinned to (`thoughts.paths`), flag tha
 
 Per `migrations/README.md` § "Baseline consolidation": freeze `0001`–`0014` as a single `v1_baseline.sql` and start a fresh `v1_001_*` lineage. Doing it now would force scratch to drift from a clean deploy with no reconciliation; do it at production cutover (Phase 6 / Phase 7 prep).
 
-**Done when:** a fresh deploy from `v1_baseline.sql` produces a schema byte-identical (modulo comments) to applying `0001`–`0014` in order; the per-phase files are retained as the historical record; the README apply-order points at the new lineage.
+> **Embedding-provider caveat — `0005` stays OPTIONAL through consolidation (per the 2026-06-09 standing decision, `docs/deployment.md`).** Production runs the **OpenAI `vector(1536)`** path, which does **not** apply `0005_resize_embedding_768.sql` (the ollama 768-dim resize). So `v1_baseline.sql` must encode the **1536-dim** schema, and `0005` must be **retained as a standalone optional overlay** (re-expressed against the new lineage if needed), *not* folded into the baseline. The "byte-identical to `0001`–`0014` in order" check below specifically means **excluding `0005`** — applying it would null embeddings and resize to 768, which is not the production schema. Keep the ollama variant (`0005`, `embedding.ts`, the override fragment) discoverable as the documented zero-egress future option.
+
+**Done when:** a fresh deploy from `v1_baseline.sql` produces a schema byte-identical (modulo comments) to applying `0001`–`0014` in order **with `0005` excluded** (the OpenAI 1536-dim production path); the per-phase files — including the optional `0005` — are retained as the historical record and the retained ollama overlay; the README apply-order points at the new lineage and notes `0005` as the optional 768-dim alternative.
 
 ---
 
