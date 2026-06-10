@@ -90,6 +90,19 @@ server {
         try_files /index.html =404;
     }
 
+    # Logged-in user dashboard (deploy/production/nginx/html/dashboard.html).
+    # Activity heatmap + per-day drill-down over the caller's RLS-visible
+    # thoughts; data comes from /rest/v1/rpc/dashboard_activity (migration
+    # 0021) and /rest/v1/thoughts with the user's JWT. The auth gate is
+    # client-side (sessionStorage token from the landing-page sign-in);
+    # the page itself is public static HTML whose only secret-adjacent
+    # value is the ANON_KEY, injected by the server-scoped sub_filter
+    # exactly as for the landing page.
+    location = /dashboard {
+        root      /usr/share/nginx/html;
+        try_files /dashboard.html =404;
+    }
+
     # OpenAPI 3.1 spec for the REST surface
     # (deploy/production/nginx/html/openapi.yaml). Served as a public,
     # unauthenticated contract — it documents the API but contains no
