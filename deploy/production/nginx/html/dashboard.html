@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard · TeamBrain · FABRIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-primary: #47aae1;
+    --color-primary-dark: #077ab1;
+    --color-primary-light: #cde4ef;
+    --color-secondary: #ff8542;
+    --color-secondary-dark: #d24502;
+    --color-dark: #534f50;
+    --color-grey: #667;
+    --color-lightgrey: #e3e3e9;
+    --color-light: #f3f3f9;
+    --color-success: #008e7a;
+    --color-danger: #a33;
+    --text: rgba(0, 0, 0, 0.85);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+    color: var(--text);
+    background: var(--color-light);
+    line-height: 1.8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 1.25rem;
+  }
+  .brand {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--color-primary-dark);
+    font-size: 1.75rem;
+    margin: 0 0 0.25rem;
+  }
+  .brand .dot { color: var(--color-secondary); }
+  .tagline {
+    color: var(--color-grey);
+    font-size: 0.95rem;
+    margin: 0 0 2rem;
+  }
+  main {
+    width: 100%;
+    max-width: 980px;
+    background: #fff;
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 8px;
+    padding: 2rem 2.25rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  h1 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 1.4rem;
+    margin: 0 0 1rem;
+    color: var(--color-dark);
+  }
+  h2.section {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 1.05rem;
+    margin: 1.75rem 0 0.75rem;
+    color: var(--color-dark);
+  }
+  p { margin: 0 0 1rem; }
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--color-light);
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+  a { color: var(--color-primary-dark); text-decoration: none; border-bottom: 1px solid var(--color-primary-light); }
+  a:hover { color: var(--color-primary); }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.1rem;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .btn:hover { background: var(--color-primary-dark); color: #fff; }
+  .btn:focus-visible { outline: 2px solid var(--color-secondary); outline-offset: 2px; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--color-primary-dark);
+    border: 1px solid var(--color-primary-dark);
+  }
+  .btn-secondary:hover { background: var(--color-primary-dark); color: #fff; }
+  .panel {
+    background: var(--color-primary-light);
+    border-left: 3px solid var(--color-primary);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    margin: 1.25rem 0;
+  }
+  .panel-warn {
+    border-left-color: var(--color-secondary);
+    background: #fff3eb;
+  }
+  .hidden { display: none; }
+
+  /* ---- header bar -------------------------------------------------- */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+  }
+  .topbar h1 { margin: 0; flex: 1 1 auto; }
+  .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
+  .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.88rem; }
+
+  /* ---- controls ----------------------------------------------------- */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin: 1rem 0 0.75rem;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--color-primary-dark);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .seg button {
+    font-family: inherit;
+    font-size: 0.88rem;
+    padding: 0.35rem 0.9rem;
+    border: none;
+    background: transparent;
+    color: var(--color-primary-dark);
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--color-primary-dark);
+    color: #fff;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 0; padding: 0; list-style: none; }
+  .chip {
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 999px;
+    background: var(--color-light);
+    color: var(--color-dark);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .chip[aria-pressed="true"] {
+    background: var(--color-primary-light);
+    border-color: var(--color-primary);
+    color: var(--color-primary-dark);
+  }
+  .chip .count { color: var(--color-grey); font-size: 0.8rem; }
+  .chip .role {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-primary-dark);
+    background: #fff;
+    border: 1px solid var(--color-primary-light);
+    border-radius: 3px;
+    padding: 0 0.3em;
+  }
+
+  /* ---- heatmap ------------------------------------------------------ */
+  .heatmap-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
+  .heatmap-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    grid-template-rows: max-content 1fr;
+    gap: 4px;
+    width: max-content;
+  }
+  .hm-months {
+    grid-column: 2;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 13px;
+    gap: 3px;
+    font-size: 0.7rem;
+    color: var(--color-grey);
+    line-height: 1;
+    height: 14px;
+  }
+  .hm-months span { grid-row: 1; white-space: nowrap; }
+  .hm-days {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-rows: repeat(7, 13px);
+    gap: 3px;
+    font-size: 0.7rem;
+    color: var(--color-grey);
+    line-height: 13px;
+    padding-right: 2px;
+  }
+  .hm-cells {
+    grid-column: 2;
+    grid-row: 2;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 13px);
+    grid-auto-columns: 13px;
+    gap: 3px;
+  }
+  .cell {
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 2px;
+    background: var(--color-lightgrey);
+    cursor: pointer;
+  }
+  .cell.pad { visibility: hidden; }
+  .cell.l1 { background: #cde4ef; }
+  .cell.l2 { background: #9ccbe7; }
+  .cell.l3 { background: #47aae1; }
+  .cell.l4 { background: #077ab1; }
+  .cell.selected { outline: 2px solid var(--color-secondary); outline-offset: 1px; }
+  .cell:focus-visible { outline: 2px solid var(--color-secondary); outline-offset: 1px; }
+  .hm-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--color-grey);
+  }
+  .hm-footer .swatch {
+    width: 11px; height: 11px; border-radius: 2px;
+    border: 1px solid rgba(0,0,0,0.06);
+    display: inline-block;
+  }
+  .hm-footer .spacer { flex: 1; }
+
+  /* ---- day panel / thought cards ------------------------------------ */
+  .day-panel { margin-top: 1.5rem; }
+  .proj-group { margin: 1rem 0; }
+  .proj-group > h3 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--color-primary-dark);
+    margin: 0 0 0.5rem;
+  }
+  .card {
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin: 0 0 0.6rem;
+    background: #fff;
+    cursor: pointer;
+  }
+  .card:hover { border-color: var(--color-primary); }
+  .card .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.78rem;
+    margin-bottom: 0.35rem;
+  }
+  .badge {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 0.45em;
+    font-size: 0.74rem;
+    line-height: 1.6;
+    border: 1px solid var(--color-lightgrey);
+    background: var(--color-light);
+    color: var(--color-dark);
+  }
+  .badge.type { border-color: var(--color-primary-light); background: var(--color-primary-light); color: var(--color-primary-dark); }
+  .badge.confirmed  { border-color: var(--color-success); color: var(--color-success); background: #fff; }
+  .badge.tentative  { color: var(--color-grey); }
+  .badge.deprecated { border-color: var(--color-danger); color: var(--color-danger); background: #fff; }
+  .badge.stale      { border-color: var(--color-secondary); color: var(--color-secondary-dark); background: #fff3eb; }
+  .badge.mine       { border-color: var(--color-primary); color: var(--color-primary-dark); background: #fff; }
+  .card .when { color: var(--color-grey); margin-left: auto; font-size: 0.78rem; }
+  .card .preview {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-wrap;
+  }
+  .card.expanded { cursor: default; }
+  .card.expanded .preview { display: block; -webkit-line-clamp: unset; overflow: visible; }
+  .card .detail { display: none; }
+  .card.expanded .detail { display: block; margin-top: 0.75rem; border-top: 1px solid var(--color-lightgrey); padding-top: 0.75rem; }
+  .card .detail dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 1rem;
+    row-gap: 0.2rem;
+    font-size: 0.85rem;
+  }
+  .card .detail dt { color: var(--color-grey); }
+  .card .detail dd { margin: 0; word-break: break-all; }
+  .muted { color: var(--color-grey); font-size: 0.9rem; }
+
+  footer {
+    margin-top: 2rem;
+    color: var(--color-grey);
+    font-size: 0.82rem;
+    text-align: center;
+  }
+  footer a { color: var(--color-grey); border-bottom-color: var(--color-lightgrey); }
+</style>
+</head>
+<body>
+
+<h2 class="brand">TeamBrain<span class="dot">·</span></h2>
+<p class="tagline">Shared project memory for FABRIC development</p>
+
+<main>
+
+  <div class="topbar">
+    <h1>Your activity</h1>
+    <span class="who mono" id="who">—</span>
+    <a class="btn btn-secondary" href="/">MCP setup</a>
+    <button type="button" class="btn btn-secondary" id="sign-out">Sign out</button>
+  </div>
+  <p class="muted" style="margin:0">
+    Daily thoughts across every project you're a member of, plus your
+    personal scope. Counts are exactly what your account can see — nothing
+    more.
+  </p>
+
+  <div id="load-error" class="panel panel-warn hidden">
+    <p style="margin:0" id="load-error-msg">—</p>
+  </div>
+
+  <div id="loading" class="muted" style="margin-top:1rem">Loading activity…</div>
+
+  <section id="dash" class="hidden">
+
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Count mode">
+        <button type="button" id="mode-all"  aria-pressed="true">All visible</button>
+        <button type="button" id="mode-mine" aria-pressed="false">Authored by me</button>
+      </div>
+      <span class="muted" id="range-caption">—</span>
+    </div>
+
+    <ul class="chips" id="chips"></ul>
+
+    <h2 class="section">Heatmap</h2>
+    <div class="heatmap-wrap">
+      <div class="heatmap-grid">
+        <div class="hm-months" id="hm-months"></div>
+        <div class="hm-days" aria-hidden="true">
+          <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+        </div>
+        <div class="hm-cells" id="hm-cells"></div>
+      </div>
+    </div>
+    <div class="hm-footer">
+      <span id="hm-total">—</span>
+      <span class="spacer"></span>
+      <span>Less</span>
+      <span class="swatch" style="background: var(--color-lightgrey)"></span>
+      <span class="swatch" style="background: #cde4ef"></span>
+      <span class="swatch" style="background: #9ccbe7"></span>
+      <span class="swatch" style="background: #47aae1"></span>
+      <span class="swatch" style="background: #077ab1"></span>
+      <span>More</span>
+    </div>
+
+    <section class="day-panel">
+      <h2 class="section" id="day-title">Pick a day</h2>
+      <p class="muted" id="day-hint">Click any square above to see that day's thoughts, grouped by project. Click a thought to expand it.</p>
+      <div id="day-content"></div>
+    </section>
+
+  </section>
+
+  <section id="empty" class="hidden">
+    <div class="panel">
+      <p style="margin:0">
+        <strong>No activity yet.</strong> You're signed in, but no thoughts
+        are visible to your account in the last year. Wire TeamBrain into
+        your agent on the <a href="/">setup page</a>, then capture your
+        first thought — it'll show up here.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Self-hosted Supabase · <a href="https://github.com/fabric-testbed/TeamBrain" target="_blank" rel="noopener">source</a>
+</footer>
+
+<script>
+(() => {
+  // ANON_KEY is templated in at container startup via nginx sub_filter,
+  // exactly as on the landing page (sub_filter is server-scoped — see
+  // deploy/production/nginx/templates/pr.fabric-testbed.net.conf.template).
+  const ANON_KEY = '__TEAMBRAIN_ANON_KEY__';
+
+  const $ = id => document.getElementById(id);
+  const show = id => $(id).classList.remove('hidden');
+  const hide = id => $(id).classList.add('hidden');
+
+  /* ---- auth gate ---------------------------------------------------- */
+  // Same token plumbing as index.html: tokens from the URL fragment (in
+  // case OAuth ever redirects here directly) or sessionStorage from a
+  // sign-in on / in this tab. No token → bounce to the landing page.
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  let accessToken  = params.get('access_token')  || sessionStorage.getItem('tb_access_token');
+  let refreshToken = params.get('refresh_token') || sessionStorage.getItem('tb_refresh_token');
+
+  if (!accessToken) { window.location.replace('/'); return; }
+
+  sessionStorage.setItem('tb_access_token', accessToken);
+  if (refreshToken) sessionStorage.setItem('tb_refresh_token', refreshToken);
+  history.replaceState(null, '', window.location.pathname);
+
+  const decodeJwt = (jwt) => {
+    try {
+      const seg = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(seg.padEnd(seg.length + (4 - seg.length % 4) % 4, '=')));
+    } catch (e) {
+      console.error('JWT decode failed', e);
+      return {};
+    }
+  };
+
+  const claims = decodeJwt(accessToken);
+  const userId = claims.sub;
+  if (!userId) { signOut(); return; }
+  $('who').textContent =
+    '@' + (claims.user_metadata?.user_name || claims.user_metadata?.preferred_username || '(unknown)');
+
+  function signOut() {
+    sessionStorage.removeItem('tb_access_token');
+    sessionStorage.removeItem('tb_refresh_token');
+    window.location.replace('/');
+  }
+  $('sign-out').addEventListener('click', signOut);
+
+  /* ---- API helper with one-shot 401 → refresh → retry ---------------- */
+  async function refreshSession() {
+    if (!refreshToken) return false;
+    const r = await fetch('/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!r.ok) return false;
+    const body = await r.json();
+    accessToken  = body.access_token;
+    refreshToken = body.refresh_token;
+    sessionStorage.setItem('tb_access_token',  accessToken);
+    sessionStorage.setItem('tb_refresh_token', refreshToken);
+    return true;
+  }
+
+  async function apiFetch(path, opts = {}, retried = false) {
+    const r = await fetch(path, {
+      ...opts,
+      headers: {
+        'apikey': ANON_KEY,
+        'Authorization': `Bearer ${accessToken}`,
+        ...(opts.headers || {}),
+      },
+    });
+    if (r.status === 401 && !retried) {
+      if (await refreshSession()) return apiFetch(path, opts, true);
+      signOut();
+      throw new Error('session expired');
+    }
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      throw new Error(`${r.status} on ${path.split('?')[0]}: ${t.slice(0, 300)}`);
+    }
+    return r.json();
+  }
+
+  /* ---- local-calendar date helpers ----------------------------------- */
+  // The RPC buckets in the browser's IANA zone, and the day panel queries
+  // the same local calendar day, so cell counts and panel contents agree.
+  const TZ = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+    catch { return 'UTC'; }
+  })();
+  const pad2 = n => String(n).padStart(2, '0');
+  const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  /* ---- state ---------------------------------------------------------- */
+  let activity = [];                 // RPC rows
+  let projects = [];                 // {id, repo_slug, name}
+  let roles    = new Map();          // project_id -> role
+  let mode     = 'all';              // 'all' | 'mine'
+  let projFilter = 'all';            // 'all' | 'personal' | <project_id>
+  let selectedDay = null;            // 'YYYY-MM-DD' or null
+  let usedTz = TZ;
+
+  const rowKey   = r => r.project_id || 'personal';
+  const rowCount = r => mode === 'mine' ? Number(r.authored_count) : Number(r.total_count);
+  const rowVisible = r =>
+    projFilter === 'all' ||
+    (projFilter === 'personal' && !r.project_id) ||
+    r.project_id === projFilter;
+
+  /* ---- initial load ---------------------------------------------------- */
+  async function loadAll() {
+    const rpc = async (tz) => apiFetch('/rest/v1/rpc/dashboard_activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_tz: tz }),
+    });
+    const activityP = rpc(TZ).catch(err => {
+      // Invalid/unknown zone name server-side → label-as-UTC fallback.
+      console.warn(`dashboard_activity(${TZ}) failed, retrying UTC`, err);
+      usedTz = 'UTC';
+      return rpc('UTC');
+    });
+    const projectsP = apiFetch('/rest/v1/projects?select=id,repo_slug,name&order=repo_slug.asc');
+    const membersP  = apiFetch(`/rest/v1/project_members?select=project_id,role&user_id=eq.${encodeURIComponent(userId)}&removed_at=is.null`);
+
+    [activity, projects] = await Promise.all([activityP, projectsP]);
+    try {
+      for (const m of await membersP) roles.set(m.project_id, m.role);
+    } catch (e) {
+      console.warn('role lookup failed (non-fatal)', e);
+    }
+  }
+
+  /* ---- chips + per-project breakdown ----------------------------------- */
+  function renderChips() {
+    const totals = new Map();        // key -> count under current mode
+    for (const r of activity) {
+      const k = rowKey(r);
+      totals.set(k, (totals.get(k) || 0) + rowCount(r));
+    }
+    const ul = $('chips');
+    ul.textContent = '';
+    const chip = (key, label, role) => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.setAttribute('aria-pressed', String(projFilter === key));
+      const name = document.createElement('span');
+      name.textContent = label;
+      b.appendChild(name);
+      if (role) {
+        const r = document.createElement('span');
+        r.className = 'role';
+        r.textContent = role;
+        b.appendChild(r);
+      }
+      const c = document.createElement('span');
+      c.className = 'count';
+      c.textContent = String(totals.get(key) || 0);
+      b.appendChild(c);
+      b.addEventListener('click', () => {
+        projFilter = key;
+        renderAll();
+      });
+      li.appendChild(b);
+      ul.appendChild(li);
+    };
+    chip('all', 'All');
+    chip('personal', 'Personal');
+    for (const p of projects) chip(p.id, p.repo_slug || p.name || p.id, roles.get(p.id));
+  }
+
+  /* ---- heatmap ----------------------------------------------------------- */
+  function renderHeatmap() {
+    const counts = new Map();        // 'YYYY-MM-DD' -> count under filters
+    for (const r of activity) {
+      if (!rowVisible(r)) continue;
+      counts.set(r.day, (counts.get(r.day) || 0) + rowCount(r));
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekStart = addDays(today, -today.getDay());   // Sunday of current week
+    const gridStart = addDays(weekStart, -52 * 7);       // 53 columns total
+
+    const max = Math.max(0, ...counts.values());
+    const level = (n) => {
+      if (!n || max === 0) return 0;
+      return Math.min(4, 1 + Math.floor(((n - 1) / max) * 4));
+    };
+
+    const cells = $('hm-cells');
+    cells.textContent = '';
+    const months = $('hm-months');
+    months.textContent = '';
+
+    let total = 0;
+    let prevMonth = -1;
+    for (let w = 0; w < 53; w++) {
+      const colFirst = addDays(gridStart, w * 7);
+      // Month label when this week-column starts a new month (skip a
+      // cramped label in the very first column if the next is too close).
+      if (colFirst.getMonth() !== prevMonth) {
+        if (w === 0 || addDays(colFirst, 6).getMonth() === colFirst.getMonth()) {
+          const span = document.createElement('span');
+          span.style.gridColumn = String(w + 1);
+          span.textContent = MONTHS[colFirst.getMonth()];
+          months.appendChild(span);
+        }
+        prevMonth = colFirst.getMonth();
+      }
+      for (let d = 0; d < 7; d++) {
+        const date = addDays(colFirst, d);
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'cell';
+        if (date > today) {
+          cell.classList.add('pad');
+          cell.disabled = true;
+          cell.tabIndex = -1;
+        } else {
+          const key = dayKey(date);
+          const n = counts.get(key) || 0;
+          total += n;
+          if (n) cell.classList.add('l' + level(n));
+          const label = `${n} thought${n === 1 ? '' : 's'} on ${key}`;
+          cell.title = label;
+          cell.setAttribute('aria-label', label);
+          if (key === selectedDay) cell.classList.add('selected');
+          cell.addEventListener('click', () => selectDay(key));
+        }
+        cells.appendChild(cell);
+      }
+    }
+
+    $('hm-total').textContent =
+      `${total} thought${total === 1 ? '' : 's'} in the last year` +
+      (mode === 'mine' ? ' authored by you' : ' visible to you');
+    $('range-caption').textContent = `days bucketed in ${usedTz}`;
+  }
+
+  /* ---- day drill-down ------------------------------------------------------ */
+  async function selectDay(key) {
+    selectedDay = key;
+    renderHeatmap();
+    $('day-title').textContent = `Thoughts on ${key}`;
+    $('day-hint').classList.add('hidden');
+    const box = $('day-content');
+    box.textContent = '';
+    const loading = document.createElement('p');
+    loading.className = 'muted';
+    loading.textContent = 'Loading…';
+    box.appendChild(loading);
+
+    const [y, m, d] = key.split('-').map(Number);
+    const start = new Date(y, m - 1, d);
+    const next  = addDays(start, 1);
+    const select = [
+      'id,content,scope,type,confidence,tags,paths,project_id,author_user_id',
+      'linked_pr_url,linked_commit_sha,linked_issue_url,promoted_pr_url',
+      'created_at,last_verified_at,expires_at,stale_flagged_at',
+      'projects(repo_slug,name)',
+    ].join(',');
+    let rows;
+    try {
+      rows = await apiFetch(
+        '/rest/v1/thoughts'
+        + `?select=${encodeURIComponent(select)}`
+        + `&created_at=gte.${encodeURIComponent(start.toISOString())}`
+        + `&created_at=lt.${encodeURIComponent(next.toISOString())}`
+        + '&order=created_at.desc&limit=500'
+      );
+    } catch (e) {
+      box.textContent = '';
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'Could not load this day: ' + e.message;
+      box.appendChild(p);
+      return;
+    }
+
+    const truncated = rows.length === 500;
+    // Apply the same filters as the heatmap so the panel matches the cell.
+    rows = rows.filter(t =>
+      (mode === 'all' || t.author_user_id === userId) &&
+      (projFilter === 'all' ||
+       (projFilter === 'personal' && !t.project_id) ||
+       t.project_id === projFilter));
+
+    box.textContent = '';
+    if (!rows.length) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'No visible thoughts on this day under the current filters.';
+      box.appendChild(p);
+      return;
+    }
+
+    // Group by project, personal first, then repo_slug order.
+    const groups = new Map();
+    for (const t of rows) {
+      const k = t.project_id || 'personal';
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(t);
+    }
+    const ordered = [...groups.entries()].sort(([a], [b]) => {
+      if (a === 'personal') return -1;
+      if (b === 'personal') return 1;
+      const sa = groups.get(a)[0].projects?.repo_slug || '';
+      const sb = groups.get(b)[0].projects?.repo_slug || '';
+      return sa.localeCompare(sb);
+    });
+
+    for (const [k, list] of ordered) {
+      const g = document.createElement('div');
+      g.className = 'proj-group';
+      const h = document.createElement('h3');
+      h.textContent = k === 'personal'
+        ? 'Personal'
+        : (list[0].projects?.repo_slug || list[0].projects?.name || k);
+      g.appendChild(h);
+      for (const t of list) g.appendChild(thoughtCard(t));
+      box.appendChild(g);
+    }
+    if (truncated) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'Showing the first 500 thoughts for this day.';
+      box.appendChild(p);
+    }
+  }
+
+  /* ---- thought card ---------------------------------------------------------- */
+  const badge = (text, cls) => {
+    const s = document.createElement('span');
+    s.className = 'badge' + (cls ? ' ' + cls : '');
+    s.textContent = text;
+    return s;
+  };
+
+  // Provenance values become links only when they are real https URLs;
+  // everything else (e.g. a commit SHA) renders as plain text.
+  const provenanceValue = (v) => {
+    if (typeof v === 'string' && v.startsWith('https://')) {
+      const a = document.createElement('a');
+      a.href = v;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = v;
+      return a;
+    }
+    const s = document.createElement('span');
+    s.textContent = String(v);
+    return s;
+  };
+
+  function thoughtCard(t) {
+    const card = document.createElement('article');
+    card.className = 'card';
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.appendChild(badge(t.type, 'type'));
+    meta.appendChild(badge(t.confidence, t.confidence));
+    if (t.scope !== 'project') meta.appendChild(badge(t.scope));
+    if (t.stale_flagged_at) meta.appendChild(badge('stale?', 'stale'));
+    if (t.author_user_id === userId) meta.appendChild(badge('mine', 'mine'));
+    for (const tag of t.tags || []) meta.appendChild(badge('#' + tag));
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = new Date(t.created_at).toLocaleTimeString();
+    meta.appendChild(when);
+    card.appendChild(meta);
+
+    const preview = document.createElement('p');
+    preview.className = 'preview';
+    preview.textContent = t.content || '';
+    card.appendChild(preview);
+
+    const detail = document.createElement('div');
+    detail.className = 'detail';
+    const dl = document.createElement('dl');
+    const fields = [
+      ['ID',            t.id],
+      ['PR',            t.linked_pr_url],
+      ['Commit',        t.linked_commit_sha],
+      ['Issue',         t.linked_issue_url],
+      ['Promoted',      t.promoted_pr_url],
+      ['Paths',         (t.paths || []).join('  ') || null],
+      ['Captured',      t.created_at && new Date(t.created_at).toLocaleString()],
+      ['Last verified', t.last_verified_at && new Date(t.last_verified_at).toLocaleString()],
+      ['Expires',       t.expires_at && new Date(t.expires_at).toLocaleString()],
+      ['Stale-flagged', t.stale_flagged_at && new Date(t.stale_flagged_at).toLocaleString()],
+    ];
+    for (const [label, value] of fields) {
+      if (!value) continue;
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.appendChild(provenanceValue(value));
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    }
+    detail.appendChild(dl);
+    card.appendChild(detail);
+
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('a')) return;   // let provenance links work
+      card.classList.toggle('expanded');
+    });
+    return card;
+  }
+
+  /* ---- mode toggle + boot ------------------------------------------------------ */
+  function setMode(m) {
+    mode = m;
+    $('mode-all').setAttribute('aria-pressed', String(m === 'all'));
+    $('mode-mine').setAttribute('aria-pressed', String(m === 'mine'));
+    renderAll();
+  }
+  $('mode-all').addEventListener('click', () => setMode('all'));
+  $('mode-mine').addEventListener('click', () => setMode('mine'));
+
+  function renderAll() {
+    renderChips();
+    renderHeatmap();
+    if (selectedDay) selectDay(selectedDay);
+  }
+
+  loadAll().then(() => {
+    hide('loading');
+    if (!activity.length && !projects.length) {
+      show('empty');
+      return;
+    }
+    renderAll();
+    show('dash');
+  }).catch((e) => {
+    hide('loading');
+    $('load-error-msg').textContent = 'Could not load your activity: ' + e.message;
+    show('load-error');
+    console.error(e);
+  });
+})();
+</script>
+
+</body>
+</html>
