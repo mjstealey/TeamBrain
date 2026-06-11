@@ -1,0 +1,39 @@
+# examples/slack/manifest.yml — Slack app manifest for the TeamBrain `/tb`
+# slash command (Phase 5 § B).
+#
+# Create the app from this file at https://api.slack.com/apps →
+# "Create New App" → "From an app manifest" → pick the workspace → paste.
+# See README.md in this directory for the full walkthrough.
+#
+# Deliberately minimal: ONE slash command, ONE bot scope (`commands`).
+# No bot token is ever used, no Events API, no interactivity — replies go
+# through the slash payload's response_url. The only credential the server
+# holds is the app's signing secret (SLACK_SIGNING_SECRET in the stack .env).
+
+display_information:
+  name: TeamBrain
+  description: Shared project memory — capture and recall from Slack
+  background_color: "#27aae1"   # FABRIC brand blue
+
+features:
+  bot_user:
+    # Required to own the slash command; the bot token it implies is never
+    # requested or stored.
+    display_name: TeamBrain
+    always_online: false
+  slash_commands:
+    - command: /tb
+      url: https://pr.fabric-testbed.net/functions/v1/teambrain-slack/slack/command
+      description: TeamBrain shared memory
+      usage_hint: "remember <text> | recall <query> | recent [n] | status | help"
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - commands
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

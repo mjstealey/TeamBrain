@@ -139,6 +139,17 @@ services:
       ANTHROPIC_AUTH_TOKEN:             ${ANTHROPIC_AUTH_TOKEN}
       TEAMBRAIN_SUMMARIZE_MODEL:        ${TEAMBRAIN_SUMMARIZE_MODEL:-gpt-5.4-mini}
 
+      # --- Phase 5 § B: Slack slash-command surface (teambrain-slack) ---
+      # Signing secret from the Slack app's Basic Information page; the ONLY
+      # Slack credential this integration holds (slash-command-only app — no
+      # bot token). Unset => /slack/command answers 503 and the rest of the
+      # function still works. Put the value in .env (never commit it).
+      SLACK_SIGNING_SECRET:             ${SLACK_SIGNING_SECRET:-}
+      # Public base URL used in human-facing instructions the function
+      # returns (e.g. the `/tb link` curl recipe). Stock compose already
+      # passes SUPABASE_PUBLIC_URL; listed here for explicitness.
+      SUPABASE_PUBLIC_URL:              ${SUPABASE_PUBLIC_URL}
+
       # --- TeamBrain MCP function defaults ---
       # Lets clients omit project_slug in single-pilot deployments.
       TEAMBRAIN_DEFAULT_PROJECT_SLUG:   ${TEAMBRAIN_DEFAULT_PROJECT_SLUG:-fabric-testbed/fabric-core-api}

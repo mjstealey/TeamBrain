@@ -351,6 +351,39 @@ missing server-side AI key returns `500` (`kind: config`).
 
 ---
 
+## 10. Slack channel links — `teambrain-slack`
+
+Admin management for the Phase 5 § B Slack surface (the `/tb` slash command).
+Full Slack-app setup lives in [`slack/README.md`](slack/README.md); these are
+just the link-management calls. All three require the caller to be a project
+**admin**. The easiest way to get the Slack IDs is `/tb link owner/repo` in
+the target channel — it replies (only to you) with the link call pre-filled.
+
+```bash
+# Link a channel to a project (201; 200 if already linked to it; 409 if
+# linked to a different project — unlink that first).
+curl -sS "${H[@]}" -X POST "$BASE/teambrain-slack/links" -d '{
+  "project_slug":       "fabric-testbed/TeamBrain",
+  "slack_team_id":      "T0123ABCD",
+  "slack_channel_id":   "C0456EFGH",
+  "slack_team_domain":  "fabric-testbed",
+  "slack_channel_name": "teambrain-dev"
+}' | python3 -m json.tool
+
+# List a project's channel links.
+curl -sS "${H[@]}"   "$BASE/teambrain-slack/links?project=fabric-testbed/TeamBrain"   | python3 -m json.tool
+
+# Unlink (revokes Slack capture/read for the channel within the 5-min
+# bot-JWT TTL).
+curl -sS "${H[@]}" -X DELETE "$BASE/teambrain-slack/links/<link-uuid>"   | python3 -m json.tool
+```
+
+The webhook Slack itself calls (`POST /teambrain-slack/slack/command`) is not
+curl-able with a JWT — it authenticates on the Slack request signature. A
+synthetic signed smoke lives in `deploy/production/README.md` § 11c.
+
+---
+
 ## Error shape
 
 All errors return a JSON body:

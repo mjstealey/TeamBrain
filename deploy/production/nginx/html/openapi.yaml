@@ -51,6 +51,13 @@ tags:
     description: Long-lived non-interactive API tokens (issue, list, revoke, exchange).
   - name: summarize
     description: PR-merge capture proposals (server-side LLM summarization for the GitHub Action).
+  - name: slack
+    description: |
+      Slack channel → project links (admin management). The Slack-facing
+      webhook itself (`POST /teambrain-slack/slack/command`) is **not** part
+      of this contract — it is called only by Slack, authenticated by the
+      Slack request signature rather than a bearer JWT, and its payload is
+      Slack's slash-command form encoding. See `examples/slack/README.md`.
 
 paths:
   /teambrain-rest/health:
@@ -505,6 +512,121 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SummarizeError" }
 
+  /teambrain-slack/links:
+    post:
+      operationId: linkSlackChannel
+      tags: [slack]
+      summary: Link a Slack channel to a project
+      description: |
+        Links a Slack `(workspace, channel)` pair to a TeamBrain project,
+        enabling the `/tb` slash command in that channel. Requires a user JWT
+        whose caller is an **admin** of the target project — linking cannot be
+        authorized from inside Slack because a Slack user does not map to a
+        GitHub identity.
+
+        The link row is the durable authorization for Slack-originated
+        capture/read on the project: commands in the channel run as the
+        project's bot under a short-lived capability-fenced JWT (`project`
+        scope only, capture + read). A channel maps to at most one project;
+        linking an already-linked channel to a *different* project returns
+        `409` with the current mapping (unlink first). Re-linking to the same
+        project is idempotent (`200`).
+
+        Get the IDs by running `/tb link owner/repo` in the target channel —
+        it replies (only to you) with this exact call, pre-filled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SlackLinkRequest" }
+      responses:
+        "201":
+          description: Channel linked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackLinkCreated" }
+        "200":
+          description: Channel was already linked to this project (idempotent no-op).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackLinkCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an admin of the project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "409":
+          description: Channel already linked to a different project; the error names it and the link id to delete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    get:
+      operationId: listSlackLinks
+      tags: [slack]
+      summary: List a project's Slack channel links
+      description: |
+        Lists the Slack channels linked to a project. Requires a user JWT
+        whose caller is an **admin** of the project.
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema: { type: string }
+          description: Project slug (owner/repo) to list links for.
+          example: fabric-testbed/fabric-core-api
+      responses:
+        "200":
+          description: The project's channel links.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackLinkList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an admin of the project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /teambrain-slack/links/{id}:
+    delete:
+      operationId: unlinkSlackChannel
+      tags: [slack]
+      summary: Unlink a Slack channel
+      description: |
+        Deletes a channel link, revoking Slack-originated capture/read for
+        that channel within the (5-minute) bot-JWT TTL. Requires a user JWT
+        whose caller is an **admin** of the link's project. Hard delete — the
+        row is configuration, not provenance; thoughts captured through it
+        keep their own tags and author trail.
+      parameters:
+        - $ref: "#/components/parameters/SlackLinkId"
+      responses:
+        "200":
+          description: Link deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackUnlinkResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an admin of the link's project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Link not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -534,6 +656,12 @@ components:
       required: true
       schema: { type: string, format: uuid }
       description: UUID of the target API token.
+    SlackLinkId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: UUID of the target Slack channel link.
 
   responses:
     BadRequest:
@@ -1169,3 +1297,100 @@ components:
           description: |
             config = server misconfigured (e.g. AI key unset); upstream = LLM
             provider returned a non-2xx; parse = model output was not usable JSON.
+
+    SlackLinkRequest:
+      type: object
+      required: [project_slug, slack_team_id, slack_channel_id]
+      properties:
+        project_slug:
+          type: string
+          description: Project to link the channel to (owner/repo).
+          example: fabric-testbed/fabric-core-api
+        slack_team_id:
+          type: string
+          pattern: '^T[A-Z0-9]{4,}$'
+          description: Slack workspace id.
+          example: T0123ABCD
+        slack_channel_id:
+          type: string
+          pattern: '^[CGD][A-Z0-9]{4,}$'
+          description: Slack channel id.
+          example: C0456EFGH
+        slack_team_domain:
+          type: string
+          description: Workspace domain (display-only convenience).
+          example: fabric-testbed
+        slack_channel_name:
+          type: string
+          description: Channel name at link time (display-only; Slack renames are not tracked).
+          example: core-api-dev
+
+    SlackLinkCreated:
+      type: object
+      required: [id, project_slug, slack_team_id, slack_channel_id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_slug:
+          type: string
+        slack_team_id:
+          type: string
+        slack_channel_id:
+          type: string
+        slack_channel_name:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+        note:
+          type: string
+          description: Present on the idempotent already-linked path.
+
+    SlackLink:
+      type: object
+      required: [id, slack_team_id, slack_channel_id, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slack_team_id:
+          type: string
+        slack_team_domain:
+          type: [string, "null"]
+        slack_channel_id:
+          type: string
+        slack_channel_name:
+          type: [string, "null"]
+        linked_by:
+          type: [string, "null"]
+          format: uuid
+          description: User who created the link (null if that account was deleted).
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: Best-effort stamp of the most recent slash-command use.
+
+    SlackLinkList:
+      type: object
+      required: [project_slug, links]
+      properties:
+        project_slug:
+          type: string
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/SlackLink" }
+
+    SlackUnlinkResult:
+      type: object
+      required: [id, deleted]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deleted:
+          type: boolean
+          const: true

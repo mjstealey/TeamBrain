@@ -2,7 +2,7 @@
 
 Concrete, ordered tasks for Phase 5 — **capture integrations**: a long-lived non-interactive **API token** (the gating prerequisite, § A), a **Slack bot** (channel → `project_id`, § B), a **GitHub Action** that summarizes a merged PR behind a human-approval gate (§ C), and **slash commands** for Claude Code / Cursor (§ D). Each item has an explicit **Done when** acceptance criterion.
 
-Section A is detailed because it is the gate: the runnable GitHub Action (§ C) cannot land until A is green. Sections B and D have **no dependency on A** and can proceed in parallel; they are stubbed here and will be fleshed out when started.
+Section A is detailed because it is the gate: the runnable GitHub Action (§ C) cannot land until A is green. Sections B and D had **no dependency on A**; § D shipped 2026-06-09 and § B was built 2026-06-11 (live smoke pending the Michael-driven Slack-app steps, B5/B6).
 
 Phase 5 entry preconditions (from `docs/phase-4-checklist.md` § I and the current state of `main`):
 
@@ -102,11 +102,65 @@ Read `teambrain_token` / `teambrain_allowed_tools` from the JWT; when present, r
 
 ---
 
-## B — Slack bot (channel → `project_id`) — *stub, not gated on A*
+## B — Slack surface: `/tb` slash command (channel → `project_id`) — *built 2026-06-11; live smoke pending the Slack app (B5/B6, Michael-driven)*
 
-Adapt OB1's Slack capture pattern, scoped per channel to a `project_id`. Authenticates as a project member (bot or per-installer OAuth — TBD when started). To be detailed when § B begins.
+A `/tb` slash command (`remember` / `recall` / `recent` / `status` / `link` / `help`) over the existing backend. The channel the command is typed in resolves the project via a new `slack_channels` mapping table — the "channel → `project_id`" requirement. Adoption kit: `examples/slack/README.md` (+ app manifest); server deploy: `deploy/production/README.md` § 11c.
 
-**Done when:** *(to be defined)*.
+### Decisions locked (2026-06-11)
+
+- **B‑D1. Interaction model — slash command, NOT OB1's message inbox.** OB1's slack-capture (the named pattern this adapts) captures *every* message in a dedicated channel — right for a single-user inbox, wrong for a team channel (over-capture; the § C capture-discipline lesson). `/tb remember` keeps capture explicit and lets recall live in the same channel where the conversation happens. Channel-scoping is retained — that was the actual § B requirement. Reaction-based capture of existing messages (:brain: → capture, via Events API + bot token) is the natural follow-up (B‑F1), deliberately not v1.
+- **B‑D2. Channel → project mapping — `public.slack_channels` (migration `0023`),** service_role-only (0012-style lockdown + 0016-style explicit deny-all). Unique on `(slack_team_id, slack_channel_id)`: a channel maps to at most one project (re-pointing requires an explicit unlink → 409 otherwise); a project may have many channels. Managed only via project-admin-gated routes on the function (`POST/GET /links`, `DELETE /links/:id`) — the same admin gate as token CRUD (§ A2). `last_used_at` stamped per command (ops signal, mirrors `api_tokens`).
+- **B‑D3. Principal + write path — per-project bot, minted JWT, REST surface.** Commands run as the project's § A bot (provisioned lazily with the same `ensureBotUser` logic): the function mints a **5-min** HS256 JWT with the same claim shape as `/token/exchange` (`teambrain_token: true`, `teambrain_token_id` = link-row id for provenance) and calls `teambrain-rest` over the in-stack `SUPABASE_URL` — same RLS, same 0012 capability fence, no `service_role` in the data path (OB1's shortcut, rejected per the § A constraint). No opaque `tbk_` token is stored for Slack: the link row is the durable authorization and deleting it revokes the path within the JWT TTL. The § A fence invariant holds — this is a second *server-side* minting site (same trust domain as `teambrain-token`: both hold `JWT_SECRET` + service_role), with strictly narrower capabilities.
+- **B‑D4. Capabilities — capture + read, `project` scope ONLY.** Narrower than § A token defaults (`project` + `personal`): a shared channel must never read or write anyone's `personal` (or `project_private`) memories. Enforced at the DB by the 0012 fence via the JWT claims, not just app code.
+- **B‑D5. Authn — Slack request signature (HMAC v0, ±5 min, constant-time).** The signing secret (`SLACK_SIGNING_SECRET`) is the *only* Slack credential held: the app is slash-command-only — **no bot token, no Events API, no interactivity** — because replies ride the slash payload's `response_url` (valid 30 min, unauthenticated). Smallest possible Slack-side surface; one secret to rotate.
+- **B‑D6. Gateway — nginx injects the public anon key on the webhook path only.** Slack cannot send a custom `Authorization` header, but the Edge-Runtime dispatcher's `VERIFY_JWT` gate is global. An `^~` location for `/functions/v1/teambrain-slack/slack/` sets `Authorization: Bearer ${ANON_KEY}` (envsubst; same filtered mechanism as the landing-page `sub_filter`) — the § A "public JWT satisfies the gateway, the real credential rides elsewhere" shape. `^~` outranks the generic regex location, so `/links*` still requires a real caller JWT. No dispatcher modification.
+- **B‑D7. The 3-second budget — ACK now, deliver via `response_url`.** `remember`/`recall`/`recent` involve an embedding round-trip; the handler ACKs ephemerally ("Capturing…") and runs the work under `EdgeRuntime.waitUntil`, posting the result to `response_url` (inline-await fallback if `waitUntil` is absent). `help`/`status`/`link` answer inside the ACK.
+- **B‑D8. Visibility — `remember` confirms `in_channel`** (a shared-memory capture is a team event; the echoed invocation shows who ran it); `recall`/`recent`/errors are ephemeral.
+- **B‑D9. Linking is REST-only, never in-Slack.** A Slack user does not map to a GitHub identity, so `/tb link` cannot authorize — it returns the link recipe pre-filled with the channel's IDs; the admin proves project-admin rights by calling `POST /links` with their GitHub-OAuth JWT. (Identity linking Slack↔GitHub is out of scope for the pilot.)
+- **B‑D10. Trust model accepted:** linking a channel makes Slack channel membership the capture/read ACL for that project's `project`-scope memories (documented prominently in `examples/slack/README.md`). Capture attribution: author = project bot; the human is carried in `slack-user:<name>` / `slack-channel:<name>` tags and the in-channel confirmation.
+
+### B1. Migration `migrations/0023_slack_channels.sql` — *built*
+
+**Done when:** applies clean via Studio after `0001`–`0022`; `select` confirms RLS on, deny-all policy present, grants service_role-only (verification queries in the file footer).
+
+### B2. Edge function `edge-functions/teambrain-slack/` — *built (`index.ts` + `slack.ts` + `deno.json`)*
+
+Routes: `POST /slack/command` (signature-verified slash receiver), `POST /links` / `GET /links?project=` / `DELETE /links/:id` (admin), `GET /health`. Reuses the `teambrain-token` scaffolding (HttpError/onError, decode-only claims, `requireProjectAdmin`, `ensureBotUser`, `SignJWT` mint).
+
+**Done when:** `scripts/deno-check.sh teambrain-slack` is green ✅ (2026-06-11); unsigned/stale-timestamp POSTs to `/slack/command` → 401; unset `SLACK_SIGNING_SECRET` → 503 with the rest of the function alive; the minted JWT is denied `mark_stale`/`promote_to_docs`/`project_private` by the fence (claims-level, same as § A4's verified behavior).
+
+### B3. Deploy wiring — *built*
+
+`docker-compose.override.yml` (`SLACK_SIGNING_SECRET`, `SUPABASE_PUBLIC_URL` passthrough), `env.template` block, nginx template `^~` location (B‑D6), runbook `deploy/production/README.md` § 11c (incl. a synthetic signed-request smoke that needs no Slack app), and the § 8 rsync loops now list `teambrain-slack` (+ retroactively `teambrain-staleness`, which Phase 6 § C deployed but never added).
+
+**Done when:** § 11c's pre-Slack smoke passes on production: `/health` shows `slack_command_enabled: true`, unsigned POST → 401, synthetic signed `/tb help` → 200 with help text.
+
+### B4. Contract + examples — *built*
+
+OpenAPI: `slack` tag + `/teambrain-slack/links*` paths + schemas (`openapi-spec-validator` → OK ✅); webhook deliberately excluded from the contract (not bearer-authenticated; noted in the tag description). `examples/curl.md` § 10 (link management). `examples/slack/README.md` + `manifest.yml` (app from manifest: one command, one `commands` scope).
+
+**Done when:** spec validates ✅; the curl recipes run against production (pending B5).
+
+### B5. Slack app + server config — *Michael-driven*
+
+- Create the app from `examples/slack/manifest.yml` in the FABRIC Slack workspace; install; copy the **signing secret**.
+- On the VM per § 11c: apply `0023`, set `SLACK_SIGNING_SECRET` in `.env`, `cp` the override (copy-not-symlink), `git pull` (nginx template is bind-mounted from the checkout), recreate `functions` + `nginx`, rsync the function.
+
+**Done when:** § 11c smoke green on production.
+
+### B6. End-to-end smoke in Slack
+
+Link a channel to `fabric-testbed/TeamBrain` (dogfood) via the `/tb link` → curl flow, then in-channel: `/tb status` → linked; `/tb remember <real gotcha>` → in-channel confirmation, retrievable via MCP `search_project_thoughts`; `/tb recall` → ephemeral ranked hits; `/tb recent` → listing; an unlinked channel → the not-linked guidance; after `DELETE /links/:id` → commands refuse again.
+
+**Done when:** all of the above observed in the workspace; capture's `tags` carry `slack` + `slack-user:` + `slack-channel:`; the thought's author is the project bot.
+
+### B‑F. Follow-ups (deliberately not v1)
+
+- **B‑F1.** Reaction-capture of existing messages (`:brain:` → capture with permalink provenance) — needs Events API + bot token (`reactions:read`, `channels:history`, `chat:write`); revisit if the pilot shows teams wanting to capture *conversation* rather than retype summaries.
+- **B‑F2.** Search-first dedup confirmation for `/tb remember` (needs Slack interactivity/buttons).
+- **B‑F3.** Slack↔GitHub identity linking (would enable in-Slack linking and per-human attribution).
+
+**§ B done when:** B5 + B6 are green on production and the docs trigger fires — § B + § D shipped together open the "connect & capture from every surface" reference (`docs/documentation-plan.md` § 3).
 
 ---
 

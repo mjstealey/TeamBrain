@@ -445,7 +445,8 @@ git -C ~/TeamBrain log -1 --oneline    # record the SHA being deployed
 #    rsync --delete keeps the destination tree exactly matching source
 #    (removes files that have been deleted upstream).
 for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project \
-          teambrain-rest teambrain-token teambrain-summarize; do
+          teambrain-rest teambrain-token teambrain-summarize \
+          teambrain-staleness teambrain-slack; do
   rsync -av --delete \
     ~/TeamBrain/edge-functions/"$fn"/ \
     ~/supabase-stack/volumes/functions/"$fn"/
@@ -462,7 +463,8 @@ If you'd rather push *from your laptop* (e.g., to deploy an in-flight branch wit
 ```bash
 # From your laptop. Substitutes for steps 1–2 above.
 for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project \
-          teambrain-rest teambrain-token teambrain-summarize; do
+          teambrain-rest teambrain-token teambrain-summarize \
+          teambrain-staleness teambrain-slack; do
   rsync -av --delete \
     --rsync-path='sudo -u nrig-service rsync' \
     ~/GitHub/mjstealey/TeamBrain/edge-functions/"$fn"/ \
@@ -651,6 +653,82 @@ curl -sS "${H[@]}" -X PATCH "$BASE/teambrain-rest/thoughts/$ID/stale" -d '{}' | 
 ```
 
 Per-endpoint recipes, an OpenAI function-calling client, and an (illustrative) GitHub Actions capture-on-merge workflow live under `examples/` in the repo.
+
+---
+
+## 11c. Slack surface (Phase 5 § B)
+
+`teambrain-slack` exposes a `/tb` slash command (`remember` / `recall` / `recent` / `status` / `link` / `help`) scoped per Slack channel to a TeamBrain project. Slack-app creation and channel linking are walked through in `examples/slack/README.md`; this section is the **server-side** deploy.
+
+Components touched (all in this repo):
+
+| Piece | What changes |
+| --- | --- |
+| `migrations/0023_slack_channels.sql` | channel → project mapping table (service_role-only) |
+| `edge-functions/teambrain-slack/` | the function (§8 rsync loop already includes it) |
+| `docker-compose.override.yml` | `SLACK_SIGNING_SECRET` + `SUPABASE_PUBLIC_URL` passthrough |
+| `nginx/templates/pr.fabric-testbed.net.conf.template` | anon-key injection on `/functions/v1/teambrain-slack/slack/` (Slack can't send an `Authorization` header; the dispatcher's `VERIFY_JWT` gate needs one — the real auth is the Slack HMAC signature checked inside the function) |
+
+Deploy order:
+
+```bash
+# 0. Apply migrations/0023_slack_channels.sql via Studio (§7 workflow).
+
+# 1. .env on the VM: add the signing secret from the Slack app's
+#    Basic Information page (see examples/slack/README.md step 1).
+#    SLACK_SIGNING_SECRET=...
+
+# 2. Re-copy the override (copy, not symlink!), then recreate the
+#    affected services. The nginx template needs no copy — the Path-B
+#    overlay bind-mounts it straight from the ~/TeamBrain checkout, so
+#    the §8 `git pull` already updated it; recreating nginx re-runs the
+#    envsubst step.
+cp ~/TeamBrain/deploy/production/docker-compose.override.yml ~/supabase-stack/
+cd ~/supabase-stack
+docker compose up -d --force-recreate functions nginx
+
+# 3. rsync the function per §8 (the loop already lists teambrain-slack).
+```
+
+Smoke, before any Slack app exists (proves routing + signature gate):
+
+```bash
+ANON_KEY=$(grep '^ANON_KEY=' ~/supabase-stack/.env | cut -d= -f2)
+
+# Health: slack_command_enabled flips to true once the secret is set.
+curl -sS -H "Authorization: Bearer $ANON_KEY" \
+  https://pr.fabric-testbed.net/functions/v1/teambrain-slack/health | python3 -m json.tool
+
+# Unsigned POST must be rejected 401 (signature gate) — note NO
+# Authorization header here: nginx injects the anon key on this path.
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'command=/tb&text=help' \
+  https://pr.fabric-testbed.net/functions/v1/teambrain-slack/slack/command
+# expect: 401
+```
+
+A correctly **signed** synthetic request (full pre-Slack smoke — computes the
+v0 HMAC the way Slack does):
+
+```bash
+SLACK_SIGNING_SECRET='<value from .env>' python3 - <<'PY'
+import hashlib, hmac, os, time, urllib.request
+secret = os.environ['SLACK_SIGNING_SECRET'].encode()
+body   = 'command=/tb&text=help&team_id=T00000000&channel_id=C00000000&user_name=smoke&response_url=https://example.invalid/x'
+ts     = str(int(time.time()))
+sig    = 'v0=' + hmac.new(secret, f'v0:{ts}:{body}'.encode(), hashlib.sha256).hexdigest()
+req = urllib.request.Request(
+    'https://pr.fabric-testbed.net/functions/v1/teambrain-slack/slack/command',
+    data=body.encode(), method='POST',
+    headers={'Content-Type': 'application/x-www-form-urlencoded',
+             'X-Slack-Request-Timestamp': ts, 'X-Slack-Signature': sig})
+print(urllib.request.urlopen(req).read().decode())
+PY
+# expect: 200 with the ephemeral /tb help text as JSON
+```
+
+Then finish the Slack-side setup (app from manifest, channel link, in-Slack `/tb` smoke) per `examples/slack/README.md`.
 
 ---
 
