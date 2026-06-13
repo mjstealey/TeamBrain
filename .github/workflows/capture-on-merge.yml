@@ -88,6 +88,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Box-bound curls: bound the connect time and retry a couple of times
+          # so a brief network blip to the host is absorbed rather than failing
+          # the run. A longer outage still degrades to a clean skip via the
+          # http_code/jq guards below (curl emits "000" on a final connect-fail).
+          CURL_RETRY=(--connect-timeout 30 --retry 2 --retry-connrefused --retry-delay 10)
+
           if [ -z "${TEAMBRAIN_TOKEN:-}" ] || [ -z "${TEAMBRAIN_ANON_KEY:-}" ]; then
             echo "::warning::TEAMBRAIN_TOKEN / TEAMBRAIN_ANON_KEY not set — skipping."
             echo "has_proposals=false" >> "$GITHUB_OUTPUT"
@@ -113,7 +119,7 @@ jobs:
             '{project_slug: $slug, title: $title, body: $body, commits: $commits, changed_paths: $paths}')
 
           # 3. Exchange the opaque token for a short-lived JWT (used immediately).
-          access_token=$(curl -sS -X POST "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
+          access_token=$(curl -sS "${CURL_RETRY[@]}" -X POST "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
             -H "Authorization: Bearer ${TEAMBRAIN_ANON_KEY}" \
             -H "X-TeamBrain-Token: ${TEAMBRAIN_TOKEN}" \
             | jq -r '.access_token // empty' || true)
@@ -126,7 +132,7 @@ jobs:
           #     this PR's captures already exist, stop here — no LLM call, no
           #     approval issue. Robust across re-runs no matter how many newer
           #     thoughts exist (the old tag-scan missed re-runs past ~100 rows).
-          existing=$(curl -sS -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+          existing=$(curl -sS "${CURL_RETRY[@]}" -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
             --data-urlencode "project_slug=${PROJECT_SLUG}" \
             --data-urlencode "linked_pr_url=${PR_URL}" \
             --data-urlencode "limit=1" \
@@ -147,11 +153,11 @@ jobs:
           fi
 
           # 4. Ask teambrain-summarize for 0–3 proposals.
-          http_code=$(curl -sS -o /tmp/propose.json -w '%{http_code}' \
+          http_code=$(curl -sS "${CURL_RETRY[@]}" -o /tmp/propose.json -w '%{http_code}' \
             -X POST "${TEAMBRAIN_BASE}/teambrain-summarize/propose" \
             -H "Authorization: Bearer ${access_token}" \
             -H "Content-Type: application/json" \
-            -d "${req}" || echo "000")
+            -d "${req}") || http_code="000"
           if [ "${http_code}" -ge 300 ] || [ "${http_code}" = "000" ]; then
             echo "::warning::teambrain-summarize returned HTTP ${http_code}"; cat /tmp/propose.json 2>/dev/null || true
             echo "has_proposals=false" >> "$GITHUB_OUTPUT"; exit 0
@@ -231,12 +237,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Box-bound curls: bounded connect + a couple of retries so a brief
+          # network blip to the host is absorbed rather than failing the run
+          # (a longer outage degrades to per-proposal warnings via the guards).
+          CURL_RETRY=(--connect-timeout 30 --retry 2 --retry-connrefused --retry-delay 10)
+
           PR_TAG="${PROJECT_SLUG}#${PR_NUMBER}"          # deterministic dedup key
           printf '%s' "${PROPOSALS_JSON:-[]}" > /tmp/proposals.json
 
           # 1. Fresh JWT — the propose job's 15-min token has long since expired
           #    by the time a human approves.
-          access_token=$(curl -sS -X POST "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
+          access_token=$(curl -sS "${CURL_RETRY[@]}" -X POST "${TEAMBRAIN_BASE}/teambrain-token/token/exchange" \
             -H "Authorization: Bearer ${TEAMBRAIN_ANON_KEY}" \
             -H "X-TeamBrain-Token: ${TEAMBRAIN_TOKEN}" \
             | jq -r '.access_token // empty' || true)
@@ -248,7 +259,7 @@ jobs:
           # 2. Dedup (C-D7, exact via linked_pr_url): final guard before writing.
           #    The propose job already skipped on existing captures; this catches
           #    a capture that landed during the human-approval wait.
-          existing=$(curl -sS -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
+          existing=$(curl -sS "${CURL_RETRY[@]}" -G "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
             --data-urlencode "project_slug=${PROJECT_SLUG}" \
             --data-urlencode "linked_pr_url=${PR_URL}" \
             --data-urlencode "limit=1" \
@@ -280,11 +291,11 @@ jobs:
                  tags:              ((($p.tags // []) + ["pr-merge", "auto-capture", $tag]) | unique)
                }' /tmp/proposals.json)
 
-            http_code=$(curl -sS -o /tmp/cap_resp.json -w '%{http_code}' \
+            http_code=$(curl -sS "${CURL_RETRY[@]}" -o /tmp/cap_resp.json -w '%{http_code}' \
               -X POST "${TEAMBRAIN_BASE}/teambrain-rest/thoughts" \
               -H "Authorization: Bearer ${access_token}" \
               -H "Content-Type: application/json" \
-              -d "${body}" || echo "000")
+              -d "${body}") || http_code="000"
             if [ "${http_code}" -ge 300 ] || [ "${http_code}" = "000" ]; then
               echo "::warning::capture ${i} failed (HTTP ${http_code})"; cat /tmp/cap_resp.json 2>/dev/null || true
             else
