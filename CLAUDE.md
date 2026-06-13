@@ -35,5 +35,3 @@ Self-hosted Supabase docker-compose: Postgres 17 + pgvector, GoTrue (GitHub OAut
 - Run MCP as stdio-local — must be remote HTTP edge function.
 - Commit secrets — use `.env` (gitignored), document in `.env.template`.
 - Write `DROP TABLE/DATABASE`, `TRUNCATE`, or unqualified `DELETE FROM` in SQL.
-
-Full prior notes: CLAUDE.md.bak-20260613
