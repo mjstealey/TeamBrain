@@ -73,11 +73,20 @@ async function gh(
 function ghFail(stage: string, repo: string, status: number, json: any): never {
   const ghMsg = json?.message ?? json?.raw ?? '(no body)';
   if (status === 403 || status === 404) {
+    // Committing a file under .github/workflows/ requires the App's *Workflows*
+    // permission specifically — "Contents: write" alone returns 403 there
+    // ("Resource not accessible by integration"), which is easy to misread as a
+    // Contents-permission problem. Name the right scope when the path says so.
+    const isWorkflow = stage.includes('.github/workflows/');
+    const need = isWorkflow
+      ? '"Workflows: write" (a SEPARATE permission from Contents — required for ' +
+        'any .github/workflows/ file), plus "Contents: write" + "Pull requests: write"'
+      : '"Contents: write" + "Pull requests: write"';
     throw new GitHubPrError(
       502,
       `GitHub ${stage} failed (${status}) on ${repo}: ${ghMsg}. The TeamBrain ` +
-      `GitHub App likely needs "Contents: write" + "Pull requests: write" on ` +
-      `this repo (and must be installed on it).`,
+      `GitHub App likely needs ${need} on this repo (and must be installed on it). ` +
+      `Permission changes also require the org to accept the request on the installation.`,
     );
   }
   throw new GitHubPrError(502, `GitHub ${stage} failed (${status}) on ${repo}: ${ghMsg}`);

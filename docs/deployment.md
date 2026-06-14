@@ -313,8 +313,13 @@ Create the app under the **`fabric-testbed`** GitHub org (same place as the Phas
 - **Webhook:** disabled (we poll, not webhook-driven; revisit in Phase 3.5 follow-up if first-login latency becomes a problem)
 - **Repository permissions:**
   - **Metadata:** Read — covers `GET /repos/{owner}/{repo}/collaborators` and `GET /repos/{owner}/{repo}/teams`. (`Members` is not a Repository scope; it only exists at the Organization level.)
+  - **Contents:** Read & write — read covers the staleness commit-diff (Phase 6 § C) and the `/repos` dashboard's file-presence checks; write covers the `promote_to_docs` ADR PRs (§ D) and the `teambrain-console` setup PRs (`AGENTS.md`).
+  - **Pull requests:** Read & write — opening PRs (`promote_to_docs`, `teambrain-console` setup-pr).
+  - **Workflows:** Read & write — **required to commit any `.github/workflows/` file.** This is a *separate* permission from Contents: `Contents: write` alone returns `403 Resource not accessible by integration` on a workflow-file write. Needed by `teambrain-console` setup-pr (which adds `.github/workflows/capture-on-merge.yml`); `promote_to_docs` does not need it (it only writes under `docs/`).
 - **Organization permissions:**
   - **Members:** Read — required for `GET /orgs/{org}/teams/{team_slug}/members`. Skip only if `github_team_slugs` will stay empty for every project (direct-collaborators-only).
+
+> **Bumping permissions on an existing App** only changes what the App *requests*; the installation keeps its old scope until an org owner **accepts the change** (Org → Settings → GitHub Apps → the install → review/approve). Before acceptance, the first affected write call `403`s. No redeploy is needed after acceptance — each call mints a fresh installation token. The current full write set is **Contents + Pull requests + Workflows** (+ Metadata/Members read).
 
 After creating the app:
 
