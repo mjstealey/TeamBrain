@@ -13,11 +13,13 @@
     --color-primary-dark: #077ab1;
     --color-primary-light: #cde4ef;
     --color-secondary: #ff8542;
+    --color-secondary-dark: #d24502;
     --color-dark: #534f50;
     --color-grey: #667;
     --color-lightgrey: #e3e3e9;
     --color-light: #f3f3f9;
     --color-success: #008e7a;
+    --color-danger: #a33;
     --text: rgba(0, 0, 0, 0.85);
   }
   * { box-sizing: border-box; }
@@ -134,6 +136,26 @@
     font-size: 0.9rem;
     margin-top: 0.75rem;
   }
+  /* Shared topbar + section heading style, matching /dashboard and /repos. */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+  }
+  .topbar h1 { margin: 0; flex: 1 1 auto; }
+  .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
+  .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+  h2.section {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 1.05rem;
+    margin: 1.75rem 0 0.75rem;
+    color: var(--color-dark);
+  }
+  .muted { color: var(--color-grey); font-size: 0.9rem; }
+  .panel-warn { border-left-color: var(--color-secondary); background: #fff3eb; }
   footer {
     margin-top: 2rem;
     color: var(--color-grey);
@@ -183,7 +205,22 @@
 </section>
 
 <section id="post-auth" class="hidden" aria-live="polite">
-  <h1>You're signed in.</h1>
+  <div class="topbar">
+    <h1>TeamBrain setup</h1>
+    <span class="who mono" id="who">—</span>
+    <a class="btn btn-secondary" href="/dashboard">Dashboard</a>
+    <a class="btn btn-secondary" href="/repos">Repositories</a>
+    <button type="button" class="btn btn-secondary" id="sign-out">Sign out</button>
+  </div>
+  <p class="muted" style="margin-top:0.25rem">
+    You're signed in. The membership sync runs every 15&nbsp;minutes via
+    <code>pg_cron</code> — within that window you'll be added to each registered
+    <code>fabric-testbed</code> project you can access on GitHub, with your role
+    mapped from your repo permission (admin&nbsp;→&nbsp;<code>admin</code>,
+    write&nbsp;→&nbsp;<code>contributor</code>, read&nbsp;→&nbsp;<code>reader</code>).
+  </p>
+
+  <h2 class="section">Identity</h2>
   <div class="panel">
     <p class="status">✓ Identity established</p>
     <dl>
@@ -192,21 +229,13 @@
       <dt>Supabase&nbsp;UID</dt> <dd class="mono" id="auth-uid">—</dd>
     </dl>
   </div>
-  <p>
-    Your <code>auth.users</code> row exists. The membership sync runs every
-    15&nbsp;minutes via <code>pg_cron</code> — within that window you'll be
-    added to each registered <code>fabric-testbed</code> project you can
-    access on GitHub, with your role mapped from your repo permission
-    (admin&nbsp;→&nbsp;<code>admin</code>, write&nbsp;→&nbsp;<code>contributor</code>,
-    read&nbsp;→&nbsp;<code>reader</code>).
-  </p>
-  <p style="margin:1rem 0 0; font-size: 0.92rem">
-    <span style="color: var(--color-grey)">Access token expires:</span>
+
+  <h2 class="section">Access token</h2>
+  <p style="margin:0; font-size: 0.92rem">
+    <span class="muted">Expires:</span>
     <span class="mono" id="jwt-expiry">—</span>
     <button type="button" class="btn btn-secondary" id="renew-jwt"
-            style="margin-left:0.75rem; padding:0.35rem 0.75rem; font-size:0.88rem">
-      Renew
-    </button>
+            style="margin-left:0.75rem; padding:0.35rem 0.75rem; font-size:0.85rem">Renew</button>
     <span id="renew-status" style="margin-left:0.75rem; font-size: 0.85rem"></span>
   </p>
 
@@ -224,7 +253,8 @@
     </p>
   </details>
 
-  <details style="margin-top: 0.75rem">
+  <h2 class="section">Connect your AI tool</h2>
+  <details open>
     <summary>Wire TeamBrain into Claude Code (one command)</summary>
     <p style="margin:0.75rem 0 0.5rem; color: var(--color-grey); font-size: 0.88rem">
       Pre-filled with your JWT and the ANON_KEY for this deploy. Run on your
@@ -241,16 +271,11 @@
     </p>
   </details>
 
-  <p style="margin-top:1.5rem">
-    <a class="btn" href="/dashboard">Open dashboard</a>
-    <a class="btn btn-secondary" href="/repos" style="margin-left:0.5rem">Manage repositories</a>
-    <a class="btn btn-secondary" href="/" style="margin-left:0.5rem">Sign in as someone else</a>
-  </p>
 </section>
 
 <section id="error-auth" class="hidden">
   <h1>Sign-in returned an error.</h1>
-  <div class="panel" style="border-left-color: var(--color-secondary); background: #fff3eb">
+  <div class="panel panel-warn">
     <dl>
       <dt>Code</dt>   <dd class="mono" id="err-code">—</dd>
       <dt>Detail</dt> <dd id="err-desc">—</dd>
@@ -346,8 +371,9 @@
 
   const render = (jwt) => {
     const payload = decodeJwt(jwt);
-    $('gh-handle').textContent =
-      '@' + (payload.user_metadata?.user_name || payload.user_metadata?.preferred_username || '(unknown)');
+    const handle = payload.user_metadata?.user_name || payload.user_metadata?.preferred_username || '(unknown)';
+    $('who').textContent       = '@' + handle;
+    $('gh-handle').textContent = '@' + handle;
     $('gh-email').textContent  = payload.email || '(no email scope)';
     $('auth-uid').textContent  = payload.sub   || '(missing sub)';
     $('jwt-expiry').textContent = fmtExpiry(payload.exp);
@@ -370,6 +396,15 @@
 
   wireCopy('copy-jwt',     'copy-status',     () => accessToken);
   wireCopy('copy-mcp-cmd', 'copy-mcp-status', () => mcpCommand(accessToken));
+
+  // Sign out: clear the tab-scoped session and return to the pre-auth landing
+  // (matches the /dashboard and /repos Sign-out behavior). Replaces the old
+  // "Sign in as someone else" link, which left the session intact.
+  $('sign-out').addEventListener('click', () => {
+    sessionStorage.removeItem('tb_access_token');
+    sessionStorage.removeItem('tb_refresh_token');
+    window.location.replace('/');
+  });
 
   $('renew-jwt').addEventListener('click', async () => {
     const status = $('renew-status');
