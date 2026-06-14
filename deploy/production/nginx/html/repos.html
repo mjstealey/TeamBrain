@@ -173,6 +173,16 @@
     letter-spacing: 0.03em; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--color-lightgrey); }
   table.list td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--color-light); }
 
+  /* ---- flagged-for-re-verification panel ---- */
+  .flag-item { border: 1px solid var(--color-lightgrey); border-radius: 6px; padding: 0.7rem 0.9rem; margin: 0 0 0.6rem; }
+  .flag-item.warn { border-left: 3px solid var(--color-secondary); }
+  .flag-item .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-size: 0.78rem; margin-bottom: 0.4rem; }
+  .flag-item .when { color: var(--color-grey); margin-left: auto; }
+  .flag-item .content { margin: 0; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .flag-item .paths { font-size: 0.78rem; color: var(--color-grey); margin-top: 0.4rem; word-break: break-all; }
+  .flag-item .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.55rem; }
+
   dialog#out { border: 1px solid var(--color-lightgrey); border-radius: 8px; padding: 1.25rem 1.5rem; max-width: 680px; width: 92%; }
   dialog#out::backdrop { background: rgba(0,0,0,0.35); }
   dialog#out textarea { width: 100%; min-height: 16rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem;
@@ -259,6 +269,8 @@
 
     <h2 class="section">Setup guide</h2>
     <ol class="steps" id="steps"></ol>
+
+    <section id="flagged"></section>
 
     <h2 class="section">At a glance</h2>
     <div class="metrics" id="metrics"></div>
@@ -594,6 +606,7 @@
 
     $('detail-role').textContent = (det.project && det.project.caller_role) || '';
     renderSteps(slug, det, gh, ghOk, isAdmin);
+    renderFlagged(slug, det);
     renderMetrics(det);
     if (isAdmin) loadAdminTables(slug);
     else $('admin-tables').textContent = '';
@@ -811,6 +824,103 @@
       tb.appendChild(tr);
     }
     table.appendChild(tb); wrap.appendChild(table);
+  }
+
+  /* ---- flagged-for-re-verification panel ---------------------------- */
+  // Lists memories the staleness poller flagged (stale_flagged_at set) so a
+  // writer can resolve them where they first saw the "needs attention" signal.
+  async function renderFlagged(slug, det) {
+    const box = $('flagged'); box.textContent = '';
+    const staleCount = (det.fresh_vs_stale && det.fresh_vs_stale.stale) || 0;
+    if (!staleCount) return;   // nothing flagged → no panel
+    const isWriter = !!(det.project && det.project.is_writer);
+
+    box.appendChild(el('h2', { class: 'section', text: `Flagged for re-verification (${staleCount})` }));
+    box.appendChild(el('p', { class: 'muted', text: isWriter
+      ? 'A commit touched a pinned path (or an expiry passed) under these memories. Re-verify if still accurate, deprecate if outdated, or promote if it belongs in the repo docs.'
+      : 'A commit touched a pinned path (or an expiry passed) under these memories. A project writer can resolve them.' }));
+    const listBox = el('div', { class: 'muted', text: 'Loading…' });
+    box.appendChild(listBox);
+
+    const res = await req(`${FN}/teambrain-rest/thoughts?project_slug=${encodeURIComponent(slug)}&flagged_only=true&limit=50`);
+    listBox.textContent = '';
+    if (!res.ok) { listBox.appendChild(el('p', { class: 'muted', text: 'Could not load flagged memories: ' + errMsg(res) })); return; }
+    const rows = (res.data && res.data.results) || [];
+    if (!rows.length) { listBox.appendChild(el('p', { class: 'muted', text: 'No flagged memories visible to your account.' })); return; }
+    for (const t of rows) listBox.appendChild(flagItem(slug, t, isWriter));
+    if (rows.length === 50) listBox.appendChild(el('p', { class: 'muted', text: 'Showing the first 50 flagged memories.' }));
+  }
+
+  function flagItem(slug, t, isWriter) {
+    const item = el('div', { class: 'flag-item warn' });
+    const meta = el('div', { class: 'meta' });
+    if (t.type) meta.appendChild(el('span', { class: 'badge', text: t.type }));
+    meta.appendChild(el('span', { class: t.confidence === 'confirmed' ? 'badge ok' : 'badge', text: t.confidence || 'tentative' }));
+    if (t.scope && t.scope !== 'project') meta.appendChild(el('span', { class: 'badge', text: t.scope }));
+    meta.appendChild(el('span', { class: 'badge warn', text: '⚑ flagged' }));
+    const when = relTime(t.stale_flagged_at);
+    meta.appendChild(el('span', { class: 'when', title: when.title, text: 'flagged ' + when.text }));
+    item.appendChild(meta);
+    item.appendChild(el('p', { class: 'content', text: t.content || '' }));
+    if ((t.paths || []).length) item.appendChild(el('div', { class: 'paths', text: 'pinned paths: ' + t.paths.join('  ') }));
+    if (t.linked_pr_url) item.appendChild(el('div', { class: 'paths' },
+      el('a', { href: t.linked_pr_url, target: '_blank', rel: 'noopener', text: t.linked_pr_url })));
+    if (isWriter) {
+      item.appendChild(el('div', { class: 'actions' },
+        el('button', { class: 'btn btn-sm', title: 'Still accurate — clear the flag, keep current confidence', text: 'Re-verify', onclick: (e) => reverify(slug, t.id, e.target) }),
+        el('button', { class: 'btn btn-sm btn-danger', title: 'Outdated — mark deprecated (kept for provenance, sinks in search)', text: 'Deprecate', onclick: (e) => deprecateFlag(slug, t.id, e.target) }),
+        el('button', { class: 'btn btn-sm btn-secondary', title: 'Stabilized — open a docs PR and mark confirmed', text: 'Promote', onclick: (e) => promoteFlag(slug, t.id, e.target) }),
+      ));
+    }
+    return item;
+  }
+
+  // Re-verify = bump last_verified_at only (preserves confidence); the
+  // clear-on-verify trigger drops stale_flagged_at. Uses PostgREST directly,
+  // as dashboard.html does, because teambrain-rest's mark_stale always sets a
+  // confidence value (it can't express "keep confirmed").
+  async function reverify(slug, id, btn) {
+    btn.disabled = true;
+    const res = await req(`/rest/v1/thoughts?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ last_verified_at: new Date().toISOString() }),
+    });
+    if (res.ok) reloadDetail(slug);
+    else { btn.disabled = false; openOut('Re-verify failed', errMsg(res), el('span')); }
+  }
+
+  async function deprecateFlag(slug, id, btn) {
+    btn.disabled = true;
+    const res = await req(`${FN}/teambrain-rest/thoughts/${encodeURIComponent(id)}/stale`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confidence: 'deprecated' }),
+    });
+    if (res.ok && !(res.data && res.data.updated === false)) reloadDetail(slug);
+    else { btn.disabled = false; openOut('Deprecate failed', (res.data && res.data.reason) || errMsg(res), el('span')); }
+  }
+
+  async function promoteFlag(slug, id, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Opening PR…';
+    const res = await req(`${FN}/teambrain-rest/thoughts/${encodeURIComponent(id)}/promote`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!res.ok || (res.data && res.data.ok === false)) {
+      btn.disabled = false; btn.textContent = orig;
+      openOut('Promote failed', (res.data && (res.data.reason || res.data.message)) || errMsg(res), el('span'));
+      return;
+    }
+    // promote stamps confidence='confirmed' + promoted_pr_url but does NOT bump
+    // last_verified_at, so the stale flag would linger — clear it explicitly.
+    await req(`/rest/v1/thoughts?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ last_verified_at: new Date().toISOString() }),
+    });
+    const d = res.data;
+    const link = el('p', {}, document.createTextNode(d.already_promoted ? 'Already promoted: ' : 'PR opened: '),
+      el('a', { href: d.pr_url, target: '_blank', rel: 'noopener', text: d.pr_url }));
+    openOut('Promoted to docs', 'Review & merge the PR. The memory is now confirmed and the flag cleared.', link);
+    reloadDetail(slug);
   }
 
   /* ---- detail actions ------------------------------------------------ */
