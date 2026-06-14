@@ -320,6 +320,7 @@ org owner.
 | Register → `403 repo owner must be the "fabric-testbed" GitHub org` | `repo_slug` mistyped | use exactly `fabric-testbed/loomai-dev` |
 | Register → `403 requires admin permission` | You're not a repo admin | a repo admin must register |
 | Token create → `403 project admin role required` | You aren't the project admin | register the project yourself, or have the admin issue the token |
+| Dashboard **Open setup PR** → `403 … file commit (.github/workflows/…)` | The App lacks the **Workflows** permission (separate from Contents) | an org owner adds **Workflows: Read & write** to the App and accepts it on the install — `docs/deployment.md` § "Repository permissions" |
 | `propose` job warns and skips | `TEAMBRAIN_TOKEN`/`TEAMBRAIN_ANON_KEY` unset | re-check Step 3 (secret vs variable) |
 | `token exchange failed` | token revoked/expired, or wrong anon key | re-issue the `tbk_`; confirm the anon-key variable |
 | No approval issue appears | `propose` found 0 proposals, or `has_proposals=false` | expected for low-signal PRs; check the run summary |
