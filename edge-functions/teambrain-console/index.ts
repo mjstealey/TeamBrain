@@ -373,7 +373,7 @@ app.post('/setup-pr', async (c) => {
     throw err;
   }
   const service = serviceClient();
-  let body: { slug?: unknown; include?: unknown; target_branch?: unknown };
+  let body: { slug?: unknown; include?: unknown; target_branch?: unknown; overwrite?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: 'request body must be JSON' }, 400); }
 
   let project: ProjectRow, role: string, owner: string, repo: string, slug: string;
@@ -392,6 +392,11 @@ app.post('/setup-pr', async (c) => {
   const wantWorkflow = include.includes('workflow');
   const wantAgents   = include.includes('agents_md');
   if (!wantWorkflow && !wantAgents) return c.json({ error: 'include must contain "workflow" and/or "agents_md"' }, 400);
+  // Default is NON-destructive: a file that already exists on the base branch is
+  // SKIPPED, not overwritten — so this never silently clobbers a human-owned
+  // AGENTS.md or a workflow that's ahead of our embedded template. Pass
+  // overwrite:true (the AGENTS.md "update" action) to replace in place.
+  const overwrite = body.overwrite === true;
 
   try {
     const token = await getInstallationToken();
@@ -399,29 +404,50 @@ app.post('/setup-pr', async (c) => {
       ? body.target_branch.trim()
       : await getDefaultBranch(owner, repo, token);
 
+    const requested: { kind: 'workflow' | 'agents_md'; path: string }[] = [];
+    if (wantWorkflow) requested.push({ kind: 'workflow', path: WORKFLOW_PATH });
+    if (wantAgents)   requested.push({ kind: 'agents_md', path: AGENTS_MD_PATH });
+
     const files: { path: string; content: string }[] = [];
-    if (wantWorkflow) files.push({ path: WORKFLOW_PATH, content: captureOnMergeYml() });
-    if (wantAgents) {
-      const { lead, reviewers } = await leadAndReviewers(service, project);
-      files.push({
-        path: AGENTS_MD_PATH,
-        content: renderAgentsMd({
+    const skipped: string[] = [];
+    for (const r of requested) {
+      if (!overwrite && await repoFileExists(owner, repo, r.path, token, base)) {
+        skipped.push(r.path);
+        continue;
+      }
+      if (r.kind === 'workflow') {
+        files.push({ path: r.path, content: captureOnMergeYml() });
+      } else {
+        const { lead, reviewers } = await leadAndReviewers(service, project);
+        files.push({ path: r.path, content: renderAgentsMd({
           slug, projectName: project.name, teambrainUrl: PUBLIC_URL,
           projectLead: lead, pilotReviewers: reviewers,
-        }),
-      });
+        }) });
+      }
     }
 
-    const what = [wantWorkflow ? 'capture-on-merge' : null, wantAgents ? 'AGENTS.md' : null]
+    if (files.length === 0) {
+      return c.json({
+        opened: false,
+        skipped,
+        message: `Nothing to do — ${skipped.join(', ')} already exist on ${base}. ` +
+          `Use the AGENTS.md "update" action (overwrite) to replace one.`,
+      }, 200);
+    }
+
+    const writingWorkflow = files.some((f) => f.path === WORKFLOW_PATH);
+    const writingAgents   = files.some((f) => f.path === AGENTS_MD_PATH);
+    const what = [writingWorkflow ? 'capture-on-merge' : null, writingAgents ? 'AGENTS.md' : null]
       .filter(Boolean).join(' + ');
     const prBody = [
       `This PR wires **${slug}** into TeamBrain (opened from the /repos dashboard).`,
       '',
-      'Files added:',
-      wantWorkflow ? '- `.github/workflows/capture-on-merge.yml` — proposes TeamBrain captures on PR merge (human-approved).' : null,
-      wantAgents   ? '- `AGENTS.md` — agent orientation for this repo.' : null,
+      'Files added/updated:',
+      writingWorkflow ? '- `.github/workflows/capture-on-merge.yml` — proposes TeamBrain captures on PR merge (human-approved).' : null,
+      writingAgents   ? '- `AGENTS.md` — agent orientation for this repo.' : null,
+      skipped.length  ? `\n_Skipped (already present, not overwritten): ${skipped.join(', ')}._` : null,
       '',
-      ...(wantWorkflow ? [
+      ...(writingWorkflow ? [
         '**Remaining manual steps for capture-on-merge** (the GitHub App cannot set repo secrets):',
         '1. Issue an API token from the dashboard (or `POST /functions/v1/teambrain-token/token`).',
         '2. `gh secret set TEAMBRAIN_TOKEN` — the `tbk_…` value (a repo **secret**).',
@@ -440,7 +466,7 @@ app.post('/setup-pr', async (c) => {
       title: `ci: TeamBrain setup (${what})`,
       body: prBody,
     });
-    return c.json(result, 201);
+    return c.json({ opened: true, ...result, skipped }, 201);
   } catch (err) {
     if (err instanceof GitHubPrError) return c.json({ error: err.message }, err.status as ContentfulStatusCode);
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
