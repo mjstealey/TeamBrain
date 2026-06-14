@@ -659,7 +659,7 @@
       el('p', { class: 'muted', text: 'A per-repo orientation file for AI agents, generated from your project details.' }),
       actionsRow(
         el('button', { class: 'btn btn-sm btn-secondary', text: 'Generate AGENTS.md', onclick: () => generateAgents(slug) }),
-        isAdmin ? el('button', { class: 'btn btn-sm', text: gh.has_agents_md ? 'Open update PR' : 'Add via PR', onclick: (e) => setupPr(slug, ['agents_md'], e.target) }) : null,
+        isAdmin ? el('button', { class: 'btn btn-sm', text: gh.has_agents_md ? 'Open update PR' : 'Add via PR', onclick: (e) => setupPr(slug, ['agents_md'], e.target, gh.has_agents_md === true) }) : null,
       ),
     ]));
 
@@ -671,7 +671,7 @@
       isAdmin ? el('p', { class: 'muted', html: 'After the PR merges: <code>gh secret set TEAMBRAIN_TOKEN</code> (issue one below) and <code>gh variable set TEAMBRAIN_ANON_KEY</code> (from the landing page).' }) : null,
       isAdmin ? actionsRow(
         el('button', { class: 'btn btn-sm btn-secondary', text: 'Issue API token', onclick: (e) => issueToken(slug, e.target) }),
-        el('button', { class: 'btn btn-sm', text: gh.has_capture_workflow ? 'Re-open setup PR' : 'Open setup PR', onclick: (e) => setupPr(slug, ['workflow','agents_md'], e.target) }),
+        el('button', { class: 'btn btn-sm', text: 'Open setup PR', onclick: (e) => setupPr(slug, ['workflow','agents_md'], e.target) }),
       ) : el('p', { class: 'muted', text: 'A project admin can set this up.' }),
     ]));
 
@@ -826,14 +826,21 @@
     const ta = el('textarea', { readonly: 'readonly' }); ta.value = res.data.content;
     openOut('AGENTS.md for ' + slug, 'Copy or download, commit to the repo root — or use “Add via PR”.', ta, res.data.content, 'AGENTS.md');
   }
-  async function setupPr(slug, include, btn) {
+  async function setupPr(slug, include, btn, overwrite) {
     btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Opening PR…';
-    const res = await jsonPost(`${FN}/teambrain-console/setup-pr`, { slug, include });
+    const res = await jsonPost(`${FN}/teambrain-console/setup-pr`, { slug, include, overwrite: !!overwrite });
     btn.disabled = false; btn.textContent = orig;
     if (!res.ok) { openOut('Setup PR failed', errMsg(res), el('span')); return; }
-    const link = el('p', {}, document.createTextNode(res.data.already_existed ? 'A PR already existed: ' : 'PR opened: '),
-      el('a', { href: res.data.pr_url, target: '_blank', rel: 'noopener', text: res.data.pr_url }));
-    openOut('Setup PR', 'Review and merge it, then set the repo secrets if you enabled capture-on-merge.', link);
+    if (res.data.opened === false) {
+      // Non-destructive default: every requested file already exists, nothing written.
+      openOut('Nothing to do', res.data.message || 'Those files already exist; nothing was changed.', el('span'));
+      return;
+    }
+    const kids = [el('p', {}, document.createTextNode(res.data.already_existed ? 'A PR already existed: ' : 'PR opened: '),
+      el('a', { href: res.data.pr_url, target: '_blank', rel: 'noopener', text: res.data.pr_url }))];
+    if (res.data.skipped && res.data.skipped.length)
+      kids.push(el('p', { class: 'muted', text: 'Skipped (already present, not overwritten): ' + res.data.skipped.join(', ') }));
+    openOut('Setup PR', 'Review and merge it, then set the repo secrets if you enabled capture-on-merge.', el('div', {}, ...kids));
   }
   async function issueToken(slug, btn) {
     btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Issuing…';

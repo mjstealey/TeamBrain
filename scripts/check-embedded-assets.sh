@@ -38,6 +38,17 @@ for const, rel in assets.items():
     else:
         drift.append(f"{const} != {rel} (embedded {len(embedded)}B vs on-disk {len(on_disk)}B)")
 
+# Guard the live dogfood workflow against drifting from the template that gets
+# embedded. That exact drift (examples/ left behind when .github/workflows/ got
+# a fix) once shipped a stale capture-on-merge via the dashboard's setup-pr.
+live = root / ".github/workflows/capture-on-merge.yml"
+tmpl = root / "examples/github-actions/capture-on-merge.yml"
+if live.read_bytes() == tmpl.read_bytes():
+    print("ok   .github/workflows/capture-on-merge.yml == examples/github-actions/capture-on-merge.yml")
+else:
+    drift.append(".github/workflows/capture-on-merge.yml != examples/github-actions/capture-on-merge.yml "
+                 "(live workflow drifted from the template that gets embedded)")
+
 if drift:
     print("\nDRIFT DETECTED:", file=sys.stderr)
     for d in drift:
