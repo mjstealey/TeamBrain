@@ -10,7 +10,7 @@ Phase 7 evaluation pilot repo is `fabric-testbed/fabric-core-api` (refactor done
 Self-hosted Supabase docker-compose: Postgres 17 + pgvector, GoTrue (GitHub OAuth), PostgREST, Edge Functions (Deno), Studio, Kong. Nine edge functions under `edge-functions/`: `teambrain-{mcp,rest,membership-sync,register-project,token,summarize,slack,staleness,console}`. Deploy target: team VMware VM, nginx TLS (Path B in `deploy/production/`). Embeddings: OpenAI `text-embedding-3-small` (1536d), model-tagged; 768d Ollama variant via `migrations/0005`. Web UI (static, nginx-served `deploy/production/nginx/html/`): `/` landing, `/dashboard` activity, `/repos` per-repo onboarding+status console (backed by `repo_status_*` RPCs in `migrations/0024` + `teambrain-console`).
 
 ## Conventions
-- Parallel repo to OB1, **not a fork** — the parallel-repo choice keeps licensing open (OB1 is FSL-1.1-MIT, which bars commercial derivatives; TeamBrain's license stays **TBD**); ports RLS + shared-MCP patterns only. Attribution in `CREDITS.md`.
+- Parallel repo to OB1, **not a fork** — the parallel-repo choice kept licensing open (OB1 is FSL-1.1-MIT, which bars commercial derivatives), so TeamBrain ships under **Apache-2.0** (`LICENSE`); ports RLS + shared-MCP patterns only. Attribution in `CREDITS.md`.
 - Two read-only reference forks, kept current via `gh repo sync mjstealey/{OB1,supabase}`. Never edit them — copy snippets in with attribution.
 - Hybrid storage: stable knowledge → repo (`AGENTS.md`, `.claude/`, `docs/adr/`) via `promote_to_docs` PR; in-flight notes → TeamBrain.
 - Capture cross-project decisions to personal Open Brain MCP with prefix `PROJECT: TeamBrain — `.
