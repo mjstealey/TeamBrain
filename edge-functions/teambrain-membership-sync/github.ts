@@ -265,3 +265,123 @@ export async function listTeamMembers(
   const raw = await paginatedGet<RawTeamMember>(url, token);
   return raw.map((m) => m.login);
 }
+
+// ---------------------------------------------------------------------------
+// Discovery helpers (consumed by teambrain-console)
+//
+// These power the /repos dashboard's "discover repos you admin" flow and its
+// per-repo feature-status checks. They reuse the same installation token +
+// pagination/rate-limit plumbing as the sync calls above.
+// ---------------------------------------------------------------------------
+
+export interface InstallationRepo {
+  full_name:      string;   // "owner/repo"
+  owner_login:    string;
+  name:           string;
+  default_branch: string;
+  private:        boolean;
+  archived:       boolean;
+}
+
+interface RawInstallationRepo {
+  full_name:      string;
+  name:           string;
+  default_branch: string;
+  private:        boolean;
+  archived:       boolean;
+  owner:          { login: string };
+}
+
+// `GET /installation/repositories` lists every repo the TeamBrain App
+// installation can see. Unlike the collaborator/team endpoints it returns an
+// ENVELOPE `{ total_count, repositories: [...] }` rather than a bare array, so
+// it can't go through `paginatedGet`; we walk the Link header ourselves and
+// accumulate the `.repositories` slice from each page.
+export async function listInstallationRepos(token: string): Promise<InstallationRepo[]> {
+  const out: InstallationRepo[] = [];
+  let next: string | null = 'https://api.github.com/installation/repositories?per_page=100';
+  while (next) {
+    const resp = await fetch(next, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept':        'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`GET ${next} failed: ${resp.status} ${body}`);
+    }
+    captureRateLimit(resp.headers);
+    const page = await resp.json() as { repositories?: RawInstallationRepo[] };
+    for (const r of page.repositories ?? []) {
+      out.push({
+        full_name:      r.full_name,
+        owner_login:    r.owner?.login ?? r.full_name.split('/')[0],
+        name:           r.name,
+        default_branch: r.default_branch,
+        private:        r.private,
+        archived:       r.archived,
+      });
+    }
+    next = parseNextLink(resp.headers.get('link'));
+  }
+  return out;
+}
+
+// `GET /repos/{owner}/{repo}/collaborators/{login}/permission` → the caller's
+// effective permission ('admin' | 'write' | 'read' | 'none', or 'maintain' /
+// 'triage' on newer repos). Returns null when GitHub reports the user is not a
+// collaborator (404). Used to keep discovery to repos the caller actually
+// administers — the same admin bar register-project enforces.
+export async function getUserRepoPermission(
+  owner: string,
+  repo:  string,
+  login: string,
+  token: string,
+): Promise<string | null> {
+  const resp = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/collaborators/${login}/permission`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept':        'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    },
+  );
+  if (resp.status === 404) return null;
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`permission check for ${login} on ${owner}/${repo} failed: ${resp.status} ${body}`);
+  }
+  const json = await resp.json() as { permission?: string };
+  return json.permission ?? null;
+}
+
+// `GET /repos/{owner}/{repo}/contents/{path}` → true if the path exists on the
+// given ref (default branch when ref omitted), false on 404. Used to detect
+// whether a repo already has AGENTS.md / the capture-on-merge workflow.
+export async function repoFileExists(
+  owner: string,
+  repo:  string,
+  path:  string,
+  token: string,
+  ref?:  string,
+): Promise<boolean> {
+  const q = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+  const resp = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURI(path)}${q}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept':        'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    },
+  );
+  if (resp.status === 200) return true;
+  if (resp.status === 404) return false;
+  const body = await resp.text();
+  throw new Error(`contents check for ${path} on ${owner}/${repo} failed: ${resp.status} ${body}`);
+}

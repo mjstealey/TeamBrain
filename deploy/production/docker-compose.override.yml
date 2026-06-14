@@ -169,6 +169,15 @@ services:
       # org may be registered. Must match the org the App is installed on.
       TEAMBRAIN_GITHUB_ORG:             ${TEAMBRAIN_GITHUB_ORG:-fabric-testbed}
 
+      # --- /repos management dashboard (teambrain-console) ---
+      # Reuses the GitHub App creds + org gate above (discovery, file checks,
+      # setup PRs) and SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (stock). The
+      # only extra is the public URL stamped into generated AGENTS.md files;
+      # it falls back to SUPABASE_PUBLIC_URL when unset (handled in the
+      # function), so leave this blank unless you need a different host in
+      # generated AGENTS.md than the stack's SUPABASE_PUBLIC_URL.
+      TEAMBRAIN_PUBLIC_URL:             ${TEAMBRAIN_PUBLIC_URL:-}
+
   # ---- (Optional) ollama sidecar for self-host embedding variant ----------
   #
   # Uncomment this entire block AND change the functions.environment

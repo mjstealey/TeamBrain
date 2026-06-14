@@ -12,6 +12,15 @@ exact text first.
 This is the runnable version of `examples/github-actions/capture-on-merge.yml`
 (Phase 5 § C), already dogfooded end-to-end on `fabric-testbed/TeamBrain`.
 
+> **Fast path — the dashboard.** Most of the steps below are now one-click at
+> **<https://pr.fabric-testbed.net/repos>**: sign in, open your repo (or register
+> it), and use **Issue API token** + **Open setup PR** to add the workflow and an
+> `AGENTS.md` in a single PR. The dashboard also shows live per-repo status (is it
+> registered? members synced? token issued? workflow present?). You still set the
+> two repo secrets yourself (the GitHub App can't) — the PR body lists the exact
+> `gh secret set` / `gh variable set` commands. The manual curl steps below remain
+> the reference / automation-free path.
+
 ---
 
 ## 0. Doability for `fabric-testbed/loomai-dev` (private) — confirmed

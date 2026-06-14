@@ -124,6 +124,18 @@ server {
         try_files /dashboard.html =404;
     }
 
+    # Repository management dashboard
+    # (deploy/production/nginx/html/repos.html). Lists every repo the signed-in
+    # user can act on (registered projects + GitHub-admin candidates) with
+    # per-repo feature status and a step-by-step setup guide. Same client-side
+    # auth gate as /dashboard; status comes from the repo_status_* PostgREST
+    # RPCs (migration 0024) and the teambrain-console edge function, with the
+    # ANON_KEY injected by the same server-scoped sub_filter.
+    location = /repos {
+        root      /usr/share/nginx/html;
+        try_files /repos.html =404;
+    }
+
     # OpenAPI 3.1 spec for the REST surface
     # (deploy/production/nginx/html/openapi.yaml). Served as a public,
     # unauthenticated contract — it documents the API but contains no
