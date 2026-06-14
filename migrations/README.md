@@ -25,12 +25,17 @@ Numbered SQL files that, applied in order via Studio's SQL editor, produce a wor
 | 0017 | `0017_match_thoughts_staleness_decay.sql` | 6   | Drops + recreates `public.match_thoughts(...)` with **freshness-aware ranking** (Phase 6 § B): orders on a `rank_score` = similarity × confidence × expiry × exp-decay(`last_verified_at`, 90-day half-life), adds params (`half_life_days`, `decay_floor`, `include_deprecated`) + return columns (`expires_at`, `confidence`, `rank_score`). Cosine `match_threshold` cutoff unchanged. | always (768-dim deploys swap `vector(768)` in, per the file header) |
 | 0018 | `0018_staleness_signals.sql`            | 6   | **Commit-triggered staleness flagging** (Phase 6 § C): `thoughts.stale_flagged_at` column, `public.staleness_signals` (pluggable signal log) + `public.staleness_poll_state` (commit cursor) tables, `flag_thoughts_for_paths()` + `flag_expired_thoughts()` producers, a clear-on-reverify trigger, and recreates `match_thoughts` to return `stale_flagged_at`. | always (768-dim deploys swap `vector(768)` in the match_thoughts half, per the file header) |
 | 0019 | `0019_pg_cron_staleness_scan.sql`       | 6   | `pg_cron` for the § C producers: `teambrain-staleness-scan` (`5,20,35,50` → POST `/teambrain-staleness/scan` via pg_net) + `teambrain-staleness-expiry` (`10,40` → `flag_expired_thoughts()`). Adds the `teambrain_staleness_url` app_config row. | **Production only** (scratch drives `/scan` on demand) |
+| 0020 | `0020_thoughts_promoted_pr_url.sql`      | 6   | Adds `thoughts.promoted_pr_url` — back-link to the docs/ADR PR a thought was promoted into (Phase 6 § D); enables promote idempotency + surfacing. | always |
+| 0021 | `0021_dashboard_activity.sql`           | 6   | `public.dashboard_activity(...)` SECURITY INVOKER RPC (per-project per-day visible/authored thought counts) backing the `/dashboard` activity heatmap; revokes `anon` by name. | always |
+| 0022 | `0022_staleness_functions_lockdown.sql` | 6   | Revokes `anon`/`authenticated` EXECUTE on the two SECURITY DEFINER staleness producers (`flag_thoughts_for_paths`, `flag_expired_thoughts`), leaving `service_role` only — closes the same per-role-grant exposure as 0015/0021 (Security Advisor 0028/0029). | **Production only** (operates on the 0018 functions) |
+| 0023 | `0023_slack_channels.sql`               | 5B  | `public.slack_channels` — (workspace, channel) → project mapping backing the Slack `/tb` slash command; service_role-only + explicit deny-all policy. | always |
+| 0024 | `0024_repo_status_rpcs.sql`             | console | `public.repo_status_overview()` / `repo_status_detail(text)` — per-repo onboarding/feature status for the `/repos` dashboard. SECURITY DEFINER cores in `app` (read the service_role-only `api_tokens`/`slack_channels`/`staleness_poll_state` tables) behind SECURITY INVOKER `public` wrappers. | always |
 | —   | `seed.sql`                   | 1   | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. Phase 3's sync function takes over once deployed; `seed.sql` remains useful for fresh deploys before the first sync. | always (apply last) |
 
 ## Apply order
 
 ```
-0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014  →  [0015 in production]  →  0016  →  0017  →  0018  →  [0019 in production]
+0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014  →  [0015 in production]  →  0016  →  0017  →  0018  →  [0019 in production]  →  0020  →  0021  →  [0022 in production]  →  0023  →  0024
 ```
 
 `0005` and `0006` can be reordered between themselves (both apply on top of 0004) but the canonical order is `0005` first so anyone tracing the file numbers reads them in the same sequence they apply in.
@@ -45,6 +50,16 @@ These come from `~/.claude/projects/.../memory/project_supabase_function_convent
 - **Extensions live in `extensions` schema**, never `public`. References in this directory's SQL use `extensions.vector`, `extensions.<=>`, etc.
 - **Functions use `set search_path = ''`** with fully qualified references (e.g., `pg_catalog.now()` instead of bare `now()`). Required by Studio's "Function Search Path Mutable" check.
 - **No `DROP TABLE`, `TRUNCATE`, or unqualified `DELETE`.** The CLAUDE.md hard boundary. `DROP POLICY IF EXISTS`, `DROP FUNCTION IF EXISTS`, and `DROP EXTENSION IF EXISTS` are allowed where re-runnability requires them.
+
+## Performance advisor — accepted INFOs
+
+Supabase's **performance** advisor surfaces a few INFO-level items that are deliberately left as-is. (The *security* advisor is kept clean via 0015/0016/0021/0022; these *performance* INFOs are accepted, not actioned.)
+
+- **`unused_index` on `thoughts_embedding_hnsw_idx` and `thoughts_paths_gin_idx` — keep.** Load-bearing at production scale: the HNSW index powers semantic search (`match_thoughts` orders by `embedding <=> query`) and the `paths` GIN index powers staleness flagging (`flag_thoughts_for_paths` does `paths && changed_paths`). They read as "unused" only because the dogfood dataset is small enough that the planner seq-scans; dropping them would regress prod once data grows.
+- **`unused_index` on `thoughts_metadata_gin_idx`, `thoughts_tags_gin_idx`, `thoughts_embedding_model_idx`, `staleness_signals_project_created_idx`, `health_events_check_created_idx` — keep.** Cheap, forward-looking indexes for metadata/tag filtering, re-embed-pass scoping (the model tag), the staleness audit drill-in, and the ops exception log. Dropping them frees ~nothing and they'd likely be re-added.
+- **`unindexed_foreign_keys` on `api_tokens.{created_by, principal_user_id}`, `projects.{created_by, bot_user_id}`, `slack_channels.linked_by` — accepted.** All are FKs to `auth.users` on small, bounded operational tables; a covering index only helps the parent-delete/join path, which is negligible at any realistic scale here. Adding them would mostly convert these INFOs into future `unused_index` INFOs, so they're left unindexed by choice.
+
+Re-evaluate if a table's row count grows by orders of magnitude, or if `auth.users` deletions become frequent.
 
 ## Adding a new migration
 
