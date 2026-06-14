@@ -236,10 +236,13 @@ paths:
       tags: [thoughts]
       summary: Promote a thought into a docs PR
       description: |
-        Graduates a stabilized thought into reviewed repo docs: generates an
-        ADR-style markdown file from the thought, creates a branch, commits it,
-        and opens a pull request in the project's repo via the TeamBrain GitHub
-        App. On success the source thought is stamped (`promoted_pr_url` plus
+        Graduates a stabilized thought into reviewed repo docs: generates a
+        markdown doc from the thought, creates a branch, commits it, and opens a
+        pull request in the project's repo via the TeamBrain GitHub App — the PR
+        must be reviewed and **merged** to actually land in the repo. The default
+        path is type-aware (decisions→`docs/adr/`, runbooks→`docs/runbooks/`,
+        context→`docs/context/`, else `docs/notes/`); pass `target_path` to
+        override. On success the source thought is stamped (`promoted_pr_url` plus
         `confidence: confirmed`), which also makes a re-promote idempotent —
         calling again returns the existing PR rather than opening a duplicate.
 
@@ -973,8 +976,10 @@ components:
       properties:
         target_path:
           type: string
-          default: docs/adr/
-          description: Repo-relative directory the PR writes the markdown file into.
+          description: >-
+            Repo-relative directory to write the markdown file into. Omit for a
+            type-aware default: decisions→docs/adr/, runbooks→docs/runbooks/,
+            context→docs/context/, else docs/notes/.
         target_branch:
           type: string
           default: main

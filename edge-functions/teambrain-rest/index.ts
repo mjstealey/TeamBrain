@@ -482,7 +482,9 @@ app.patch('/thoughts/:id/stale', async (c) => {
 // then stamps the source thought (promoted_pr_url + confidence 'confirmed').
 // Requires contributor/admin on the project; idempotent per thought.
 const PromoteBody = z.object({
-  target_path:   z.string().default('docs/adr/'),
+  // Omitted ⇒ type-aware default in promote.ts (decisions→docs/adr/,
+  // runbooks→docs/runbooks/, context→docs/context/, else docs/notes/).
+  target_path:   z.string().optional(),
   target_branch: z.string().default('main'),
 });
 

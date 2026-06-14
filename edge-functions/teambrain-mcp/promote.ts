@@ -39,7 +39,7 @@ export interface PromoteOptions {
   userClient:    SupabaseClient;
   userId:        string;          // caller's auth.uid()
   thoughtId:     string;
-  targetPath:    string;          // repo-relative dir, e.g. 'docs/adr/'
+  targetPath?:   string;          // repo-relative dir; omit ⇒ type-aware default (see defaultTargetPath)
   targetBranch:  string;          // base branch, e.g. 'main'
 }
 
@@ -102,6 +102,19 @@ export function buildMarkdown(t: ThoughtRow): string {
     paths.length > 0    ? `- paths: ${paths.map((p) => '`' + p + '`').join(', ')}` : null,
     tags.length  > 0    ? `- tags: ${tags.map((p)  => '`' + p + '`').join(', ')}`  : null,
   ].filter((x) => x !== null).join('\n') + '\n';   // trailing newline (POSIX / markdownlint MD047)
+}
+
+// Type-aware default docs location when the caller doesn't pass target_path.
+// Only `decision` thoughts become ADRs; other types land in their own docs
+// area rather than being mislabeled under docs/adr/. An explicit target_path
+// always overrides this. The thought's `type` is in the filename either way.
+function defaultTargetPath(type: string | null): string {
+  switch (type) {
+    case 'decision': return 'docs/adr/';
+    case 'runbook':  return 'docs/runbooks/';
+    case 'context':  return 'docs/context/';
+    default:         return 'docs/notes/';   // convention | gotcha | preference | untyped
+  }
 }
 
 // UTF-8-safe base64 for the GitHub Contents API. Thoughts are small, so the
@@ -227,7 +240,7 @@ export async function promoteThoughtToDocs(opts: PromoteOptions): Promise<Promot
   const id8      = t.id.slice(0, 8);
   const filename = `${id8}-${t.type ?? 'thought'}.md`;
   const branch   = `teambrain/promote-${id8}`;
-  const path     = targetPath.replace(/^\/+/, '').replace(/\/?$/, '/') + filename;
+  const path     = (targetPath ?? defaultTargetPath(t.type)).replace(/^\/+/, '').replace(/\/?$/, '/') + filename;
 
   // 2. Idempotency: already promoted → return the recorded PR, do not re-open.
   if (t.promoted_pr_url) {

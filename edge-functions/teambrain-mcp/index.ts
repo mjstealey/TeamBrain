@@ -704,27 +704,32 @@ app.post('*', async (c) => {
   );
 
   // Tool: promote_to_docs (Phase 6 § D)
-  // Graduate a stabilized thought into reviewed repo docs: generate an
-  // ADR-style markdown file from the thought, create a branch, commit it,
-  // and open a PR in the project's repo via the TeamBrain GitHub App.
-  // On success the source thought is stamped (`promoted_pr_url` +
-  // confidence 'confirmed') so the promotion is visible and idempotent.
-  // The caller must be a project writer (contributor | admin); the GitHub
-  // App needs Contents:write + Pull-requests:write on the target repo.
+  // Graduate a stabilized thought into reviewed repo docs: generate a markdown
+  // doc from the thought (type-aware default path — see promote.ts
+  // defaultTargetPath), create a branch, commit it, and open a PR in the
+  // project's repo via the TeamBrain GitHub App. The PR must be reviewed +
+  // merged to actually land in the repo. On success the source thought is
+  // stamped (`promoted_pr_url` + confidence 'confirmed') so the promotion is
+  // visible and idempotent. The caller must be a project writer
+  // (contributor | admin); the App needs Contents:write + Pull-requests:write.
   const promoteSchema = z.object({
       thought_id: z.string().uuid()
         .describe('UUID of the thought to promote into a docs PR.'),
-      target_path: z.string().default('docs/adr/')
-        .describe('Repo-relative directory the PR writes the markdown into.'),
+      target_path: z.string().optional()
+        .describe('Repo-relative dir to write into. Omit for a type-aware default: ' +
+          'decisions→docs/adr/, runbooks→docs/runbooks/, context→docs/context/, else docs/notes/.'),
       target_branch: z.string().default('main')
         .describe('Base branch the PR targets.'),
   });
   server.tool(
     'promote_to_docs',
-    'Promote a stabilized thought into reviewed repo docs: opens a PR in ' +
-    "the project's repo with an ADR-style markdown file generated from the " +
-    'thought, then stamps the thought as promoted (confidence: confirmed). ' +
-    'Requires contributor/admin on the project; idempotent per thought.',
+    'Promote a stabilized thought into reviewed repo docs. OPENS A PULL REQUEST ' +
+    'adding a generated markdown doc — review and MERGE the PR to land it in the ' +
+    'repo. The default path is type-aware (decisions→docs/adr/, runbooks→' +
+    'docs/runbooks/, context→docs/context/, else docs/notes/); pass target_path to ' +
+    'override. Stamps the thought confirmed and records the PR URL (idempotent per ' +
+    'thought). Requires contributor/admin; the GitHub App needs Contents + ' +
+    'Pull-requests write.',
     promoteSchema.shape,
     async (args: z.infer<typeof promoteSchema>) => {
       const denied = toolDenied(caps, 'promote_to_docs');
