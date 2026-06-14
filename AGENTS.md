@@ -1,138 +1,128 @@
-# AGENTS.md — TeamBrain
+# AGENTS.md — fabric-testbed/TeamBrain
 
 Lightweight orientation for any AI agent (Claude Code, Cursor, gemini-cli,
-Copilot, ChatGPT) working in **this** repo. Read once before your first
-commit or comment.
+Copilot, ChatGPT) working in this repo. Read once before your first commit
+or comment.
 
-> **This repo *is* TeamBrain** — the multi-tenant shared-memory service.
-> We dogfood it: the running instance at **https://pr.fabric-testbed.net**
-> stores the ephemeral, cross-session memory *about developing TeamBrain*.
-> Deep project architecture, settled decisions, and hard boundaries live
-> in `CLAUDE.md` (canonical, reviewed). This file is just the agent's
-> orientation + how to reach the deployed instance.
+## What TeamBrain is, in this repo's context
 
-## What goes where (storage model)
+TeamBrain is a multi-tenant, project-scoped, AI-agnostic shared memory
+service. It lives at **** and stores team knowledge that
+isn't worth committing to the repo (yet) but is worth not losing:
+in-flight debugging notes, recent decisions still being validated,
+conventions, gotchas, cross-developer context.
 
-| Lives in the repo (canonical, reviewed, versioned) | Lives in TeamBrain (ephemeral, cross-session) |
-|---|---|
-| `CLAUDE.md`, `docs/adr/`, `docs/phase-*-checklist.md`, this file | In-flight decisions still being validated, gotchas, debugging notes, "why did we do X" context between sessions |
-
-Promotion is the governance loop: a TeamBrain memory that stabilizes gets
-promoted into the repo via PR. Don't paper over a wrong repo doc with a
-TeamBrain memory — fix the doc.
-
-**Open Brain split (deliberate):** Michael's *personal* Open Brain MCP
-holds personal + cross-project planning. The *deployed TeamBrain* holds
-team-relevant, project-scoped TeamBrain dev memory. Capture to the one
-that fits; **do not double-write** the same memory to both.
+This repo (`fabric-testbed/TeamBrain`) is registered as a TeamBrain project.
+Any agent with a valid GitHub-OAuth-derived JWT for a member of this
+project can read and write thoughts scoped to it.
 
 ## How to connect
 
-The TeamBrain MCP server is a **remote HTTP MCP server** (no stdio, no
-local Node):
+The TeamBrain MCP server is reachable as a **remote HTTP MCP server**
+(no stdio, no local Node, no per-developer config files):
 
 ```
-URL:           https://pr.fabric-testbed.net/functions/v1/teambrain-mcp
+URL:           /functions/v1/teambrain-mcp
 Authorization: Bearer <your-github-oauth-jwt>
 ```
 
-Get a JWT by signing in with GitHub at **https://pr.fabric-testbed.net/**
-and copying the access token from the landing page. Tokens last 24h; use
-the **Renew** button there or sign in again when one expires.
-
-### Claude Code
-
-Positional `name` and `url` must come *before* the `--header` flag (it's
-variadic and will otherwise swallow them):
+Each AI tool has its own way of registering remote MCP servers — see
+that tool's docs. For **Claude Code**, the equivalent of:
 
 ```bash
-claude mcp add --transport http teambrain \
-  https://pr.fabric-testbed.net/functions/v1/teambrain-mcp \
+claude mcp add --transport http teambrain /functions/v1/teambrain-mcp \
   --header "Authorization: Bearer <jwt>"
 ```
 
-### Codex
+JWTs expire after 1h. Re-grab from the OAuth round-trip when prompted.
 
-Codex registers remote MCP servers in `~/.codex/config.toml` (or a
-project-scoped `.codex/config.toml`) as a streamable-HTTP server. The
-bearer token is sourced from an environment variable *by name* — put the
-variable's name in the config, never the token value itself:
-
-```toml
-# ~/.codex/config.toml
-[mcp_servers.teambrain]
-url = "https://pr.fabric-testbed.net/functions/v1/teambrain-mcp"
-bearer_token_env_var = "TEAMBRAIN_JWT"
-```
-
-Then export your JWT in the shell before launching Codex (re-export when
-the 24h token expires):
-
-```bash
-export TEAMBRAIN_JWT='<jwt>'
-codex
-```
-
-## Which `project_slug` to use
-
-Every TeamBrain tool call is scoped by `project_slug`. For this repo:
-
-```
-fabric-testbed/TeamBrain
-```
-
-That's the repo's `owner/repo` — derive it from `git remote get-url origin`
-if unsure. **Always pass it explicitly.** The server's global default
-points at a *different* project (`fabric-testbed/fabric-core-api`), so
-omitting `project_slug` here would read/write the wrong project. RLS still
-prevents touching any project you're not a member of, but it can't stop a
-mis-routed thought from landing in another project you *do* belong to.
-
-## The tools at a glance
-
-`ping` is a health check (no args). The five working tools:
+## The 5 tools at a glance
 
 | Tool | When to call it |
 |---|---|
-| `capture_project_thought` | You learned something about developing TeamBrain that the next session/agent should know. Decisions, conventions, gotchas, runbooks, context. |
-| `search_project_thoughts` | Before answering a question that *could* have been decided before. Check for a "we already settled this" memory. |
-| `list_recent_project_thoughts` | "What's been happening on TeamBrain lately?" Skim before planning. |
-| `mark_stale` | A memory contradicted by current code or a recent decision. Flag it (don't delete — provenance matters). |
-| `promote_to_docs` | A memory has stabilized and belongs in `CLAUDE.md` / `docs/`. Phase 6 wires this to a real PR; for now it returns a preview. |
-
-## Slash commands (optional)
-
-Once the MCP server is connected, optional one-keystroke shortcuts wrap the capture/recall
-tools: `/tb-remember <text>`, `/tb-recall <query>`, `/tb-recent [N]`. They're sugar over the
-same MCP doorway, not a separate path. Claude Code commands are committed at
-[`.claude/commands/`](.claude/commands/) and Codex skills at
-[`.agents/skills/`](.agents/skills/) — both repo-discovered, no install. A copy-anywhere
-Cursor template lives under [`examples/slash-commands/`](examples/slash-commands/); see its
-[README](examples/slash-commands/README.md) for per-client install notes.
+| `capture_project_thought` | You learned something about this repo that the next agent (or human) would benefit from knowing. Decisions, conventions, gotchas, runbooks, context. Embed it; future searches will find it. |
+| `search_project_thoughts` | Before answering a question that *could* have been discussed before. Check for a "we already decided this" memory. Reduces "didn't we just talk about this?" reviewer comments. |
+| `list_recent_project_thoughts` | "What's the team been thinking about lately?" Helpful to skim before a code review or planning session. |
+| `mark_stale` | A memory you find is contradicted by current code or a recent decision. Don't delete (loses provenance) — flag it. The next searcher sees the deprecation. |
+| `promote_to_docs` | A memory has stabilized and belongs in repo docs. Phase 6 wires this to a real PR; for now it returns a preview. |
 
 ## Capture conventions
 
-**Capture:** architecture/design decisions made on a branch; conventions
-adopted; gotchas (deploy footguns, quoting traps, schema quirks);
-cross-cutting context ("X depends on Y"); reviewer corrections that
-generalize.
+**Capture:**
 
-**Don't capture:** WIP obvious from the diff; secrets or PII; verbatim
-code dumps (link the file/PR, describe the *why*).
+- Architectural or design decisions made on this PR / branch.
+- Conventions adopted (naming, error-handling style, layering rules).
+- Gotchas: things that bit you that aren't yet documented here.
+- Cross-cutting context: "X depends on Y; if Y changes, look at Z".
+- Reviewer corrections that feel general (not just "fix this typo").
 
-**Scope:** `personal` (your notes only) · `project` (any member can read —
-most captures) · `project_private` (sensitive in-flight work).
+**Don't capture:**
 
-**Type taxonomy:** `decision | convention | gotcha | context | preference | runbook`
+- In-flight WIP debugging that will be obvious by review time. The PR
+  diff already explains it.
+- Anything secret or PII. RLS is enforced, but minimize blast radius.
+- Verbatim code dumps. Paste a link to the file/PR; describe the *why*.
+
+**Scope choice:**
+
+| Scope | Use for |
+|---|---|
+| `personal`     | Notes only useful to you (your dev preferences, your TODOs). Default to this if unsure. |
+| `project`      | Anything any project member should be able to read. Most captures land here. |
+| `project_private` | Sensitive in-flight debugging, security workarounds, or in-progress decisions where readers (non-writers) shouldn't see yet. |
+
+**Type taxonomy** (set whenever non-obvious):
+
+`decision | convention | gotcha | context | preference | runbook`
+
+## Promotion workflow
+
+A memory that has been:
+
+1. Validated by at least one reviewer comment ("yes, that's right"),
+2. Stable across at least two PRs (no contradiction surfaced), and
+3. General enough to be useful outside the immediate PR context
+
+…should be **promoted** to repo docs via `promote_to_docs`. In Phase 6
+that will open a PR; for now it returns a preview that a human can
+hand-translate into a `docs/adr/` entry or a section of `AGENTS.md`
+(this file) itself.
+
+The promotion loop is the governance contract: TeamBrain holds
+ephemeral, fast-moving knowledge; the repo holds curated, reviewed
+canonical truth. Memories migrate from one to the other as confidence
+grows.
+
+## Stale-flagging cadence
+
+When you encounter a memory that is contradicted by current code or
+recent reviewer feedback:
+
+1. **Mark it stale** with `mark_stale`, supplying a `reason` that
+   names the contradicting source (PR number, commit SHA, reviewer name).
+2. **Do not delete it.** The provenance trail matters — future agents
+   should be able to see "this was once believed, then deprecated when
+   X happened".
+3. If the contradicting truth is itself stable, **capture a new memory**
+   stating the new convention. Cross-link by including the deprecated
+   memory's ID in the new memory's content.
 
 ## Hard rules
 
 - **Never bypass `auth.uid()`.** Don't paste service-role keys into a
   client. The MCP server is the only path that should write to TeamBrain.
-- **No agent-on-agent recursion.** If a tool call fails, surface the error
-  to the human; don't try to "fix it" by calling more tools.
-- **Defer to `CLAUDE.md`** for architecture, settled decisions, and the
-  hard boundaries (e.g. do not touch the personal OB1 Supabase project).
+- **No agent-on-agent recursion.** If a tool call fails, surface the
+  error to the human user. Don't try to "fix it" by calling more tools.
+- **Capture before claiming.** If you tell the user "the convention is
+  X", you should also have captured "X is the convention" — or be ready
+  to capture a counter-claim if you're wrong.
+
+## Pilot ownership
+
+- **Project lead (commits + reviews):** mjstealey
+- **Pilot reviewers:** paul-ruth, kthare10
+- **TeamBrain ops:** report tool errors at /oauth-test/
+  for live debugging, or open an issue at the TeamBrain repo.
 
 ---
 
