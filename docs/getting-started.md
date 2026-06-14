@@ -10,6 +10,13 @@ be capturing and searching team context in about five minutes.
 > [`docs/adr/0001-teambrain-architecture.md`](adr/0001-teambrain-architecture.md)).
 > This is the end-user onboarding path.
 
+> **Prefer to click?** The **Repositories** dashboard at
+> **<https://pr.fabric-testbed.net/repos>** turns this guide into a status-aware,
+> mostly one-click flow: it lists every repo you can act on, shows what's already
+> set up per repo, and can register a repo, sync members, issue API tokens,
+> generate an `AGENTS.md`, and open a setup PR for the capture-on-merge workflow.
+> The per-developer MCP/REST connection in § 3 is still a copy-paste step.
+
 ---
 
 ## 1. What TeamBrain is

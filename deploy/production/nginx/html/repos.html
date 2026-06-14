@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repositories · TeamBrain · FABRIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-primary: #47aae1;
+    --color-primary-dark: #077ab1;
+    --color-primary-light: #cde4ef;
+    --color-secondary: #ff8542;
+    --color-secondary-dark: #d24502;
+    --color-dark: #534f50;
+    --color-grey: #667;
+    --color-lightgrey: #e3e3e9;
+    --color-light: #f3f3f9;
+    --color-success: #008e7a;
+    --color-danger: #a33;
+    --text: rgba(0, 0, 0, 0.85);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+    color: var(--text);
+    background: var(--color-light);
+    line-height: 1.7;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 1.25rem;
+  }
+  .brand {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--color-primary-dark);
+    font-size: 1.75rem;
+    margin: 0 0 0.25rem;
+  }
+  .brand .dot { color: var(--color-secondary); }
+  .tagline { color: var(--color-grey); font-size: 0.95rem; margin: 0 0 2rem; }
+  main {
+    width: 100%;
+    max-width: 1040px;
+    background: #fff;
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 8px;
+    padding: 2rem 2.25rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  h1 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500; font-size: 1.4rem; margin: 0; color: var(--color-dark);
+  }
+  h2.section {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500; font-size: 1.05rem; margin: 1.9rem 0 0.6rem; color: var(--color-dark);
+  }
+  h3 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500; font-size: 0.95rem; color: var(--color-primary-dark); margin: 0 0 0.5rem;
+  }
+  p { margin: 0 0 1rem; }
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em; background: var(--color-light);
+    border: 1px solid var(--color-lightgrey); border-radius: 4px; padding: 0.1em 0.35em;
+  }
+  pre {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem; background: var(--color-light); border: 1px solid var(--color-lightgrey);
+    border-radius: 6px; padding: 0.75rem 0.9rem; overflow-x: auto; margin: 0.5rem 0; white-space: pre;
+  }
+  a { color: var(--color-primary-dark); text-decoration: none; border-bottom: 1px solid var(--color-primary-light); }
+  a:hover { color: var(--color-primary); }
+  a.plain { border-bottom: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.45rem 0.9rem; background: var(--color-primary); color: #fff; border: none;
+    border-radius: 6px; font-family: inherit; font-size: 0.9rem; font-weight: 500;
+    text-decoration: none; cursor: pointer; transition: background 120ms ease;
+  }
+  .btn:hover { background: var(--color-primary-dark); color: #fff; }
+  .btn:focus-visible { outline: 2px solid var(--color-secondary); outline-offset: 2px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: var(--color-primary-dark); border: 1px solid var(--color-primary-dark); }
+  .btn-secondary:hover { background: var(--color-primary-dark); color: #fff; }
+  .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.82rem; }
+  .btn-danger { color: var(--color-danger); border-color: var(--color-danger); background: transparent; }
+  .btn-danger:hover { background: var(--color-danger); color: #fff; }
+  .panel { background: var(--color-primary-light); border-left: 3px solid var(--color-primary); border-radius: 4px; padding: 1rem 1.25rem; margin: 1.25rem 0; }
+  .panel-warn { border-left-color: var(--color-secondary); background: #fff3eb; }
+  .panel-ok { border-left-color: var(--color-success); background: #e9f6f3; }
+  .hidden { display: none; }
+  .muted { color: var(--color-grey); font-size: 0.9rem; }
+
+  .topbar { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+  .topbar h1 { flex: 1 1 auto; }
+  .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
+  .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+
+  /* role + status chips */
+  .role { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-primary-dark);
+    background: #fff; border: 1px solid var(--color-primary-light); border-radius: 3px; padding: 0 0.3em; }
+  .badge { display: inline-block; border-radius: 3px; padding: 0 0.45em; font-size: 0.72rem; line-height: 1.6;
+    border: 1px solid var(--color-lightgrey); background: var(--color-light); color: var(--color-dark); }
+  .badge.warn { border-color: var(--color-secondary); color: var(--color-secondary-dark); background: #fff3eb; }
+  .badge.ok { border-color: var(--color-success); color: var(--color-success); background: #fff; }
+
+  /* ---- overview table ---- */
+  table.repos { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  table.repos th { text-align: left; font-weight: 500; color: var(--color-grey); font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.03em; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-lightgrey); white-space: nowrap; }
+  table.repos td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--color-light); vertical-align: middle; }
+  table.repos tr:hover td { background: #fafaff; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.slug a { font-weight: 500; }
+  .strip { display: inline-flex; gap: 4px; }
+  .glyph { width: 12px; height: 12px; border-radius: 50%; display: inline-block; background: var(--color-lightgrey); }
+  .glyph.on { background: var(--color-success); }
+  .glyph.off { background: transparent; border: 1px solid var(--color-lightgrey); }
+  .glyph.warn { background: var(--color-secondary); }
+  .glyph.muted { background: transparent; border: 1px dashed var(--color-lightgrey); }
+  .spark { vertical-align: middle; }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.78rem; color: var(--color-grey); margin: 0.6rem 0 0; }
+  .legend .glyph { width: 10px; height: 10px; }
+  .legend span.item { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+  /* add-by-slug */
+  .addbox { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0 0; }
+  .addbox input { font-family: inherit; font-size: 0.9rem; padding: 0.4rem 0.6rem; border: 1px solid var(--color-lightgrey);
+    border-radius: 6px; min-width: 16rem; }
+
+  /* ---- drill-down ---- */
+  .crumb { font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 0.5rem 0 0; }
+  .metric { border: 1px solid var(--color-lightgrey); border-radius: 6px; padding: 0.8rem 0.95rem; }
+  .metric h3 { margin-bottom: 0.6rem; }
+  .bar-row { display: grid; grid-template-columns: 7.5rem 1fr 2rem; align-items: center; gap: 0.5rem; margin: 0.25rem 0; font-size: 0.82rem; }
+  .bar-row .label { color: var(--color-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { background: var(--color-light); border-radius: 3px; height: 12px; overflow: hidden; }
+  .bar-fill { background: var(--color-primary); height: 100%; }
+  .bar-row .v { text-align: right; color: var(--color-grey); font-variant-numeric: tabular-nums; }
+  .proportion { height: 14px; border-radius: 3px; overflow: hidden; display: flex; background: var(--color-success); }
+  .proportion .stale { background: var(--color-secondary); }
+
+  /* step checklist */
+  .steps { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+  .step { border: 1px solid var(--color-lightgrey); border-radius: 6px; padding: 0.85rem 1rem; margin: 0 0 0.7rem; }
+  .step-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .step-num { width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--color-light); border: 1px solid var(--color-lightgrey);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; color: var(--color-grey); flex: 0 0 auto; }
+  .step.done .step-num { background: var(--color-success); border-color: var(--color-success); color: #fff; }
+  .step.warn .step-num { background: var(--color-secondary); border-color: var(--color-secondary); color: #fff; }
+  .step-title { font-weight: 500; flex: 1 1 auto; }
+  .step-state { font-size: 0.8rem; }
+  .step-state.done { color: var(--color-success); }
+  .step-state.todo { color: var(--color-grey); }
+  .step-state.warn { color: var(--color-secondary-dark); }
+  .step-body { margin: 0.55rem 0 0 2.1rem; font-size: 0.88rem; }
+  .step-body .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0 0; }
+  .step-body p { margin: 0 0 0.5rem; }
+
+  /* admin tables */
+  table.list { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.4rem 0; }
+  table.list th { text-align: left; font-weight: 500; color: var(--color-grey); font-size: 0.74rem; text-transform: uppercase;
+    letter-spacing: 0.03em; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--color-lightgrey); }
+  table.list td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--color-light); }
+
+  dialog#out { border: 1px solid var(--color-lightgrey); border-radius: 8px; padding: 1.25rem 1.5rem; max-width: 680px; width: 92%; }
+  dialog#out::backdrop { background: rgba(0,0,0,0.35); }
+  dialog#out textarea { width: 100%; min-height: 16rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem;
+    border: 1px solid var(--color-lightgrey); border-radius: 6px; padding: 0.6rem; }
+
+  footer { margin-top: 2rem; color: var(--color-grey); font-size: 0.82rem; text-align: center; }
+  footer a { color: var(--color-grey); border-bottom-color: var(--color-lightgrey); }
+</style>
+</head>
+<body>
+
+<h2 class="brand">TeamBrain<span class="dot">·</span></h2>
+<p class="tagline">Shared project memory for FABRIC development</p>
+
+<main>
+
+  <div class="topbar">
+    <h1 id="title">Repositories</h1>
+    <span class="who mono" id="who">—</span>
+    <a class="btn btn-secondary" href="/dashboard">Dashboard</a>
+    <a class="btn btn-secondary" href="/">MCP setup</a>
+    <button type="button" class="btn btn-secondary" id="sign-out">Sign out</button>
+  </div>
+
+  <div id="load-error" class="panel panel-warn hidden"><p style="margin:0" id="load-error-msg">—</p></div>
+  <div id="loading" class="muted" style="margin-top:1rem">Loading…</div>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section id="overview" class="hidden">
+    <p class="muted" style="margin-top:0.5rem">
+      Every repo you can act on. Counts reflect only what your account can see (RLS).
+      Click a repo to see its full status and the step-by-step setup guide.
+    </p>
+
+    <h2 class="section">Your TeamBrain projects</h2>
+    <div id="projects-wrap">
+      <table class="repos" id="projects-table">
+        <thead>
+          <tr>
+            <th>Repository</th><th>Status</th><th class="num">Members</th>
+            <th class="num">Memories</th><th>Capture (16 wk)</th><th class="num">Last activity</th>
+          </tr>
+        </thead>
+        <tbody id="projects-body"></tbody>
+      </table>
+      <div id="projects-empty" class="muted hidden">You're not a member of any registered project yet.</div>
+      <div class="legend">
+        <span class="item"><span class="glyph on"></span> enabled</span>
+        <span class="item"><span class="glyph off"></span> not set up</span>
+        <span class="item"><span class="glyph warn"></span> needs attention</span>
+        <span class="item"><span class="glyph muted"></span> admin-only / unknown</span>
+        <span class="item">order: registered · members · memories · token · slack · staleness</span>
+      </div>
+    </div>
+
+    <h2 class="section">Discovered — repos you administer on GitHub</h2>
+    <p class="muted" id="discover-hint" style="margin-bottom:0.5rem">Looking for repos you can register…</p>
+    <table class="repos hidden" id="cand-table">
+      <thead><tr><th>Repository</th><th>Default branch</th><th></th></tr></thead>
+      <tbody id="cand-body"></tbody>
+    </table>
+
+    <h2 class="section">Add a repository</h2>
+    <p class="muted" style="margin-bottom:0.25rem">
+      Register any <code id="org-name">fabric-testbed</code> repo you administer. You must be a
+      GitHub repo admin; registration seeds you as the project admin and syncs the team.
+    </p>
+    <div class="addbox">
+      <input type="text" id="add-slug" placeholder="owner/repo" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button type="button" class="btn" id="add-btn">Register</button>
+      <span class="muted" id="add-msg"></span>
+    </div>
+  </section>
+
+  <!-- ================= DETAIL ================= -->
+  <section id="detail" class="hidden">
+    <div class="crumb"><a href="/repos">← All repositories</a></div>
+    <div class="topbar">
+      <h1 id="detail-slug" class="mono">—</h1>
+      <span class="role" id="detail-role"></span>
+      <span class="muted" id="detail-completeness"></span>
+    </div>
+    <div id="detail-error" class="panel panel-warn hidden"><p style="margin:0" id="detail-error-msg">—</p></div>
+
+    <h2 class="section">Setup guide</h2>
+    <ol class="steps" id="steps"></ol>
+
+    <h2 class="section">At a glance</h2>
+    <div class="metrics" id="metrics"></div>
+
+    <section id="admin-tables"></section>
+  </section>
+
+</main>
+
+<dialog id="out">
+  <h3 id="out-title">Output</h3>
+  <p class="muted" id="out-note"></p>
+  <div id="out-body"></div>
+  <div style="display:flex; gap:0.5rem; margin-top:0.9rem; flex-wrap:wrap">
+    <button type="button" class="btn btn-sm" id="out-copy">Copy</button>
+    <button type="button" class="btn btn-sm hidden" id="out-download">Download</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="out-close">Close</button>
+  </div>
+</dialog>
+
+<footer>
+  Self-hosted Supabase · <a href="https://github.com/fabric-testbed/TeamBrain" target="_blank" rel="noopener">source</a>
+</footer>
+
+<script>
+(() => {
+  // ANON_KEY is injected at container startup via nginx sub_filter (server-scoped,
+  // same as index.html / dashboard.html).
+  const ANON_KEY = '__TEAMBRAIN_ANON_KEY__';
+
+  const $ = id => document.getElementById(id);
+  const show = id => $(id).classList.remove('hidden');
+  const hide = id => $(id).classList.add('hidden');
+  const el = (tag, attrs = {}, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k === 'text') e.textContent = v;
+      else if (k === 'html') e.innerHTML = v;
+      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else if (v !== null && v !== undefined) e.setAttribute(k, v);
+    }
+    for (const kid of kids) if (kid != null) e.append(kid);
+    return e;
+  };
+
+  /* ---- auth gate (same plumbing as dashboard.html) ------------------- */
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  let accessToken  = params.get('access_token')  || sessionStorage.getItem('tb_access_token');
+  let refreshToken = params.get('refresh_token') || sessionStorage.getItem('tb_refresh_token');
+  if (!accessToken) { window.location.replace('/'); return; }
+  sessionStorage.setItem('tb_access_token', accessToken);
+  if (refreshToken) sessionStorage.setItem('tb_refresh_token', refreshToken);
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+
+  const decodeJwt = (jwt) => {
+    try {
+      const seg = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(seg.padEnd(seg.length + (4 - seg.length % 4) % 4, '=')));
+    } catch (e) { return {}; }
+  };
+  const claims = decodeJwt(accessToken);
+  const userId = claims.sub;
+  if (!userId) { signOut(); return; }
+  $('who').textContent = '@' + (claims.user_metadata?.user_name || claims.user_metadata?.preferred_username || '(unknown)');
+
+  function signOut() {
+    sessionStorage.removeItem('tb_access_token');
+    sessionStorage.removeItem('tb_refresh_token');
+    window.location.replace('/');
+  }
+  $('sign-out').addEventListener('click', signOut);
+
+  async function refreshSession() {
+    if (!refreshToken) return false;
+    const r = await fetch('/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!r.ok) return false;
+    const body = await r.json();
+    accessToken = body.access_token; refreshToken = body.refresh_token;
+    sessionStorage.setItem('tb_access_token', accessToken);
+    sessionStorage.setItem('tb_refresh_token', refreshToken);
+    return true;
+  }
+
+  // Returns {ok, status, data}. Never throws on HTTP status; refreshes once on 401.
+  async function req(path, opts = {}, retried = false) {
+    let r;
+    try {
+      r = await fetch(path, { ...opts, headers: {
+        'apikey': ANON_KEY, 'Authorization': `Bearer ${accessToken}`, ...(opts.headers || {}),
+      }});
+    } catch (e) { return { ok: false, status: 0, data: { error: String(e) } }; }
+    if (r.status === 401 && !retried) {
+      if (await refreshSession()) return req(path, opts, true);
+      signOut(); return { ok: false, status: 401, data: { error: 'session expired' } };
+    }
+    let data = null;
+    const text = await r.text().catch(() => '');
+    if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
+    return { ok: r.ok, status: r.status, data };
+  }
+  const jsonPost = (path, body) => req(path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
+  });
+  const errMsg = (res) => (res.data && (res.data.error || res.data.message || res.data.raw)) || `HTTP ${res.status}`;
+
+  /* ---- helpers ------------------------------------------------------- */
+  const FN = '/functions/v1';
+  const RPC = '/rest/v1/rpc';
+  const fmtNum = n => (n == null ? '—' : String(n));
+  const pad2 = n => String(n).padStart(2, '0');
+  const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+
+  function relTime(ts) {
+    if (!ts) return { text: 'never', title: '' };
+    const d = new Date(ts), now = Date.now(), s = Math.floor((now - d.getTime())/1000);
+    let text;
+    if (s < 60) text = 'just now';
+    else if (s < 3600) text = `${Math.floor(s/60)}m ago`;
+    else if (s < 86400) text = `${Math.floor(s/3600)}h ago`;
+    else if (s < 86400*30) text = `${Math.floor(s/86400)}d ago`;
+    else text = d.toLocaleDateString();
+    return { text, title: d.toLocaleString() };
+  }
+  const recentWithin = (ts, ms) => ts && (Date.now() - new Date(ts).getTime()) < ms;
+
+  function glyph(state, title) {
+    return el('span', { class: 'glyph ' + state, title });
+  }
+
+  // Inline sparkline SVG from an array of weekly counts.
+  function sparkline(values) {
+    const W = 92, H = 18, n = values.length;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('class', 'spark'); svg.setAttribute('role', 'img');
+    if (!n) return svg;
+    const max = Math.max(1, ...values);
+    const dx = n > 1 ? W / (n - 1) : 0;
+    const pts = values.map((v, i) => `${(i*dx).toFixed(1)},${(H - 1 - (v/max)*(H-2)).toFixed(1)}`);
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    poly.setAttribute('points', pts.join(' '));
+    poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', 'var(--color-primary)');
+    poly.setAttribute('stroke-width', '1.5');
+    poly.setAttribute('stroke-linejoin', 'round'); poly.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(poly);
+    const last = values[n-1];
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', ((n-1)*dx).toFixed(1));
+    dot.setAttribute('cy', (H - 1 - (last/max)*(H-2)).toFixed(1));
+    dot.setAttribute('r', '1.8'); dot.setAttribute('fill', 'var(--color-primary-dark)');
+    svg.appendChild(dot);
+    svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg','title'))
+      .textContent = `${values.reduce((a,b)=>a+b,0)} captures over ${n} weeks`;
+    return svg;
+  }
+
+  // Build a 16-week per-project weekly series from dashboard_activity rows.
+  function weeklyByProject(activity) {
+    const WEEKS = 16;
+    const now = new Date(); now.setHours(0,0,0,0);
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); // Sunday
+    const starts = [];
+    for (let i = WEEKS - 1; i >= 0; i--) { const d = new Date(weekStart); d.setDate(weekStart.getDate() - i*7); starts.push(d); }
+    const idxFor = (dayStr) => {
+      const [y,m,dd] = dayStr.split('-').map(Number); const d = new Date(y, m-1, dd);
+      const diffDays = Math.floor((d - starts[0]) / 86400000);
+      if (diffDays < 0) return -1;
+      const wi = Math.floor(diffDays / 7);
+      return wi >= 0 && wi < WEEKS ? wi : -1;
+    };
+    const byProj = new Map();
+    for (const r of activity) {
+      const key = r.project_id || 'personal';
+      if (!byProj.has(key)) byProj.set(key, new Array(WEEKS).fill(0));
+      const wi = idxFor(r.day);
+      if (wi >= 0) byProj.get(key)[wi] += Number(r.total_count) || 0;
+    }
+    return byProj;
+  }
+
+  /* ---- output dialog ------------------------------------------------- */
+  const dlg = $('out');
+  function openOut(title, note, bodyNode, copyText, downloadName) {
+    $('out-title').textContent = title;
+    $('out-note').textContent = note || '';
+    const b = $('out-body'); b.textContent = ''; b.appendChild(bodyNode);
+    const copyBtn = $('out-copy');
+    copyBtn.onclick = () => { navigator.clipboard.writeText(copyText || '').then(() => { copyBtn.textContent = '✓ copied'; setTimeout(()=>copyBtn.textContent='Copy', 1500); }); };
+    copyBtn.classList.toggle('hidden', !copyText);
+    const dl = $('out-download');
+    if (downloadName && copyText) {
+      dl.classList.remove('hidden');
+      dl.onclick = () => {
+        const blob = new Blob([copyText], { type: 'text/plain' });
+        const a = el('a', { href: URL.createObjectURL(blob), download: downloadName });
+        a.click(); URL.revokeObjectURL(a.href);
+      };
+    } else dl.classList.add('hidden');
+    dlg.showModal();
+  }
+  $('out-close').onclick = () => dlg.close();
+
+  /* ============================ OVERVIEW ============================ */
+  async function loadOverview() {
+    $('title').textContent = 'Repositories';
+    const [ov, act] = await Promise.all([
+      jsonPost(`${RPC}/repo_status_overview`, {}),
+      jsonPost(`${RPC}/dashboard_activity`, { p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }).catch(() => ({ ok: false, data: [] })),
+    ]);
+    if (!ov.ok) throw new Error('repo status: ' + errMsg(ov));
+    const rows = Array.isArray(ov.data) ? ov.data : [];
+    const weekly = weeklyByProject(Array.isArray(act.data) ? act.data : []);
+
+    hide('loading'); show('overview');
+    renderProjects(rows, weekly);
+    loadCandidates();   // async, fills in after
+  }
+
+  function statusStrip(r) {
+    const strip = el('span', { class: 'strip' });
+    // registered
+    strip.appendChild(glyph('on', 'Registered as a TeamBrain project'));
+    // members
+    const synced = (r.member_count || 0) > 0;
+    const syncFailed = r.last_sync_ok === false;
+    strip.appendChild(glyph(syncFailed ? 'warn' : (synced ? 'on' : 'off'),
+      syncFailed ? 'Last member sync failed' : (synced ? `${r.member_count} members synced` : 'No members synced')));
+    // memories
+    const mem = (r.memory_count || 0) > 0;
+    const stale = (r.stale_count || 0) > 0;
+    strip.appendChild(glyph(stale ? 'warn' : (mem ? 'on' : 'off'),
+      stale ? `${r.stale_count} of ${r.memory_count} memories flagged stale` : (mem ? `${r.memory_count} memories` : 'No memories yet')));
+    // token (admin-only)
+    strip.appendChild(r.token_count == null ? glyph('muted', 'API tokens — admin only')
+      : glyph(r.token_count > 0 ? 'on' : 'off', r.token_count > 0 ? `${r.token_count} active API token(s)` : 'No API token issued'));
+    // slack (admin-only)
+    strip.appendChild(r.slack_link_count == null ? glyph('muted', 'Slack links — admin only')
+      : glyph(r.slack_link_count > 0 ? 'on' : 'off', r.slack_link_count > 0 ? `${r.slack_link_count} Slack channel(s) linked` : 'No Slack channel linked'));
+    // staleness polling
+    const polled = recentWithin(r.staleness_last_polled_at, 2*3600*1000);
+    strip.appendChild(glyph(r.staleness_last_polled_at ? (polled ? 'on' : 'warn') : 'off',
+      r.staleness_last_polled_at ? `Staleness polled ${relTime(r.staleness_last_polled_at).text}` : 'Staleness not polled yet'));
+    return strip;
+  }
+
+  function renderProjects(rows, weekly) {
+    const body = $('projects-body'); body.textContent = '';
+    if (!rows.length) { show('projects-empty'); $('projects-table').classList.add('hidden'); return; }
+    for (const r of rows) {
+      const tr = el('tr');
+      const slugTd = el('td', { class: 'slug' },
+        el('a', { href: `/repos?slug=${encodeURIComponent(r.repo_slug)}`, class: 'plain', text: r.repo_slug }));
+      if (r.caller_role) slugTd.append(' ', el('span', { class: 'role', text: r.caller_role }));
+      tr.appendChild(slugTd);
+      tr.appendChild(el('td', {}, statusStrip(r)));
+      tr.appendChild(el('td', { class: 'num', text: fmtNum(r.member_count) }));
+      const memTd = el('td', { class: 'num' }, document.createTextNode(fmtNum(r.memory_count)));
+      if ((r.stale_count || 0) > 0) memTd.append(' ', el('span', { class: 'badge warn', text: `${r.stale_count} stale` }));
+      tr.appendChild(memTd);
+      tr.appendChild(el('td', {}, sparkline(weekly.get(r.project_id) || new Array(16).fill(0))));
+      const rt = relTime(r.last_capture_at);
+      tr.appendChild(el('td', { class: 'num muted', title: rt.title, text: rt.text }));
+      body.appendChild(tr);
+    }
+  }
+
+  async function loadCandidates() {
+    const res = await req(`${FN}/teambrain-console/discover`);
+    if (!res.ok) { $('discover-hint').textContent = 'Could not list GitHub repos: ' + errMsg(res); return; }
+    const cands = (res.data && res.data.candidates) || [];
+    if (res.data && res.data.org) $('org-name').textContent = res.data.org;
+    if (!cands.length) {
+      $('discover-hint').textContent = res.data && res.data.capped
+        ? 'No unregistered repos you administer in the first batch scanned. Use “Add a repository” below for a specific repo.'
+        : 'No unregistered repos you administer were found. Use “Add a repository” below for a specific repo.';
+      return;
+    }
+    $('discover-hint').textContent = 'Repos you administer that aren’t registered yet:';
+    const body = $('cand-body'); body.textContent = '';
+    for (const c of cands) {
+      const tr = el('tr');
+      tr.appendChild(el('td', { class: 'slug mono', text: c.slug }));
+      tr.appendChild(el('td', { class: 'muted', text: c.default_branch || '—' }));
+      const btn = el('button', { class: 'btn btn-sm', text: 'Register', onclick: () => registerRepo(c.slug, btn) });
+      tr.appendChild(el('td', {}, btn));
+      body.appendChild(tr);
+    }
+    show('cand-table');
+  }
+
+  async function registerRepo(slug, btn, msgEl) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Registering…'; }
+    const res = await jsonPost(`${FN}/teambrain-register-project/register`, { repo_slug: slug });
+    if (res.ok) {
+      if (msgEl) msgEl.textContent = '✓ registered';
+      window.location.href = `/repos?slug=${encodeURIComponent(slug)}`;
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = 'Register'; }
+      if (msgEl) msgEl.textContent = '✗ ' + errMsg(res);
+      else openOut('Registration failed', errMsg(res), el('p', { class: 'muted', text: 'Check that you are a GitHub admin on this repo and it belongs to the org.' }));
+    }
+  }
+
+  $('add-btn').addEventListener('click', () => {
+    const slug = $('add-slug').value.trim();
+    $('add-msg').textContent = '';
+    if (!/^[^/\s]+\/[^/\s]+$/.test(slug)) { $('add-msg').textContent = 'Enter owner/repo'; return; }
+    registerRepo(slug, $('add-btn'), $('add-msg'));
+  });
+
+  /* ============================ DETAIL ============================ */
+  async function loadDetail(slug) {
+    $('title').textContent = 'Repository';
+    $('detail-slug').textContent = slug;
+    const [detRes, repoRes] = await Promise.all([
+      jsonPost(`${RPC}/repo_status_detail`, { p_slug: slug }),
+      req(`${FN}/teambrain-console/repo?slug=${encodeURIComponent(slug)}`),
+    ]);
+    hide('loading'); show('detail');
+
+    if (!detRes.ok) { showDetailError('Could not load status: ' + errMsg(detRes)); return; }
+    const det = detRes.data;
+    if (!det) { showDetailError(`You are not a member of ${slug}, or it is not registered.`); return; }
+    const ghOk = repoRes.ok;
+    const gh = ghOk ? repoRes.data : { has_capture_workflow: null, has_agents_md: null, default_branch: null };
+    const isAdmin = !!(det.project && det.project.is_admin);
+
+    $('detail-role').textContent = (det.project && det.project.caller_role) || '';
+    renderSteps(slug, det, gh, ghOk, isAdmin);
+    renderMetrics(det);
+    if (isAdmin) loadAdminTables(slug);
+    else $('admin-tables').textContent = '';
+    updateCompleteness(det, gh);
+  }
+  function showDetailError(msg) { $('detail-error-msg').textContent = msg; show('detail-error'); }
+
+  function updateCompleteness(det, gh) {
+    const checks = [
+      true,                                                   // registered
+      (det.last_sync && det.last_sync.ok !== false) || false, // members
+      gh.has_agents_md === true,
+      gh.has_capture_workflow === true,
+    ];
+    const done = checks.filter(Boolean).length;
+    $('detail-completeness').textContent = `${done}/${checks.length} core steps done`;
+  }
+
+  function stepEl(num, title, state, stateLabel, bodyNodes) {
+    const li = el('li', { class: 'step ' + (state === 'done' ? 'done' : state === 'warn' ? 'warn' : '') });
+    const head = el('div', { class: 'step-head' },
+      el('span', { class: 'step-num', text: state === 'done' ? '✓' : String(num) }),
+      el('span', { class: 'step-title', text: title }),
+      el('span', { class: 'step-state ' + (state === 'done' ? 'done' : state === 'warn' ? 'warn' : 'todo'), text: stateLabel }));
+    li.appendChild(head);
+    if (bodyNodes && bodyNodes.length) {
+      const body = el('div', { class: 'step-body' });
+      for (const n of bodyNodes) if (n) body.appendChild(n);
+      li.appendChild(body);
+    }
+    return li;
+  }
+  const actionsRow = (...btns) => el('div', { class: 'actions' }, ...btns.filter(Boolean));
+
+  function renderSteps(slug, det, gh, ghOk, isAdmin) {
+    const steps = $('steps'); steps.textContent = '';
+    let n = 1;
+
+    // 1. Registered
+    steps.appendChild(stepEl(n++, 'Registered as a TeamBrain project', 'done', 'done',
+      [el('p', { class: 'muted', text: 'This repo is registered; members can read and write its memories.' })]));
+
+    // 2. Members synced
+    const sync = det.last_sync || {};
+    const memberState = sync.ok === false ? 'warn' : (sync.at ? 'done' : 'todo');
+    const memberLabel = sync.ok === false ? 'last sync failed' : (sync.at ? `synced ${relTime(sync.at).text}` : 'not synced');
+    steps.appendChild(stepEl(n++, 'Team members synced from GitHub', memberState, memberLabel, [
+      el('p', { class: 'muted', text: sync.error ? ('Last error: ' + sync.error) : 'Membership is reconciled from GitHub collaborators/teams on a schedule.' }),
+      isAdmin ? actionsRow(el('button', { class: 'btn btn-sm', text: 'Sync now', onclick: (e) => syncNow(slug, e.target) })) : null,
+    ]));
+
+    // 3. Connect AI tool (guided)
+    const mcpCmd = `claude mcp add --transport http teambrain ${location.origin}/functions/v1/teambrain-mcp \\\n  --header "Authorization: Bearer <your-jwt>"`;
+    steps.appendChild(stepEl(n++, 'Connect your AI tool (MCP / REST)', 'done', 'available', [
+      el('p', { class: 'muted', html: 'Each developer connects their own client. Grab a 24h JWT from the <a href="/" class="plain">landing page</a>, then:' }),
+      el('pre', { text: mcpCmd }),
+    ]));
+
+    // 4. AGENTS.md
+    const agState = gh.has_agents_md === true ? 'done' : (gh.has_agents_md === false ? 'todo' : 'todo');
+    const agLabel = !ghOk ? 'unknown' : (gh.has_agents_md ? 'present' : 'missing');
+    steps.appendChild(stepEl(n++, 'AGENTS.md committed to the repo', agState, agLabel, [
+      el('p', { class: 'muted', text: 'A per-repo orientation file for AI agents, generated from your project details.' }),
+      actionsRow(
+        el('button', { class: 'btn btn-sm btn-secondary', text: 'Generate AGENTS.md', onclick: () => generateAgents(slug) }),
+        isAdmin ? el('button', { class: 'btn btn-sm', text: gh.has_agents_md ? 'Open update PR' : 'Add via PR', onclick: (e) => setupPr(slug, ['agents_md'], e.target) }) : null,
+      ),
+    ]));
+
+    // 5. Capture-on-merge
+    const cmState = gh.has_capture_workflow === true ? 'done' : 'todo';
+    const cmLabel = !ghOk ? 'unknown' : (gh.has_capture_workflow ? 'installed' : 'not installed');
+    steps.appendChild(stepEl(n++, 'Capture-on-merge workflow', cmState, cmLabel, [
+      el('p', { class: 'muted', text: 'Merged PRs propose TeamBrain memories (human-approved). Needs the workflow file plus two repo secrets the GitHub App cannot set.' }),
+      isAdmin ? el('p', { class: 'muted', html: 'After the PR merges: <code>gh secret set TEAMBRAIN_TOKEN</code> (issue one below) and <code>gh variable set TEAMBRAIN_ANON_KEY</code> (from the landing page).' }) : null,
+      isAdmin ? actionsRow(
+        el('button', { class: 'btn btn-sm btn-secondary', text: 'Issue API token', onclick: (e) => issueToken(slug, e.target) }),
+        el('button', { class: 'btn btn-sm', text: gh.has_capture_workflow ? 'Re-open setup PR' : 'Open setup PR', onclick: (e) => setupPr(slug, ['workflow','agents_md'], e.target) }),
+      ) : el('p', { class: 'muted', text: 'A project admin can set this up.' }),
+    ]));
+
+    // 6. Slack (guided + manage)
+    steps.appendChild(stepEl(n++, 'Slack channel linked (optional)', 'todo', 'optional', [
+      el('p', { class: 'muted', html: 'In a Slack channel run <code>/tb link ' + slug + '</code> and follow the returned command. Linked channels appear below for admins.' }),
+    ]));
+
+    // 7. Staleness polling
+    const st = det.staleness || {};
+    const polled = recentWithin(st.last_polled_at, 2*3600*1000);
+    steps.appendChild(stepEl(n++, 'Staleness polling', st.last_polled_at ? (polled ? 'done' : 'warn') : 'todo',
+      st.last_polled_at ? `polled ${relTime(st.last_polled_at).text}` : 'not yet', [
+      el('p', { class: 'muted', text: 'Automatic in production: commits touching a memory’s pinned paths flag it for re-verification.' }),
+    ]));
+  }
+
+  function renderMetrics(det) {
+    const wrap = $('metrics'); wrap.textContent = '';
+
+    // memories by type — horizontal bars
+    const types = det.memories_by_type || {};
+    const typeEntries = Object.entries(types).sort((a,b) => b[1]-a[1]);
+    const typeMax = Math.max(1, ...typeEntries.map(e => e[1]));
+    const mType = el('div', { class: 'metric' }, el('h3', { text: 'Memories by type' }));
+    if (!typeEntries.length) mType.appendChild(el('p', { class: 'muted', text: 'No memories yet.' }));
+    for (const [k, v] of typeEntries) {
+      mType.appendChild(el('div', { class: 'bar-row' },
+        el('span', { class: 'label', text: k }),
+        el('div', { class: 'bar-track' }, el('div', { class: 'bar-fill', style: `width:${(v/typeMax*100).toFixed(0)}%` })),
+        el('span', { class: 'v', text: String(v) })));
+    }
+    wrap.appendChild(mType);
+
+    // members by role
+    const roles = det.members_by_role || {};
+    const mRole = el('div', { class: 'metric' }, el('h3', { text: 'Members by role' }));
+    const order = ['admin','contributor','reader'];
+    const total = order.reduce((a,r)=>a+(roles[r]||0),0);
+    for (const r of order) mRole.appendChild(el('div', { class: 'bar-row' },
+      el('span', { class: 'label', text: r }),
+      el('div', { class: 'bar-track' }, el('div', { class: 'bar-fill', style: `width:${total?((roles[r]||0)/total*100).toFixed(0):0}%` })),
+      el('span', { class: 'v', text: String(roles[r]||0) })));
+    wrap.appendChild(mRole);
+
+    // fresh vs stale
+    const fv = det.fresh_vs_stale || { total: 0, stale: 0 };
+    const mStale = el('div', { class: 'metric' }, el('h3', { text: 'Freshness' }));
+    if (!fv.total) mStale.appendChild(el('p', { class: 'muted', text: 'No memories yet.' }));
+    else {
+      const stalePct = (fv.stale / fv.total * 100);
+      const prop = el('div', { class: 'proportion' });
+      prop.appendChild(el('div', { class: 'stale', style: `width:${stalePct.toFixed(0)}%` }));
+      mStale.appendChild(prop);
+      mStale.appendChild(el('p', { class: 'muted', style: 'margin:0.5rem 0 0', text: `${fv.stale} of ${fv.total} flagged stale` }));
+    }
+    wrap.appendChild(mStale);
+
+    // capture cadence sparkline
+    const weeks = det.capture_weeks || [];
+    const mCad = el('div', { class: 'metric' }, el('h3', { text: 'Capture cadence (16 wk)' }));
+    const series = buildWeekSeries(weeks);
+    mCad.appendChild(sparkline(series));
+    mCad.appendChild(el('p', { class: 'muted', style: 'margin:0.5rem 0 0', text: `${series.reduce((a,b)=>a+b,0)} captures in the last 16 weeks` }));
+    wrap.appendChild(mCad);
+  }
+
+  // detail.capture_weeks is [{week:'YYYY-MM-DD', count}] (weekly buckets, recent ~16).
+  function buildWeekSeries(weeks) {
+    const WEEKS = 16;
+    const map = new Map(weeks.map(w => [w.week, Number(w.count)||0]));
+    const now = new Date(); now.setHours(0,0,0,0);
+    const monday = new Date(now); const dow = (now.getDay()+6)%7; monday.setDate(now.getDate()-dow); // pg date_trunc('week') = Monday
+    const out = [];
+    for (let i = WEEKS-1; i >= 0; i--) { const d = new Date(monday); d.setDate(monday.getDate()-i*7); out.push(map.get(dayKey(d)) || 0); }
+    return out;
+  }
+
+  async function loadAdminTables(slug) {
+    const wrap = $('admin-tables'); wrap.textContent = '';
+    wrap.appendChild(el('h2', { class: 'section', text: 'API tokens' }));
+    const tokWrap = el('div', { text: 'Loading…', class: 'muted' }); wrap.appendChild(tokWrap);
+    wrap.appendChild(el('h2', { class: 'section', text: 'Slack channels' }));
+    const slkWrap = el('div', { text: 'Loading…', class: 'muted' }); wrap.appendChild(slkWrap);
+
+    const [tok, slk] = await Promise.all([
+      req(`${FN}/teambrain-token/token?project=${encodeURIComponent(slug)}`),
+      req(`${FN}/teambrain-slack/links?project=${encodeURIComponent(slug)}`),
+    ]);
+    renderTokens(slug, tokWrap, tok);
+    renderSlack(slug, slkWrap, slk);
+  }
+
+  function renderTokens(slug, wrap, res) {
+    wrap.textContent = '';
+    if (!res.ok) { wrap.appendChild(el('p', { class: 'muted', text: 'Could not load tokens: ' + errMsg(res) })); return; }
+    const tokens = (res.data && res.data.tokens) || [];
+    wrap.appendChild(el('div', { class: 'actions' },
+      el('button', { class: 'btn btn-sm', text: 'Issue token', onclick: (e) => issueToken(slug, e.target) })));
+    if (!tokens.length) { wrap.appendChild(el('p', { class: 'muted', text: 'No tokens issued.' })); return; }
+    const table = el('table', { class: 'list' },
+      el('thead', {}, el('tr', {},
+        el('th', { text: 'Prefix' }), el('th', { text: 'Name' }), el('th', { text: 'Created' }),
+        el('th', { text: 'Last used' }), el('th', { text: 'Expires' }), el('th', { text: '' }))));
+    const tb = el('tbody');
+    for (const t of tokens) {
+      const revoked = !!t.revoked_at;
+      const tr = el('tr');
+      tr.appendChild(el('td', { class: 'mono', text: t.token_prefix }));
+      tr.appendChild(el('td', { text: t.name || '—' }));
+      tr.appendChild(el('td', { class: 'muted', text: relTime(t.created_at).text }));
+      tr.appendChild(el('td', { class: 'muted', text: relTime(t.last_used_at).text }));
+      tr.appendChild(el('td', { class: 'muted', text: t.expires_at ? new Date(t.expires_at).toLocaleDateString() : '—' }));
+      tr.appendChild(el('td', {}, revoked ? el('span', { class: 'badge', text: 'revoked' })
+        : el('button', { class: 'btn btn-sm btn-danger', text: 'Revoke', onclick: (e) => revokeToken(slug, t.id, e.target) })));
+      tb.appendChild(tr);
+    }
+    table.appendChild(tb); wrap.appendChild(table);
+  }
+
+  function renderSlack(slug, wrap, res) {
+    wrap.textContent = '';
+    if (!res.ok) { wrap.appendChild(el('p', { class: 'muted', text: 'Could not load Slack links: ' + errMsg(res) })); return; }
+    const links = (res.data && res.data.links) || [];
+    wrap.appendChild(el('p', { class: 'muted', html: 'Link a channel from Slack with <code>/tb link ' + slug + '</code>.' }));
+    if (!links.length) { wrap.appendChild(el('p', { class: 'muted', text: 'No channels linked.' })); return; }
+    const table = el('table', { class: 'list' },
+      el('thead', {}, el('tr', {},
+        el('th', { text: 'Workspace' }), el('th', { text: 'Channel' }), el('th', { text: 'Last used' }), el('th', { text: '' }))));
+    const tb = el('tbody');
+    for (const l of links) {
+      const tr = el('tr');
+      tr.appendChild(el('td', { text: l.slack_team_domain || l.slack_team_id }));
+      tr.appendChild(el('td', { text: l.slack_channel_name ? ('#' + l.slack_channel_name) : l.slack_channel_id }));
+      tr.appendChild(el('td', { class: 'muted', text: relTime(l.last_used_at).text }));
+      tr.appendChild(el('td', {}, el('button', { class: 'btn btn-sm btn-danger', text: 'Unlink', onclick: (e) => unlinkSlack(slug, l.id, e.target) })));
+      tb.appendChild(tr);
+    }
+    table.appendChild(tb); wrap.appendChild(table);
+  }
+
+  /* ---- detail actions ------------------------------------------------ */
+  async function syncNow(slug, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Syncing…';
+    const res = await jsonPost(`${FN}/teambrain-console/sync-now`, { slug });
+    btn.disabled = false; btn.textContent = orig;
+    if (res.ok) reloadDetail(slug); else openOut('Sync failed', errMsg(res), el('span'));
+  }
+  async function generateAgents(slug) {
+    const res = await jsonPost(`${FN}/teambrain-console/agents-md`, { slug });
+    if (!res.ok) { openOut('Generation failed', errMsg(res), el('span')); return; }
+    const ta = el('textarea', { readonly: 'readonly' }); ta.value = res.data.content;
+    openOut('AGENTS.md for ' + slug, 'Copy or download, commit to the repo root — or use “Add via PR”.', ta, res.data.content, 'AGENTS.md');
+  }
+  async function setupPr(slug, include, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Opening PR…';
+    const res = await jsonPost(`${FN}/teambrain-console/setup-pr`, { slug, include });
+    btn.disabled = false; btn.textContent = orig;
+    if (!res.ok) { openOut('Setup PR failed', errMsg(res), el('span')); return; }
+    const link = el('p', {}, document.createTextNode(res.data.already_existed ? 'A PR already existed: ' : 'PR opened: '),
+      el('a', { href: res.data.pr_url, target: '_blank', rel: 'noopener', text: res.data.pr_url }));
+    openOut('Setup PR', 'Review and merge it, then set the repo secrets if you enabled capture-on-merge.', link);
+  }
+  async function issueToken(slug, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Issuing…';
+    const res = await jsonPost(`${FN}/teambrain-token/token`, { project_slug: slug, name: 'capture-on-merge (dashboard)' });
+    btn.disabled = false; btn.textContent = orig;
+    if (!res.ok) { openOut('Token issue failed', errMsg(res), el('span')); return; }
+    const tok = res.data.token;
+    const box = el('div', {},
+      el('pre', { text: tok }),
+      el('p', { class: 'muted', html: 'Set it as a repo secret: <code>gh secret set TEAMBRAIN_TOKEN</code>' }));
+    openOut('API token (shown once)', 'Copy it now — it is not stored in plaintext and cannot be shown again.', box, tok);
+    if ($('detail').classList.contains('hidden') === false) loadAdminTables(slug);
+  }
+  async function revokeToken(slug, id, btn) {
+    btn.disabled = true;
+    const res = await jsonPost(`${FN}/teambrain-token/token/${encodeURIComponent(id)}/revoke`, {});
+    if (res.ok) loadAdminTables(slug); else { btn.disabled = false; openOut('Revoke failed', errMsg(res), el('span')); }
+  }
+  async function unlinkSlack(slug, id, btn) {
+    btn.disabled = true;
+    const res = await req(`${FN}/teambrain-slack/links/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res.ok) loadAdminTables(slug); else { btn.disabled = false; openOut('Unlink failed', errMsg(res), el('span')); }
+  }
+  function reloadDetail(slug) { loadDetail(slug).catch(e => showDetailError(String(e))); }
+
+  /* ---- boot ---------------------------------------------------------- */
+  const slug = new URLSearchParams(location.search).get('slug');
+  const boot = slug ? loadDetail(slug) : loadOverview();
+  boot.catch((e) => {
+    hide('loading');
+    $('load-error-msg').textContent = 'Could not load: ' + e.message;
+    show('load-error');
+    console.error(e);
+  });
+})();
+</script>
+
+</body>
+</html>
