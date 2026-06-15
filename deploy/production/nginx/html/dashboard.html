@@ -131,6 +131,7 @@
   .topbar h1 { margin: 0; flex: 1 1 auto; }
   .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
   .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.88rem; }
+  .topbar .btn[aria-current="page"] { background: var(--color-primary-dark); color: #fff; cursor: default; }
 
   /* ---- controls ----------------------------------------------------- */
   .controls {
@@ -351,9 +352,10 @@
   <div class="topbar">
     <h1>Your activity</h1>
     <span class="who mono" id="who">—</span>
+    <a class="btn btn-secondary" href="/">Home</a>
+    <a class="btn btn-secondary" href="/dashboard" aria-current="page">Dashboard</a>
     <a class="btn btn-secondary" href="/repos">Repositories</a>
     <a class="btn btn-secondary" href="/help">Help</a>
-    <a class="btn btn-secondary" href="/">MCP setup</a>
     <button type="button" class="btn btn-secondary" id="sign-out">Sign out</button>
   </div>
   <p class="muted" style="margin:0">

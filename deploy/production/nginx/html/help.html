@@ -139,6 +139,7 @@
   .topbar h1 { margin: 0; flex: 1 1 auto; }
   .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
   .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+  .topbar .btn[aria-current="page"] { background: var(--color-primary-dark); color: #fff; cursor: default; }
 
   /* ---- segmented control (connect tabs) ----------------------------- */
   .seg {
@@ -241,6 +242,7 @@
     <a class="btn btn-secondary" href="/">Home</a>
     <a class="btn btn-secondary" href="/dashboard">Dashboard</a>
     <a class="btn btn-secondary" href="/repos">Repositories</a>
+    <a class="btn btn-secondary" href="/help" aria-current="page">Help</a>
     <a class="btn btn-secondary hidden" id="sign-in" href="/auth/v1/authorize?provider=github">Sign in</a>
     <button type="button" class="btn btn-secondary hidden" id="sign-out">Sign out</button>
   </div>
