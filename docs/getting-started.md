@@ -15,7 +15,10 @@ be capturing and searching team context in about five minutes.
 > mostly one-click flow: it lists every repo you can act on, shows what's already
 > set up per repo, and can register a repo, sync members, issue API tokens,
 > generate an `AGENTS.md`, and open a setup PR for the capture-on-merge workflow.
-> The per-developer MCP/REST connection in § 3 is still a copy-paste step.
+> The per-developer MCP/REST connection in § 3 is still a copy-paste step — and a
+> condensed, in-app version of this guide lives at
+> **<https://pr.fabric-testbed.net/help>**, with the `claude mcp add` command
+> pre-filled with your token when you're signed in.
 
 ---
 
@@ -174,11 +177,21 @@ Install per client (and the Cursor template, marked untested) is in
 [`examples/slash-commands/README.md`](../examples/slash-commands/README.md). They wrap the
 same tools you already have over MCP — connect the server first (§ 3 above).
 
-### Slack — *coming soon*
+### Slack — *shipped (Phase 5 § B)*
 
-- ☐ **Slack capture bot** (one channel → one project) — Phase 5 § B, not yet shipped.
+Capture and recall from Slack with a `/tb` slash command — no AI tool required. A
+project **admin links a channel to a project first** (one channel ↔ one project);
+after that, anyone in the channel can use it:
 
-This section will gain copy-paste Slack setup when it lands.
+- `/tb remember <text>` — capture (project scope, visible to the team)
+- `/tb recall <query>` — semantic search (only you see the reply)
+- `/tb recent [n]` — last n memories (default 5, max 15)
+- `/tb status` — which project this channel is linked to
+- `/tb link <owner/repo>` — recipe to link this channel (project admins)
+- `/tb help` — all subcommands (also bare `/tb`)
+
+Not linked yet? An admin runs `/tb link <owner/repo>` in the channel for the
+one-time recipe.
 
 ---
 
