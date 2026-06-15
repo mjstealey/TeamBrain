@@ -439,10 +439,26 @@ curl -sS -X POST \
       <tr><td><code>/tb help</code></td><td>Show all subcommands (also the bare <code>/tb</code>).</td></tr>
     </tbody>
   </table>
+  <h3 class="sub">Linking a channel (one-time, project admin)</h3>
+  <ol style="margin:0.25rem 0 0.75rem; padding-left:1.2rem">
+    <li>In the target channel, run <code>/tb link fabric-testbed/your-repo</code> — it replies (only to you) with a <code>curl</code> pre-filled with that channel's IDs.</li>
+    <li>Grab your JWT from <a href="/">Home</a>, then run the curl (it POSTs to <code>…/teambrain-slack/links</code>). You must be a TeamBrain <strong>admin</strong> of the project.</li>
+    <li><code>/tb status</code> confirms the link. Unlink later with <code>DELETE …/teambrain-slack/links/{id}</code> (also admin-gated). Check your role on <a href="/repos">Repositories</a>.</li>
+  </ol>
+  <div class="panel panel-warn">
+    <p style="margin:0">
+      Linking makes <strong>Slack channel membership the read/write ACL</strong> for
+      that project's <code>project</code>-scope memories — anyone who can type in the
+      channel can capture and recall as the project bot. Don't link a channel whose
+      membership is wider than the project team.
+    </p>
+  </div>
   <p class="muted" style="margin:0">
-    Not linked yet? A project admin runs <code>/tb link &lt;owner/repo&gt;</code> in
-    the channel for the one-time recipe. Linking is scoped to admins of that project;
-    see <a href="/repos">Repositories</a> to confirm your role.
+    Creating the Slack app itself (workspace admin, one-time) is covered by
+    <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/examples/slack/README.md" target="_blank" rel="noopener">examples/slack/README.md</a>.
+    After the <code>/tb</code> command is added, the app must be <strong>reinstalled to
+    the workspace</strong> — Slack only registers a slash command on (re)install, so
+    until then <code>/tb</code> returns "not a valid command."
   </p>
 
   <!-- =========================== SLUG ============================== -->

@@ -190,8 +190,23 @@ after that, anyone in the channel can use it:
 - `/tb link <owner/repo>` — recipe to link this channel (project admins)
 - `/tb help` — all subcommands (also bare `/tb`)
 
-Not linked yet? An admin runs `/tb link <owner/repo>` in the channel for the
-one-time recipe.
+**Linking a channel (one-time, project admin).** In the target channel, run
+`/tb link <owner/repo>` — it replies (visible only to you) with a `curl`
+pre-filled with that channel's IDs. Sign in at <https://pr.fabric-testbed.net/>
+for a JWT, then run the curl (it POSTs to `…/teambrain-slack/links`); you must be
+a TeamBrain **admin** of the project. `/tb status` then confirms the link. Unlink
+later with `DELETE …/teambrain-slack/links/{id}` (also admin-gated).
+
+> **Linking makes Slack channel membership the read/write ACL** for that
+> project's `project`-scope memories — anyone who can type in the channel can
+> capture and recall as the project bot. Don't link a channel whose membership is
+> wider than the project team.
+
+Creating the Slack app itself (workspace admin, one-time) is covered by
+[`examples/slack/manifest.yml`](../examples/slack/manifest.yml) and
+[its README](../examples/slack/README.md). One gotcha: after the `/tb` command is
+added, the app must be **reinstalled to the workspace** — Slack only registers a
+slash command on (re)install, so until then `/tb` returns "not a valid command."
 
 ---
 
