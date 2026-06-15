@@ -2,7 +2,7 @@
 
 Concrete, ordered tasks for Phase 5 — **capture integrations**: a long-lived non-interactive **API token** (the gating prerequisite, § A), a **Slack bot** (channel → `project_id`, § B), a **GitHub Action** that summarizes a merged PR behind a human-approval gate (§ C), and **slash commands** for Claude Code / Cursor (§ D). Each item has an explicit **Done when** acceptance criterion.
 
-Section A is detailed because it is the gate: the runnable GitHub Action (§ C) cannot land until A is green. Sections B and D had **no dependency on A**; § D shipped 2026-06-09 and § B was built 2026-06-11 (live smoke pending the Michael-driven Slack-app steps, B5/B6).
+Section A is detailed because it is the gate: the runnable GitHub Action (§ C) cannot land until A is green. Sections B and D had **no dependency on A**; § D shipped 2026-06-09 and § B shipped 2026-06-15 (built 2026-06-11; live smoke B5/B6 verified on production). **Phase 5 is complete.**
 
 Phase 5 entry preconditions (from `docs/phase-4-checklist.md` § I and the current state of `main`):
 
@@ -102,7 +102,7 @@ Read `teambrain_token` / `teambrain_allowed_tools` from the JWT; when present, r
 
 ---
 
-## B — Slack surface: `/tb` slash command (channel → `project_id`) — *built 2026-06-11; live smoke pending the Slack app (B5/B6, Michael-driven)*
+## B — Slack surface: `/tb` slash command (channel → `project_id`) — *built 2026-06-11; **SHIPPED 2026-06-15** — live smoke B5/B6 verified on production*
 
 A `/tb` slash command (`remember` / `recall` / `recent` / `status` / `link` / `help`) over the existing backend. The channel the command is typed in resolves the project via a new `slack_channels` mapping table — the "channel → `project_id`" requirement. Adoption kit: `examples/slack/README.md` (+ app manifest); server deploy: `deploy/production/README.md` § 11c.
 
@@ -139,20 +139,20 @@ Routes: `POST /slack/command` (signature-verified slash receiver), `POST /links`
 
 OpenAPI: `slack` tag + `/teambrain-slack/links*` paths + schemas (`openapi-spec-validator` → OK ✅); webhook deliberately excluded from the contract (not bearer-authenticated; noted in the tag description). `examples/curl.md` § 10 (link management). `examples/slack/README.md` + `manifest.yml` (app from manifest: one command, one `commands` scope).
 
-**Done when:** spec validates ✅; the curl recipes run against production (pending B5).
+**Done when:** ✅ spec validates; the curl recipes run against production (B5 done 2026-06-15).
 
-### B5. Slack app + server config — *Michael-driven*
+### B5. Slack app + server config — *Michael-driven; done 2026-06-15*
 
 - Create the app from `examples/slack/manifest.yml` in the FABRIC Slack workspace; install; copy the **signing secret**.
 - On the VM per § 11c: apply `0023`, set `SLACK_SIGNING_SECRET` in `.env`, `cp` the override (copy-not-symlink), `git pull` (nginx template is bind-mounted from the checkout), recreate `functions` + `nginx`, rsync the function.
 
-**Done when:** § 11c smoke green on production.
+**Done when:** ✅ **DONE 2026-06-15** — § 11c smoke green on production (`/health` → `slack_command_enabled: true`, unsigned POST → 401, synthetic signed `/tb help` → 200).
 
-### B6. End-to-end smoke in Slack
+### B6. End-to-end smoke in Slack — *done 2026-06-15*
 
 Link a channel to `fabric-testbed/TeamBrain` (dogfood) via the `/tb link` → curl flow, then in-channel: `/tb status` → linked; `/tb remember <real gotcha>` → in-channel confirmation, retrievable via MCP `search_project_thoughts`; `/tb recall` → ephemeral ranked hits; `/tb recent` → listing; an unlinked channel → the not-linked guidance; after `DELETE /links/:id` → commands refuse again.
 
-**Done when:** all of the above observed in the workspace; capture's `tags` carry `slack` + `slack-user:` + `slack-channel:`; the thought's author is the project bot.
+**Done when:** ✅ **DONE 2026-06-15** — `#teambrain` linked to `fabric-testbed/TeamBrain`; `/tb remember` from Slack landed thought `9e833759` (tags carry `slack` + `slack-user:stealey` + `slack-channel:teambrain`; author = project bot), retrieved via MCP `search_project_thoughts` at 0.81 similarity. (Gotcha: a slash command only registers on app **(re)install** — the first `/tb` returned "not a valid command" until the FABRIC workspace reinstalled the app.)
 
 ### B‑F. Follow-ups (deliberately not v1)
 
@@ -160,7 +160,7 @@ Link a channel to `fabric-testbed/TeamBrain` (dogfood) via the `/tb link` → cu
 - **B‑F2.** Search-first dedup confirmation for `/tb remember` (needs Slack interactivity/buttons).
 - **B‑F3.** Slack↔GitHub identity linking (would enable in-Slack linking and per-human attribution).
 
-**§ B done when:** B5 + B6 are green on production and the docs trigger fires — § B + § D shipped together open the "connect & capture from every surface" reference (`docs/documentation-plan.md` § 3).
+**§ B done when:** ✅ **MET 2026-06-15** — B5 + B6 green on production. § B + § D are both shipped, opening the "connect & capture from every surface" reference (`docs/documentation-plan.md` § 3).
 
 ---
 
@@ -227,7 +227,7 @@ Open → merge a small real PR in the dogfood repo. The `propose` job posts 0–
 
 **Done when:** ✅ `main` on both remotes has it all — commits `b8fac12` (§ C build), `faea62c` (gateway), `95c16b2` (issue gate), `1f9e266` (workflow in `.github/workflows/`); production has `teambrain-summarize` deployed and the dogfood repo wired; § C6 green.
 
-**§ C done when:** ✅ **MET 2026-05-30** — a merged PR in `fabric-testbed/TeamBrain` produced LLM-proposed captures that, after human approval, landed in TeamBrain and are retrievable. **The Phase 6 readiness gate is now open.** Remaining in Phase 5: § B (Slack bot) and § D (slash commands).
+**§ C done when:** ✅ **MET 2026-05-30** — a merged PR in `fabric-testbed/TeamBrain` produced LLM-proposed captures that, after human approval, landed in TeamBrain and are retrievable. **The Phase 6 readiness gate is now open.** Remaining in Phase 5 at the time: § B (Slack bot) and § D (slash commands) — **both now shipped (§ D 2026-06-09, § B 2026-06-15); Phase 5 complete.**
 
 ---
 
