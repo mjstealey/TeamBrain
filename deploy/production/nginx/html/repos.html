@@ -700,11 +700,14 @@
       ) : el('p', { class: 'muted', text: 'A project admin can set this up.' }),
     ]));
 
-    // 6. Slack (guided + manage) — linked-state is admin-detectable via /links.
+    // 6. Slack (guided + manage). Admins get the exact count (from /links);
+    // every member sees link presence via det.slack_linked (migration 0025).
+    // Falls back to null (→ "optional") if the RPC predates 0025.
     const slackCount = slackLinks ? slackLinks.length : null;
-    const slackState = slackCount > 0 ? 'done' : 'todo';
-    const slackLabel = slackCount == null ? 'optional'
-      : (slackCount > 0 ? (slackCount === 1 ? 'linked' : slackCount + ' linked') : 'optional');
+    const slackLinked = slackCount != null ? (slackCount > 0)
+      : (typeof det.slack_linked === 'boolean' ? det.slack_linked : null);
+    const slackState = slackLinked ? 'done' : 'todo';
+    const slackLabel = slackLinked ? (slackCount > 1 ? slackCount + ' linked' : 'linked') : 'optional';
     steps.appendChild(stepEl(n++, 'Slack channel linked (optional)', slackState, slackLabel, [
       el('p', { class: 'muted', html: 'In a Slack channel run <code>/tb link ' + slug + '</code> and follow the returned command. Linked channels appear below for admins.' }),
     ]));
