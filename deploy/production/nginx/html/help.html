@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How-to · TeamBrain · FABRIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  /* Token block + component classes copied from dashboard.html / index.html
+     for theme parity (same palette, type scale, .btn/.panel/.seg/.badge). */
+  :root {
+    --color-primary: #47aae1;
+    --color-primary-dark: #077ab1;
+    --color-primary-light: #cde4ef;
+    --color-secondary: #ff8542;
+    --color-secondary-dark: #d24502;
+    --color-dark: #534f50;
+    --color-grey: #667;
+    --color-lightgrey: #e3e3e9;
+    --color-light: #f3f3f9;
+    --color-success: #008e7a;
+    --color-danger: #a33;
+    --text: rgba(0, 0, 0, 0.85);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+    color: var(--text);
+    background: var(--color-light);
+    line-height: 1.8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 1.25rem;
+  }
+  .brand {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--color-primary-dark);
+    font-size: 1.75rem;
+    margin: 0 0 0.25rem;
+  }
+  .brand .dot { color: var(--color-secondary); }
+  .tagline { color: var(--color-grey); font-size: 0.95rem; margin: 0 0 2rem; }
+  main {
+    width: 100%;
+    max-width: 980px;
+    background: #fff;
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 8px;
+    padding: 2rem 2.25rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  h1 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 1.4rem;
+    margin: 0 0 1rem;
+    color: var(--color-dark);
+  }
+  h2.section {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 1.05rem;
+    margin: 2rem 0 0.75rem;
+    color: var(--color-dark);
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--color-light);
+  }
+  h3.sub {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 0.92rem;
+    color: var(--color-primary-dark);
+    margin: 1rem 0 0.4rem;
+  }
+  p { margin: 0 0 1rem; }
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--color-light);
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+  a { color: var(--color-primary-dark); text-decoration: none; border-bottom: 1px solid var(--color-primary-light); }
+  a:hover { color: var(--color-primary); }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.1rem;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .btn:hover { background: var(--color-primary-dark); color: #fff; }
+  .btn:focus-visible { outline: 2px solid var(--color-secondary); outline-offset: 2px; }
+  .btn svg { fill: currentColor; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--color-primary-dark);
+    border: 1px solid var(--color-primary-dark);
+  }
+  .btn-secondary:hover { background: var(--color-primary-dark); color: #fff; }
+  .btn-sm { padding: 0.25rem 0.7rem; font-size: 0.82rem; }
+  .panel {
+    background: var(--color-primary-light);
+    border-left: 3px solid var(--color-primary);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    margin: 1.25rem 0;
+  }
+  .panel-warn { border-left-color: var(--color-secondary); background: #fff3eb; }
+  .panel p:last-child { margin-bottom: 0; }
+  .hidden { display: none; }
+  .muted { color: var(--color-grey); font-size: 0.9rem; }
+
+  /* ---- topbar (matches /dashboard, /repos) -------------------------- */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+  }
+  .topbar h1 { margin: 0; flex: 1 1 auto; }
+  .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
+  .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+
+  /* ---- segmented control (connect tabs) ----------------------------- */
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--color-primary-dark);
+    border-radius: 6px;
+    overflow: hidden;
+    flex-wrap: wrap;
+  }
+  .seg button {
+    font-family: inherit;
+    font-size: 0.88rem;
+    padding: 0.35rem 0.9rem;
+    border: none;
+    background: transparent;
+    color: var(--color-primary-dark);
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--color-primary-dark); color: #fff; }
+
+  /* ---- code blocks + copy row --------------------------------------- */
+  .code {
+    margin: 0.5rem 0 0.25rem;
+    padding: 0.75rem 0.9rem;
+    background: var(--color-light);
+    border: 1px solid var(--color-lightgrey);
+    border-radius: 4px;
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    color: var(--color-dark);
+  }
+  .copy-row { margin: 0 0 1rem; display: flex; align-items: center; gap: 0.75rem; }
+  .copy-row .status { color: var(--color-success); font-size: 0.85rem; }
+
+  /* ---- reference tables --------------------------------------------- */
+  table.ref {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0 1rem;
+    font-size: 0.9rem;
+  }
+  table.ref th, table.ref td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--color-lightgrey);
+  }
+  table.ref th {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    font-size: 0.82rem;
+    color: var(--color-grey);
+    border-bottom: 2px solid var(--color-lightgrey);
+  }
+  table.ref td code { white-space: nowrap; }
+  table.ref tr:last-child td { border-bottom: none; }
+
+  /* ---- badges (status tags) ----------------------------------------- */
+  .badge {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 0.45em;
+    font-size: 0.74rem;
+    line-height: 1.6;
+    border: 1px solid var(--color-lightgrey);
+    background: var(--color-light);
+    color: var(--color-dark);
+  }
+  .badge.live  { border-color: var(--color-success); color: var(--color-success); background: #fff; }
+  .badge.admin { border-color: var(--color-secondary); color: var(--color-secondary-dark); background: #fff3eb; }
+
+  ul.slugs { margin: 0.25rem 0 1rem; padding-left: 1.2rem; }
+  ul.slugs li { margin: 0.1rem 0; }
+  ul.links { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+  ul.links li { margin: 0.25rem 0; }
+
+  footer {
+    margin-top: 2rem;
+    color: var(--color-grey);
+    font-size: 0.82rem;
+    text-align: center;
+  }
+  footer a { color: var(--color-grey); border-bottom-color: var(--color-lightgrey); }
+</style>
+</head>
+<body>
+
+<h2 class="brand">TeamBrain<span class="dot">·</span></h2>
+<p class="tagline">Shared project memory for FABRIC development</p>
+
+<main>
+
+  <div class="topbar">
+    <h1>How to use TeamBrain</h1>
+    <span class="who mono" id="who"></span>
+    <a class="btn btn-secondary" href="/">Home</a>
+    <a class="btn btn-secondary" href="/dashboard">Dashboard</a>
+    <a class="btn btn-secondary" href="/repos">Repositories</a>
+    <a class="btn btn-secondary hidden" id="sign-in" href="/auth/v1/authorize?provider=github">Sign in</a>
+    <button type="button" class="btn btn-secondary hidden" id="sign-out">Sign out</button>
+  </div>
+  <p class="muted" style="margin:0">
+    Everything a developer needs to <em>use</em> TeamBrain day to day — connect
+    your AI tool, the slash commands, the Slack bot — with snippets pre-filled
+    for you when you're signed in. For per-repo setup (register, capture-on-merge),
+    see <a href="/repos">Repositories</a>.
+  </p>
+
+  <div id="signin-callout" class="panel hidden">
+    <p style="margin:0">
+      <strong>You're not signed in.</strong> The connect commands below show a
+      <code>&lt;your-jwt&gt;</code> placeholder. <a href="/auth/v1/authorize?provider=github">Sign
+      in with GitHub</a> to get a 24-hour token — it'll auto-fill here and on
+      <a href="/">Home</a>.
+    </p>
+  </div>
+
+  <!-- ============================ CONNECT ============================ -->
+  <h2 class="section">Connect your AI tool</h2>
+  <p>
+    TeamBrain is a <strong>remote HTTP MCP server</strong> — no local install, no
+    stdio. The endpoint is the same for everyone; the only per-developer value is
+    your bearer JWT. Pick your client:
+  </p>
+
+  <div class="seg" role="group" aria-label="Client" id="connect-tabs">
+    <button type="button" data-tab="claude" aria-pressed="true">Claude Code</button>
+    <button type="button" data-tab="codex"  aria-pressed="false">Codex</button>
+    <button type="button" data-tab="cursor" aria-pressed="false">Cursor / others</button>
+    <button type="button" data-tab="rest"   aria-pressed="false">REST (no MCP)</button>
+  </div>
+
+  <!-- Claude Code -->
+  <div class="tabpanel" data-panel="claude">
+    <p class="muted" style="margin:0.75rem 0 0.25rem">
+      Run on your laptop, then restart Claude Code. The server is named
+      <code>teambrain</code>; the first line clears any prior entry so it's
+      safe to re-run. Verify with <code>/mcp</code> inside Claude Code.
+    </p>
+    <div class="code mono" id="mcp-cmd-box"></div>
+    <div class="copy-row">
+      <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="mcp-cmd-box">Copy</button>
+      <span class="status" data-status-for="mcp-cmd-box"></span>
+    </div>
+    <p class="muted" style="margin:0">
+      Sharing with the team without leaking your token: commit a project
+      <code>.mcp.json</code> that references <code>${TEAMBRAIN_JWT}</code> instead
+      of a raw token — see
+      <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/docs/getting-started.md#claude-code-remote-mcp-over-http" target="_blank" rel="noopener">getting-started § 3</a>.
+    </p>
+  </div>
+
+  <!-- Codex -->
+  <div class="tabpanel hidden" data-panel="codex">
+    <p class="muted" style="margin:0.75rem 0 0.25rem">
+      Codex registers remote MCP servers in <code>~/.codex/config.toml</code> (or a
+      project-scoped <code>.codex/config.toml</code>). The token is sourced from an
+      environment variable <em>by name</em> — never the value itself:
+    </p>
+    <pre class="code" id="codex-toml"># ~/.codex/config.toml
+[mcp_servers.teambrain]
+url = "https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp"
+bearer_token_env_var = "TEAMBRAIN_JWT"</pre>
+    <div class="copy-row">
+      <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="codex-toml">Copy</button>
+      <span class="status" data-status-for="codex-toml"></span>
+    </div>
+    <p class="muted" style="margin:0">Then export your JWT before launching Codex (re-export when the 24h token expires):</p>
+    <pre class="code" id="codex-export">export TEAMBRAIN_JWT='<your-jwt>'
+codex</pre>
+    <div class="copy-row">
+      <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="codex-export">Copy</button>
+      <span class="status" data-status-for="codex-export"></span>
+    </div>
+  </div>
+
+  <!-- Cursor / others -->
+  <div class="tabpanel hidden" data-panel="cursor">
+    <p class="muted" style="margin:0.75rem 0 0.25rem">
+      Cursor (and most MCP clients — gemini-cli, Copilot/VS&nbsp;Code) take a remote
+      streamable-HTTP server with a bearer header. In Cursor, add it to
+      <code>~/.cursor/mcp.json</code> (global) or <code>.cursor/mcp.json</code>
+      (project); prefer the env-var reference over a committed raw token:
+    </p>
+    <pre class="code" id="cursor-json">{
+  "mcpServers": {
+    "teambrain": {
+      "url": "https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp",
+      "headers": { "Authorization": "Bearer ${TEAMBRAIN_JWT}" }
+    }
+  }
+}</pre>
+    <div class="copy-row">
+      <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="cursor-json">Copy</button>
+      <span class="status" data-status-for="cursor-json"></span>
+    </div>
+    <p class="muted" style="margin:0">
+      For any client the two values you need are always the <strong>URL</strong>
+      and the <strong>Authorization: Bearer &lt;JWT&gt;</strong> header. Per-client
+      config shapes (gemini-cli, Copilot) are in
+      <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/docs/getting-started.md#3-connect-your-ai-tool" target="_blank" rel="noopener">getting-started § 3</a>.
+    </p>
+  </div>
+
+  <!-- REST -->
+  <div class="tabpanel hidden" data-panel="rest">
+    <p class="muted" style="margin:0.75rem 0 0.25rem">
+      Non-MCP clients (ChatGPT function calling, GitHub Actions, custom agents) use
+      the parallel REST surface against the same backend, described by the
+      <a href="/openapi.yaml" target="_blank" rel="noopener">OpenAPI&nbsp;spec</a>:
+    </p>
+    <pre class="code" id="rest-curl">export TEAMBRAIN_JWT='<your-jwt>'
+curl -sS -X POST \
+  https://pr.fabric-testbed.net/functions/v1/teambrain-rest/thoughts/search \
+  -H "Authorization: Bearer $TEAMBRAIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"how do we handle timestamps?","project_slug":"fabric-testbed/TeamBrain","limit":5}'</pre>
+    <div class="copy-row">
+      <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="rest-curl">Copy</button>
+      <span class="status" data-status-for="rest-curl"></span>
+    </div>
+    <p class="muted" style="margin:0">
+      Every endpoint as copy-paste curl:
+      <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/examples/curl.md" target="_blank" rel="noopener">examples/curl.md</a>.
+      For automation that can't log in interactively, issue a non-interactive
+      <code>tbk_</code> API token from <a href="/repos">Repositories</a>.
+    </p>
+  </div>
+
+  <div class="panel">
+    <p style="margin:0">
+      These use your <strong>24-hour JWT</strong>.
+      <span id="jwt-state-note">Grab or renew it on <a href="/">Home</a>, then paste it where you see <code>&lt;your-jwt&gt;</code>.</span>
+    </p>
+  </div>
+
+  <!-- ========================= SLASH COMMANDS ======================== -->
+  <h2 class="section">Slash commands</h2>
+  <p>
+    Optional one-keystroke shortcuts over the connected MCP server — they add no
+    new transport and carry no credentials. Connect the server (above) first.
+  </p>
+  <table class="ref">
+    <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>/tb-remember &lt;text&gt;</code></td><td>Capture a memory. Searches first to avoid duplicates, infers the type.</td></tr>
+      <tr><td><code>/tb-recall &lt;query&gt;</code></td><td>Semantic search — the "did we already settle this?" check before re-deciding.</td></tr>
+      <tr><td><code>/tb-recent [N]</code></td><td>List the newest memories for this project (default 20).</td></tr>
+    </tbody>
+  </table>
+  <p class="muted" style="margin:0 0 0.5rem">
+    <strong>Claude Code</strong>: committed at <code>.claude/commands/</code> —
+    auto-discovered, no install. Copy that folder into any repo to reuse.
+    <strong>Cursor</strong>: copy-anywhere templates under
+    <code>examples/slash-commands/cursor/</code> (community, untested).
+  </p>
+  <div class="panel panel-warn">
+    <p style="margin:0">
+      <strong>Always scope by <code>project_slug</code>.</strong> The commands
+      auto-derive it from <code>git remote get-url origin</code>; when you prompt a
+      tool directly, name the project (<em>"for <code>fabric-testbed/TeamBrain</code>,
+      remember that…"</em>) — the server's default points at a different project, so
+      an omitted slug can land a memory in the wrong place.
+    </p>
+  </div>
+
+  <!-- ============================= SKILLS =========================== -->
+  <h2 class="section">Codex skills</h2>
+  <p style="margin:0">
+    The same three actions are packaged as <strong>Codex skills</strong> under
+    <code>.agents/skills/</code> (<code>tb-recall</code>, <code>tb-recent</code>,
+    <code>tb-remember</code>) — repo-discovered, no install. They're the Codex
+    equivalent of the Claude Code slash commands: trigger them with
+    <code>/skills</code> or a <code>$</code>-mention, or just ask Codex to remember
+    or recall and it picks the right one. Copy the directories into another repo's
+    <code>.agents/skills/</code> (or <code>~/.agents/skills/</code>) to share.
+  </p>
+
+  <!-- ============================= SLACK ============================ -->
+  <h2 class="section">Slack <span class="badge live">live</span></h2>
+  <p style="margin:0 0 0.5rem">
+    Capture and recall from Slack with a <code>/tb</code> slash command — no AI tool
+    required. A project <strong>admin links the channel to a project first</strong>
+    (one channel ↔ one project); after that, everyone in the channel can use it.
+  </p>
+  <table class="ref">
+    <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>/tb remember &lt;text&gt;</code></td><td>Capture a memory (project scope, visible to the team).</td></tr>
+      <tr><td><code>/tb recall &lt;query&gt;</code></td><td>Semantic search, top matches (only you see the reply).</td></tr>
+      <tr><td><code>/tb recent [n]</code></td><td>Last n memories (default 5, max 15; only you see the reply).</td></tr>
+      <tr><td><code>/tb status</code></td><td>Which project this channel is linked to.</td></tr>
+      <tr><td><code>/tb link &lt;owner/repo&gt;</code> <span class="badge admin">admin</span></td><td>Show the recipe for linking this channel to a project.</td></tr>
+      <tr><td><code>/tb help</code></td><td>Show all subcommands (also the bare <code>/tb</code>).</td></tr>
+    </tbody>
+  </table>
+  <p class="muted" style="margin:0">
+    Not linked yet? A project admin runs <code>/tb link &lt;owner/repo&gt;</code> in
+    the channel for the one-time recipe. Linking is scoped to admins of that project;
+    see <a href="/repos">Repositories</a> to confirm your role.
+  </p>
+
+  <!-- =========================== SLUG ============================== -->
+  <h2 class="section">Which <code>project_slug</code> to use</h2>
+  <p style="margin:0 0 0.5rem">
+    Every operation is scoped to a project, identified by its <code>owner/repo</code>
+    slug (e.g. <code>fabric-testbed/TeamBrain</code>). Pass it explicitly — if you
+    omit it the server falls back to a configured default, which is rarely the repo
+    you mean.
+  </p>
+  <div id="slug-box">
+    <p class="muted" style="margin:0">
+      Your slug is your repo's <code>owner/repo</code> — derive it from
+      <code>git remote get-url origin</code> (strip the host prefix and
+      <code>.git</code>). Sign in to list the projects you're a member of here.
+    </p>
+  </div>
+
+  <!-- ======================= CAPTURE-ON-MERGE ====================== -->
+  <h2 class="section">Auto-capture on PR merge</h2>
+  <p style="margin:0">
+    A GitHub Action can capture a memory automatically every time a PR merges, so
+    review decisions land in TeamBrain without anyone remembering to. Wiring it up
+    (issue a token, set repo secrets, open the workflow PR) is a per-repo admin task
+    — do it from <a href="/repos">Repositories</a>, or read
+    <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/docs/capture-on-merge-adoption.md" target="_blank" rel="noopener">capture-on-merge-adoption.md</a>
+    for the full walkthrough.
+  </p>
+
+  <!-- ====================== MENTAL MODEL =========================== -->
+  <h2 class="section">Mental model &amp; deeper docs</h2>
+  <p style="margin:0 0 0.5rem">Two concepts cover almost everything you capture:</p>
+  <table class="ref">
+    <thead><tr><th>Scope</th><th>Visible to</th><th>Use for</th></tr></thead>
+    <tbody>
+      <tr><td><code>personal</code></td><td>only you, across all projects</td><td>your own notes, preferences</td></tr>
+      <tr><td><code>project</code></td><td>every member of the project</td><td>shared team knowledge (the common case)</td></tr>
+      <tr><td><code>project_private</code></td><td>members, excluded from default reads</td><td>sensitive project context</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:0 0 0.5rem">
+    <strong>Type</strong> (optional but recommended):
+    <code>decision · convention · gotcha · context · preference · runbook</code>.
+  </p>
+  <ul class="links">
+    <li><a href="https://github.com/fabric-testbed/TeamBrain/blob/main/docs/getting-started.md" target="_blank" rel="noopener">Getting started</a> — the full end-user onboarding guide</li>
+    <li><a href="https://github.com/fabric-testbed/TeamBrain/blob/main/AGENTS.md" target="_blank" rel="noopener">AGENTS.md</a> — orientation for AI agents working in a repo</li>
+    <li><a href="/openapi.yaml" target="_blank" rel="noopener">OpenAPI spec</a> — the REST contract</li>
+    <li><a href="/dashboard">Dashboard</a> — your capture activity · <a href="/repos">Repositories</a> — per-repo setup &amp; status</li>
+  </ul>
+
+</main>
+
+<footer>
+  Self-hosted Supabase · <a href="https://github.com/fabric-testbed/TeamBrain" target="_blank" rel="noopener">source</a>
+</footer>
+
+<script>
+(() => {
+  // ANON_KEY is templated in at container startup via nginx sub_filter
+  // (server-scoped — see pr.fabric-testbed.net.conf.template), exactly as on
+  // the landing page and /dashboard.
+  const ANON_KEY = '__TEAMBRAIN_ANON_KEY__';
+  const MCP_URL  = 'https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp';
+  const JWT_PLACEHOLDER = '<your-jwt>';
+
+  const $ = id => document.getElementById(id);
+  const show = id => $(id).classList.remove('hidden');
+  const hide = id => $(id).classList.add('hidden');
+
+  /* ---- token: OPTIONAL (this page is public) ------------------------ */
+  // Same plumbing as /dashboard, but with NO redirect-to-/ gate: read a
+  // token if one is present (URL fragment from a direct OAuth redirect, or
+  // sessionStorage from a sign-in on / in this tab) and personalize; if
+  // absent, render the docs with the <your-jwt> placeholder.
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  let accessToken  = params.get('access_token')  || sessionStorage.getItem('tb_access_token');
+  let refreshToken = params.get('refresh_token') || sessionStorage.getItem('tb_refresh_token');
+  if (accessToken) {
+    sessionStorage.setItem('tb_access_token', accessToken);
+    if (refreshToken) sessionStorage.setItem('tb_refresh_token', refreshToken);
+    history.replaceState(null, '', window.location.pathname);
+  }
+
+  const decodeJwt = (jwt) => {
+    try {
+      const seg = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(seg.padEnd(seg.length + (4 - seg.length % 4) % 4, '=')));
+    } catch (e) {
+      console.error('JWT decode failed', e);
+      return {};
+    }
+  };
+
+  const claims  = accessToken ? decodeJwt(accessToken) : {};
+  const userId  = claims.sub || null;
+  const signedIn = !!userId;
+  const handle  = claims.user_metadata?.user_name || claims.user_metadata?.preferred_username || null;
+  const jwtFor  = () => accessToken || JWT_PLACEHOLDER;
+
+  /* ---- topbar / sign-in state -------------------------------------- */
+  if (signedIn) {
+    $('who').textContent = '@' + (handle || '(unknown)');
+    show('sign-out');
+    $('jwt-state-note').innerHTML =
+      'It’s pre-filled below from your current session. Renew it on <a href="/">Home</a> when it expires.';
+  } else {
+    show('sign-in');
+    show('signin-callout');
+  }
+
+  function signOut() {
+    sessionStorage.removeItem('tb_access_token');
+    sessionStorage.removeItem('tb_refresh_token');
+    window.location.replace('/');
+  }
+  $('sign-out').addEventListener('click', signOut);
+
+  /* ---- mcp command (byte-identical to index.html's builder) --------- */
+  const mcpCommand = (jwt) => [
+    'claude mcp remove teambrain 2>/dev/null',
+    'claude mcp add \\',
+    '  --transport http \\',
+    '  --scope user \\',
+    '  teambrain \\',
+    `  ${MCP_URL} \\`,
+    `  -H "Authorization: Bearer ${jwt}" \\`,
+    `  -H "apikey: ${ANON_KEY}"`,
+  ].join('\n');
+  $('mcp-cmd-box').textContent = mcpCommand(jwtFor());
+
+  /* ---- connect tabs ------------------------------------------------- */
+  const tabs = $('connect-tabs');
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-tab]');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    for (const b of tabs.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn));
+    for (const p of document.querySelectorAll('.tabpanel')) p.classList.toggle('hidden', p.dataset.panel !== tab);
+  });
+
+  /* ---- copy buttons ------------------------------------------------- */
+  // Copy the live textContent of the referenced code block; for the MCP box
+  // re-derive from the builder so a freshly-renewed token is always current.
+  for (const btn of document.querySelectorAll('.copy-btn')) {
+    btn.addEventListener('click', async () => {
+      const target = btn.dataset.target;
+      const text = target === 'mcp-cmd-box'
+        ? mcpCommand(jwtFor())
+        : ($(target)?.textContent || '');
+      const status = document.querySelector(`.status[data-status-for="${target}"]`);
+      try {
+        await navigator.clipboard.writeText(text);
+        if (status) { status.textContent = '✓ copied'; setTimeout(() => { status.textContent = ''; }, 2000); }
+      } catch {
+        if (status) status.textContent = 'copy failed — select manually';
+      }
+    });
+  }
+
+  /* ---- project_slug list (one authed call, signed-in only) ---------- */
+  async function refreshSession() {
+    if (!refreshToken) return false;
+    const r = await fetch('/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!r.ok) return false;
+    const body = await r.json();
+    accessToken  = body.access_token;
+    refreshToken = body.refresh_token;
+    sessionStorage.setItem('tb_access_token',  accessToken);
+    sessionStorage.setItem('tb_refresh_token', refreshToken);
+    $('mcp-cmd-box').textContent = mcpCommand(jwtFor());
+    return true;
+  }
+
+  async function apiFetch(path, retried = false) {
+    const r = await fetch(path, { headers: { 'apikey': ANON_KEY, 'Authorization': `Bearer ${accessToken}` } });
+    if (r.status === 401 && !retried) {
+      if (await refreshSession()) return apiFetch(path, true);
+      return null;
+    }
+    if (!r.ok) throw new Error(`${r.status} on ${path.split('?')[0]}`);
+    return r.json();
+  }
+
+  async function loadSlugs() {
+    if (!signedIn) return;
+    let projects;
+    try {
+      projects = await apiFetch('/rest/v1/projects?select=repo_slug,name&order=repo_slug.asc');
+    } catch (e) {
+      console.warn('slug lookup failed (non-fatal)', e);
+      return;   // leave the generic guidance in place
+    }
+    if (!projects) return;
+    const box = $('slug-box');
+    box.textContent = '';
+    if (!projects.length) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.style.margin = '0';
+      p.textContent = "You're signed in but not a member of any project yet — membership syncs within ~15 minutes of first sign-in.";
+      box.appendChild(p);
+      return;
+    }
+    const lead = document.createElement('p');
+    lead.className = 'muted';
+    lead.style.margin = '0 0 0.25rem';
+    lead.textContent = 'Projects you can read/write right now:';
+    box.appendChild(lead);
+    const ul = document.createElement('ul');
+    ul.className = 'slugs';
+    for (const p of projects) {
+      const li = document.createElement('li');
+      const code = document.createElement('code');
+      code.textContent = p.repo_slug || p.name || '(unnamed)';
+      li.appendChild(code);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+
+  loadSlugs();
+})();
+</script>
+
+</body>
+</html>

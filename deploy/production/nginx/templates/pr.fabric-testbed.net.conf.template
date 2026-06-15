@@ -136,6 +136,17 @@ server {
         try_files /repos.html =404;
     }
 
+    # User how-to / usage docs (deploy/production/nginx/html/help.html).
+    # Public-readable reference page — connect an AI tool, slash commands,
+    # Slack, project_slug — with the connect snippets personalized from a
+    # sessionStorage token when one is present (no redirect-to-/ gate, unlike
+    # /dashboard and /repos). Same ANON_KEY sub_filter applies for the
+    # pre-filled `claude mcp add` command.
+    location = /help {
+        root      /usr/share/nginx/html;
+        try_files /help.html =404;
+    }
+
     # OpenAPI 3.1 spec for the REST surface
     # (deploy/production/nginx/html/openapi.yaml). Served as a public,
     # unauthenticated contract — it documents the API but contains no
