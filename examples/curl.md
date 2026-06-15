@@ -8,7 +8,7 @@ OpenAPI spec at **https://pr.fabric-testbed.net/openapi.yaml**.
 
 Every request needs a **GitHub-OAuth JWT**. Get one by signing in at
 <https://pr.fabric-testbed.net/> and copying the access token. Export it in
-your shell (it lasts 24h — re-grab or use the page's **Renew** button when
+your shell (it lasts 30 days — re-grab or use the page's **Renew** button when
 it expires):
 
 ```bash

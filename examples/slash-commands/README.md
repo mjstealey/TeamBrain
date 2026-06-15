@@ -6,7 +6,7 @@ server — they add no new transport and carry no credentials.
 
 > **Prerequisite — connect the MCP server first.** See [`AGENTS.md`](../../AGENTS.md) →
 > "How to connect" (remote HTTP MCP at
-> `https://pr.fabric-testbed.net/functions/v1/teambrain-mcp` + a GitHub-OAuth bearer JWT
+> `https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp` + a GitHub-OAuth bearer JWT
 > from the landing page). If the MCP isn't connected, the commands have nothing to call.
 
 These commands are **optional sugar** over that canonical MCP doorway — they don't replace

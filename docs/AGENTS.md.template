@@ -39,7 +39,7 @@ The TeamBrain MCP server is reachable as a **remote HTTP MCP server**
 (no stdio, no local Node, no per-developer config files):
 
 ```
-URL:           {TEAMBRAIN_URL}/functions/v1/teambrain-mcp
+URL:           {TEAMBRAIN_URL}/functions/v1/teambrain-mcp/mcp
 Authorization: Bearer <your-github-oauth-jwt>
 ```
 
@@ -47,11 +47,11 @@ Each AI tool has its own way of registering remote MCP servers — see
 that tool's docs. For **Claude Code**, the equivalent of:
 
 ```bash
-claude mcp add --transport http teambrain {TEAMBRAIN_URL}/functions/v1/teambrain-mcp \
+claude mcp add --transport http teambrain {TEAMBRAIN_URL}/functions/v1/teambrain-mcp/mcp \
   --header "Authorization: Bearer <jwt>"
 ```
 
-JWTs expire after 1h. Re-grab from the OAuth round-trip when prompted.
+JWTs expire after 30 days. Re-grab from the OAuth round-trip when prompted.
 
 ## The 5 tools at a glance
 

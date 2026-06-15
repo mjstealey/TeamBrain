@@ -255,7 +255,7 @@
     <p style="margin:0">
       <strong>You're not signed in.</strong> The connect commands below show a
       <code>&lt;your-jwt&gt;</code> placeholder. <a href="/auth/v1/authorize?provider=github">Sign
-      in with GitHub</a> to get a 24-hour token — it'll auto-fill here and on
+      in with GitHub</a> to get a 30-day token — it'll auto-fill here and on
       <a href="/">Home</a>.
     </p>
   </div>
@@ -310,7 +310,7 @@ bearer_token_env_var = "TEAMBRAIN_JWT"</pre>
       <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="codex-toml">Copy</button>
       <span class="status" data-status-for="codex-toml"></span>
     </div>
-    <p class="muted" style="margin:0">Then export your JWT before launching Codex (re-export when the 24h token expires):</p>
+    <p class="muted" style="margin:0">Then export your JWT before launching Codex (re-export when the 30-day token expires):</p>
     <pre class="code" id="codex-export">export TEAMBRAIN_JWT='<your-jwt>'
 codex</pre>
     <div class="copy-row">
@@ -374,7 +374,7 @@ curl -sS -X POST \
 
   <div class="panel">
     <p style="margin:0">
-      These use your <strong>24-hour JWT</strong>.
+      These use your <strong>30-day JWT</strong>.
       <span id="jwt-state-note">Grab or renew it on <a href="/">Home</a>, then paste it where you see <code>&lt;your-jwt&gt;</code>.</span>
     </p>
   </div>

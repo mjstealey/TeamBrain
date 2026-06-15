@@ -660,9 +660,9 @@
     ]));
 
     // 3. Connect AI tool (guided)
-    const mcpCmd = `claude mcp add --transport http teambrain ${location.origin}/functions/v1/teambrain-mcp \\\n  --header "Authorization: Bearer <your-jwt>"`;
+    const mcpCmd = `claude mcp add --transport http teambrain ${location.origin}/functions/v1/teambrain-mcp/mcp \\\n  --header "Authorization: Bearer <your-jwt>"`;
     steps.appendChild(stepEl(n++, 'Connect your AI tool (MCP / REST)', 'done', 'available', [
-      el('p', { class: 'muted', html: 'Each developer connects their own client. Grab a 24h JWT from the <a href="/" class="plain">landing page</a>, then:' }),
+      el('p', { class: 'muted', html: 'Each developer connects their own client. Grab a 30-day JWT from the <a href="/" class="plain">landing page</a>, then:' }),
       el('pre', { text: mcpCmd }),
     ]));
 

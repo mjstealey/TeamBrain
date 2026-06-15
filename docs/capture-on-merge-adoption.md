@@ -109,7 +109,7 @@ All API calls below go to `BASE=https://pr.fabric-testbed.net/functions/v1`.
 ### Step 1 — Register the repo as a TeamBrain project
 
 Grab your **GitHub-OAuth JWT** from the landing page (sign in → copy the access
-token; it lasts 24h). Then:
+token; it lasts 30 days). Then:
 
 ```bash
 export BASE=https://pr.fabric-testbed.net/functions/v1
