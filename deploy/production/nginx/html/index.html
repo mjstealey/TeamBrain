@@ -147,6 +147,7 @@
   .topbar h1 { margin: 0; flex: 1 1 auto; }
   .topbar .who { color: var(--color-grey); font-size: 0.92rem; }
   .topbar .btn { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+  .topbar .btn[aria-current="page"] { background: var(--color-primary-dark); color: #fff; cursor: default; }
   h2.section {
     font-family: 'Montserrat', sans-serif;
     font-weight: 500;
@@ -212,6 +213,7 @@
   <div class="topbar">
     <h1>TeamBrain setup</h1>
     <span class="who mono" id="who">—</span>
+    <a class="btn btn-secondary" href="/" aria-current="page">Home</a>
     <a class="btn btn-secondary" href="/dashboard">Dashboard</a>
     <a class="btn btn-secondary" href="/repos">Repositories</a>
     <a class="btn btn-secondary" href="/help">Help</a>
