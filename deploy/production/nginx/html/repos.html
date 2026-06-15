@@ -609,11 +609,17 @@
     const gh = ghOk ? repoRes.data : { has_capture_workflow: null, has_agents_md: null, default_branch: null };
     const isAdmin = !!(det.project && det.project.is_admin);
 
+    // Slack link status drives step 6 + the admin table below. Only admins can
+    // read /links (project-admin-gated, like slack_link_count in the overview
+    // RPC), so non-admins can't detect it — step 6 stays "optional" for them.
+    const slkRes = isAdmin ? await req(`${FN}/teambrain-slack/links?project=${encodeURIComponent(slug)}`) : null;
+    const slackLinks = slkRes && slkRes.ok && slkRes.data ? (slkRes.data.links || []) : null;
+
     $('detail-role').textContent = (det.project && det.project.caller_role) || '';
-    renderSteps(slug, det, gh, ghOk, isAdmin);
+    renderSteps(slug, det, gh, ghOk, isAdmin, slackLinks);
     renderFlagged(slug, det);
     renderMetrics(det);
-    if (isAdmin) loadAdminTables(slug);
+    if (isAdmin) loadAdminTables(slug, slkRes);
     else $('admin-tables').textContent = '';
     updateCompleteness(det, gh);
   }
@@ -646,7 +652,7 @@
   }
   const actionsRow = (...btns) => el('div', { class: 'actions' }, ...btns.filter(Boolean));
 
-  function renderSteps(slug, det, gh, ghOk, isAdmin) {
+  function renderSteps(slug, det, gh, ghOk, isAdmin, slackLinks) {
     const steps = $('steps'); steps.textContent = '';
     let n = 1;
 
@@ -694,8 +700,12 @@
       ) : el('p', { class: 'muted', text: 'A project admin can set this up.' }),
     ]));
 
-    // 6. Slack (guided + manage)
-    steps.appendChild(stepEl(n++, 'Slack channel linked (optional)', 'todo', 'optional', [
+    // 6. Slack (guided + manage) — linked-state is admin-detectable via /links.
+    const slackCount = slackLinks ? slackLinks.length : null;
+    const slackState = slackCount > 0 ? 'done' : 'todo';
+    const slackLabel = slackCount == null ? 'optional'
+      : (slackCount > 0 ? (slackCount === 1 ? 'linked' : slackCount + ' linked') : 'optional');
+    steps.appendChild(stepEl(n++, 'Slack channel linked (optional)', slackState, slackLabel, [
       el('p', { class: 'muted', html: 'In a Slack channel run <code>/tb link ' + slug + '</code> and follow the returned command. Linked channels appear below for admins.' }),
     ]));
 
@@ -769,19 +779,18 @@
     return out;
   }
 
-  async function loadAdminTables(slug) {
+  async function loadAdminTables(slug, slkRes) {
     const wrap = $('admin-tables'); wrap.textContent = '';
     wrap.appendChild(el('h2', { class: 'section', text: 'API tokens' }));
     const tokWrap = el('div', { text: 'Loading…', class: 'muted' }); wrap.appendChild(tokWrap);
     wrap.appendChild(el('h2', { class: 'section', text: 'Slack channels' }));
     const slkWrap = el('div', { text: 'Loading…', class: 'muted' }); wrap.appendChild(slkWrap);
 
-    const [tok, slk] = await Promise.all([
-      req(`${FN}/teambrain-token/token?project=${encodeURIComponent(slug)}`),
-      req(`${FN}/teambrain-slack/links?project=${encodeURIComponent(slug)}`),
-    ]);
+    // Slack links were already fetched in loadDetail (reused here to avoid a
+    // duplicate call); tokens are admin-only too, fetched on demand.
+    const tok = await req(`${FN}/teambrain-token/token?project=${encodeURIComponent(slug)}`);
     renderTokens(slug, tokWrap, tok);
-    renderSlack(slug, slkWrap, slk);
+    renderSlack(slug, slkWrap, slkRes || await req(`${FN}/teambrain-slack/links?project=${encodeURIComponent(slug)}`));
   }
 
   function renderTokens(slug, wrap, res) {
