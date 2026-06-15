@@ -261,22 +261,15 @@
   </details>
 
   <h2 class="section">Connect your AI tool</h2>
-  <details open>
-    <summary>Wire TeamBrain into Claude Code (one command)</summary>
-    <p style="margin:0.75rem 0 0.5rem; color: var(--color-grey); font-size: 0.88rem">
-      Pre-filled with your JWT and the ANON_KEY for this deploy. Run on your
-      laptop, then restart Claude Code. The MCP server is named <code>teambrain</code>.
-    </p>
-    <div class="jwt-box mono" id="mcp-cmd-box"></div>
-    <p style="margin:0.5rem 0 0">
-      <button type="button" class="btn btn-secondary" id="copy-mcp-cmd">Copy command</button>
-      <span id="copy-mcp-status" style="margin-left:0.75rem; color: var(--color-success); font-size: 0.88rem"></span>
-    </p>
-    <p style="margin:0.75rem 0 0; color: var(--color-grey); font-size: 0.82rem">
-      Already have an entry named <code>teambrain</code>? Run
-      <code>claude mcp remove teambrain</code> first.
-    </p>
-  </details>
+  <p style="margin:0 0 0.75rem; color: var(--color-grey); font-size: 0.92rem">
+    All connection setup — Claude Code, Codex, Cursor, and the REST API — lives on
+    the Help page, with the <code>claude mcp add</code> command pre-filled with the
+    token above. The slash commands and the Slack <code>/tb</code> bot are documented
+    there too.
+  </p>
+  <p style="margin:0">
+    <a class="btn" href="/help">Connect your AI tool →</a>
+  </p>
 
 </section>
 
@@ -307,7 +300,6 @@
   // The literal __TEAMBRAIN_ANON_KEY__ is replaced in the served HTML body
   // with the actual value from .env. The repo never sees the rotated value.
   const ANON_KEY = '__TEAMBRAIN_ANON_KEY__';
-  const MCP_URL  = 'https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp';
 
   const params  = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const errCode = params.get('error_code') || params.get('error');
@@ -365,17 +357,6 @@
     return `${d.toLocaleString()} (${human})`;
   };
 
-  const mcpCommand = (jwt) => [
-    'claude mcp remove teambrain 2>/dev/null',
-    'claude mcp add \\',
-    '  --transport http \\',
-    '  --scope user \\',
-    '  teambrain \\',
-    `  ${MCP_URL} \\`,
-    `  -H "Authorization: Bearer ${jwt}" \\`,
-    `  -H "apikey: ${ANON_KEY}"`,
-  ].join('\n');
-
   const render = (jwt) => {
     const payload = decodeJwt(jwt);
     const handle = payload.user_metadata?.user_name || payload.user_metadata?.preferred_username || '(unknown)';
@@ -385,7 +366,6 @@
     $('auth-uid').textContent  = payload.sub   || '(missing sub)';
     $('jwt-expiry').textContent = fmtExpiry(payload.exp);
     $('jwt-box').textContent    = jwt;
-    $('mcp-cmd-box').textContent = mcpCommand(jwt);
   };
 
   const wireCopy = (btnId, statusId, getText) => {
@@ -402,7 +382,6 @@
   };
 
   wireCopy('copy-jwt',     'copy-status',     () => accessToken);
-  wireCopy('copy-mcp-cmd', 'copy-mcp-status', () => mcpCommand(accessToken));
 
   // Sign out: clear the tab-scoped session and return to the pre-auth landing
   // (matches the /dashboard and /repos Sign-out behavior). Replaces the old
