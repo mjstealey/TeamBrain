@@ -712,7 +712,11 @@ A correctly **signed** synthetic request (full pre-Slack smoke — computes the
 v0 HMAC the way Slack does):
 
 ```bash
-SLACK_SIGNING_SECRET='<value from .env>' python3 - <<'PY'
+# The value in .env is single-quoted; docker compose strips the quotes but a
+# raw grep|cut does NOT — strip them here, or the synthetic signature won't
+# match (you'd get a 401 that looks like a code bug but is just a quoted secret).
+SLACK_SIGNING_SECRET=$(grep '^SLACK_SIGNING_SECRET=' ~/supabase-stack/.env | cut -d= -f2- | tr -d "\"'") \
+python3 - <<'PY'
 import hashlib, hmac, os, time, urllib.request
 secret = os.environ['SLACK_SIGNING_SECRET'].encode()
 body   = 'command=/tb&text=help&team_id=T00000000&channel_id=C00000000&user_name=smoke&response_url=https://example.invalid/x'
