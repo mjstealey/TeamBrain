@@ -98,7 +98,7 @@ mis-routed thought from landing in another project you *do* belong to.
 | `search_project_thoughts` | Before answering a question that *could* have been decided before. Check for a "we already settled this" memory. |
 | `list_recent_project_thoughts` | "What's been happening on TeamBrain lately?" Skim before planning. |
 | `mark_stale` | A memory contradicted by current code or a recent decision. Flag it (don't delete — provenance matters). |
-| `promote_to_docs` | A memory has stabilized and belongs in `CLAUDE.md` / `docs/`. Phase 6 wires this to a real PR; for now it returns a preview. |
+| `promote_to_docs` | A memory has stabilized and belongs in reviewed repo docs. **Opens a PR** adding a generated doc (type-aware default path — decisions→`docs/adr/`, runbooks→`docs/runbooks/`, context→`docs/context/`, else `docs/notes/`; override with `target_path`); review & merge to land it. Marks the memory `confirmed`. |
 
 ## Slash commands (optional)
 

@@ -61,7 +61,7 @@ JWTs expire after 1h. Re-grab from the OAuth round-trip when prompted.
 | `search_project_thoughts` | Before answering a question that *could* have been discussed before. Check for a "we already decided this" memory. Reduces "didn't we just talk about this?" reviewer comments. |
 | `list_recent_project_thoughts` | "What's the team been thinking about lately?" Helpful to skim before a code review or planning session. |
 | `mark_stale` | A memory you find is contradicted by current code or a recent decision. Don't delete (loses provenance) — flag it. The next searcher sees the deprecation. |
-| `promote_to_docs` | A memory has stabilized and belongs in repo docs. Phase 6 wires this to a real PR; for now it returns a preview. |
+| `promote_to_docs` | A memory has stabilized and belongs in reviewed repo docs. **Opens a PR** adding a generated doc (type-aware default path — decisions→`docs/adr/`, else `docs/…`; override with `target_path`); review & merge to land it. Marks the memory `confirmed`. |
 
 ## Capture conventions
 
