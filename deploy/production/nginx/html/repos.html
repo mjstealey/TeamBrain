@@ -528,6 +528,7 @@
   function renderProjects(rows, weekly) {
     const body = $('projects-body'); body.textContent = '';
     if (!rows.length) { show('projects-empty'); $('projects-table').classList.add('hidden'); return; }
+    rows = rows.slice().sort((a, b) => (a.repo_slug || '').toLowerCase().localeCompare((b.repo_slug || '').toLowerCase()));
     for (const r of rows) {
       const tr = el('tr');
       const slugTd = el('td', { class: 'slug' },
