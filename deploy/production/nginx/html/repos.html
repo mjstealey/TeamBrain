@@ -528,6 +528,7 @@
   function renderProjects(rows, weekly) {
     const body = $('projects-body'); body.textContent = '';
     if (!rows.length) { show('projects-empty'); $('projects-table').classList.add('hidden'); return; }
+    rows = rows.slice().sort((a, b) => (a.repo_slug || '').toLowerCase().localeCompare((b.repo_slug || '').toLowerCase()));
     for (const r of rows) {
       const tr = el('tr');
       const slugTd = el('td', { class: 'slug' },
@@ -549,7 +550,8 @@
   async function loadCandidates() {
     const res = await req(`${FN}/teambrain-console/discover`);
     if (!res.ok) { $('discover-hint').textContent = 'Could not list GitHub repos: ' + errMsg(res); return; }
-    const cands = (res.data && res.data.candidates) || [];
+    const cands = ((res.data && res.data.candidates) || [])
+      .slice().sort((a, b) => a.slug.toLowerCase().localeCompare(b.slug.toLowerCase()));
     if (res.data && res.data.org) $('org-name').textContent = res.data.org;
     if (!cands.length) {
       $('discover-hint').textContent = res.data && res.data.capped
