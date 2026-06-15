@@ -681,9 +681,10 @@
     const cmLabel = !ghOk ? 'unknown' : (gh.has_capture_workflow ? 'installed' : 'not installed');
     steps.appendChild(stepEl(n++, 'Capture-on-merge workflow', cmState, cmLabel, [
       el('p', { class: 'muted', text: 'Merged PRs propose TeamBrain memories (human-approved). Needs the workflow file plus two repo secrets the GitHub App cannot set.' }),
-      isAdmin ? el('p', { class: 'muted', html: 'After the PR merges: <code>gh secret set TEAMBRAIN_TOKEN</code> (issue one below) and <code>gh variable set TEAMBRAIN_ANON_KEY</code> (from the landing page).' }) : null,
+      isAdmin ? el('p', { class: 'muted', html: 'After the PR merges, set two repo entries: <code>gh secret set TEAMBRAIN_TOKEN</code> (the <strong>secret</strong> — issue one below) and <code>gh variable set TEAMBRAIN_ANON_KEY</code> (the public <strong>variable</strong> — use “Show anon key” below).' }) : null,
       isAdmin ? actionsRow(
         el('button', { class: 'btn btn-sm btn-secondary', text: 'Issue API token', onclick: (e) => issueToken(slug, e.target) }),
+        el('button', { class: 'btn btn-sm btn-secondary', text: 'Show anon key', onclick: () => showAnonKey(slug) }),
         el('button', { class: 'btn btn-sm', text: 'Open setup PR', onclick: (e) => setupPr(slug, ['workflow','agents_md'], e.target) }),
       ) : el('p', { class: 'muted', text: 'A project admin can set this up.' }),
     ]));
@@ -952,6 +953,18 @@
       kids.push(el('p', { class: 'muted', text: 'Skipped (already present, not overwritten): ' + res.data.skipped.join(', ') }));
     openOut('Setup PR', 'Review and merge it, then set the repo secrets if you enabled capture-on-merge.', el('div', {}, ...kids));
   }
+  // The anon key is the PUBLIC half (a valid anon JWT the landing page ships to
+  // every visitor) — a repo *variable*, not a secret. Show it + a ready-to-run
+  // gh command so the user can set TEAMBRAIN_ANON_KEY without hunting the page.
+  function showAnonKey(slug) {
+    const cmd = `gh variable set TEAMBRAIN_ANON_KEY -R ${slug} --body "${ANON_KEY}"`;
+    const box = el('div', {},
+      el('pre', { text: cmd }),
+      el('p', { class: 'muted', html: 'Public anon key for this deployment — a repo <strong>variable</strong>, not a secret (it ships in every page’s source). Run the command, or copy the raw key below into the GitHub variable field.' }),
+      el('pre', { text: ANON_KEY }));
+    openOut('TeamBrain anon key', 'Copy & run to set the repo variable for capture-on-merge. (The API token is the secret half — issue that separately.)', box, cmd);
+  }
+
   async function issueToken(slug, btn) {
     btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Issuing…';
     const res = await jsonPost(`${FN}/teambrain-token/token`, { project_slug: slug, name: 'capture-on-merge (dashboard)' });
