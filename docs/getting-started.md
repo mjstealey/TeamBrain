@@ -50,10 +50,10 @@ enforce the same access rules. Full rationale:
    not "no memory exists."
 3. **Grab a token for testing.** The landing page shows your **access token** (a
    GitHub-OAuth JWT) and a **Renew** button. You'll paste this into your AI tool's
-   config below. It lasts **24 hours**; renew it from the same page when it
+   config below. It lasts **30 days**; renew it from the same page when it
    expires.
 
-> **The JWT is a personal, short-lived credential.** Don't commit it into a
+> **The JWT is a personal, time-limited credential (30 days).** Don't commit it into a
 > shared/checked-in config file (see the per-client notes below for the safe
 > team-sharing pattern). For automation that can't do an interactive login (CI,
 > cron, GitHub Actions), use a non-interactive **API token** instead — see
@@ -312,7 +312,7 @@ re-verification** — list those with `flagged_only=true`. Re-verifying (or
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Search returns nothing | You're not a member of that project yet | Confirm you're a GitHub collaborator on the repo; membership syncs within ~15 min of first sign-in. Check the `project_slug`. |
-| `401 Unauthorized` | JWT missing or expired (they last 24h) | Re-grab the access token from <https://pr.fabric-testbed.net/> (the **Renew** button) and update your client config / `TEAMBRAIN_JWT`. |
+| `401 Unauthorized` | JWT missing or expired (they last 30 days) | Re-grab the access token from <https://pr.fabric-testbed.net/> (the **Renew** button) and update your client config / `TEAMBRAIN_JWT`. |
 | Captured into the wrong project | `project_slug` omitted → fell back to the server default | Always pass `project_slug` (`owner/repo`) explicitly. |
 | `403` on capture | Not a writer on the project, or wrong scope | You need `contributor`/`admin` to write `project`/`project_private`. `personal` thoughts must omit `project_slug`. |
 | Tool doesn't appear in your AI client | MCP server didn't connect | Re-check the URL and bearer header; in Claude Code run `/mcp`, in gemini-cli `/mcp`, in Cursor open Settings → MCP. |

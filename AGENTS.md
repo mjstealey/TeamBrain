@@ -32,12 +32,12 @@ The TeamBrain MCP server is a **remote HTTP MCP server** (no stdio, no
 local Node):
 
 ```
-URL:           https://pr.fabric-testbed.net/functions/v1/teambrain-mcp
+URL:           https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp
 Authorization: Bearer <your-github-oauth-jwt>
 ```
 
 Get a JWT by signing in with GitHub at **https://pr.fabric-testbed.net/**
-and copying the access token from the landing page. Tokens last 24h; use
+and copying the access token from the landing page. Tokens last 30 days; use
 the **Renew** button there or sign in again when one expires.
 
 ### Claude Code
@@ -47,7 +47,7 @@ variadic and will otherwise swallow them):
 
 ```bash
 claude mcp add --transport http teambrain \
-  https://pr.fabric-testbed.net/functions/v1/teambrain-mcp \
+  https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp \
   --header "Authorization: Bearer <jwt>"
 ```
 
@@ -61,12 +61,12 @@ variable's name in the config, never the token value itself:
 ```toml
 # ~/.codex/config.toml
 [mcp_servers.teambrain]
-url = "https://pr.fabric-testbed.net/functions/v1/teambrain-mcp"
+url = "https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp"
 bearer_token_env_var = "TEAMBRAIN_JWT"
 ```
 
 Then export your JWT in the shell before launching Codex (re-export when
-the 24h token expires):
+the 30-day token expires):
 
 ```bash
 export TEAMBRAIN_JWT='<jwt>'
