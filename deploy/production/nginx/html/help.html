@@ -490,6 +490,82 @@ curl -sS -X POST \
     for the full walkthrough.
   </p>
 
+  <!-- ======================= LIFECYCLE ============================= -->
+  <h2 class="section">Memory lifecycle: stale, re-verify, deprecate, promote</h2>
+  <p style="margin:0 0 0.5rem">
+    Memories are living, not write-once. A background scan can <strong>flag a
+    thought as stale</strong> — a badge that means <em>"a human should re-check
+    this,"</em> not a verdict that it's wrong. Two signals set it today:
+  </p>
+  <ul class="links" style="margin:0 0 0.75rem">
+    <li><strong>A commit touched a pinned path.</strong> If a thought lists files in
+      its <code>paths</code> and a merged commit changes one, it flags itself —
+      <em>"the code this advice was about just changed; is the advice still true?"</em></li>
+    <li><strong>An <code>expires_at</code> passed.</strong> Captured with a shelf
+      life (a temporary workaround, a "remove after date X" note)? It flags when that
+      time arrives.</li>
+  </ul>
+  <div class="panel">
+    <p style="margin:0">
+      The flag is <strong>orthogonal to search ranking</strong> — it does not sink a
+      thought. A flagged-but-still-trusted memory still ranks at the top; the flag
+      only surfaces in the "what needs re-checking?" view (the flagged rows in
+      <code>/tb-recent</code>). Expect the occasional false positive: a commit can
+      touch a pinned file without actually invalidating the note. Clearing that is
+      cheap.
+    </p>
+  </div>
+  <p style="margin:0.75rem 0 0.5rem">
+    When you see a flagged thought, re-read it against current reality and pick one:
+  </p>
+  <table class="ref">
+    <thead><tr><th>Action</th><th>What it does</th><th>Reach for it when…</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Re-verify</strong><br><span class="muted">keep it</span></td>
+        <td>Bumps <code>last_verified_at</code> to now (<code>mark_stale</code> with
+          <code>tentative</code>). <strong>Clears the flag</strong> and resets the
+          freshness clock; the thought stays live and ranks well.</td>
+        <td>It's still accurate — the truth survived whatever change tripped the flag.</td>
+      </tr>
+      <tr>
+        <td><strong>Deprecate</strong><br><span class="muted">retire it</span></td>
+        <td>Sets <code>confidence: deprecated</code> (the <code>mark_stale</code>
+          default). The thought <strong>sinks but stays searchable</strong> (hide it
+          entirely with <code>include_deprecated: false</code>); also clears the flag.</td>
+        <td>It's no longer true and there's nothing durable to keep — a reversed
+          decision, a fixed gotcha, a changed convention.</td>
+      </tr>
+      <tr>
+        <td><strong>Promote</strong><br><span class="muted">graduate it</span></td>
+        <td><code>promote_to_docs</code> opens a PR adding the thought as
+          version-controlled markdown (ADR / note / context), then stamps it
+          <code>confirmed</code> with a <code>promoted_pr_url</code>. Writer role
+          required; idempotent.</td>
+        <td>It's proven, broadly useful, and stable — knowledge that belongs in
+          <code>docs/</code> next to the code.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="panel panel-warn">
+    <p style="margin:0">
+      <strong>Keep it · retire it · graduate it.</strong> These aren't opposites you
+      pick once — a note usually gets re-verified a few times, then <em>promoted</em>
+      once it settles, and the resulting doc becomes the source of truth. Don't
+      promote anything still in flux; promotion is for knowledge that has stopped
+      changing. Re-verifying or deprecating clears a flag for you — promoting confirms
+      a thought but won't clear a pending flag on its own, so re-verify alongside it
+      if it was flagged.
+    </p>
+  </div>
+  <p class="muted" style="margin:0">
+    Under the hood, search orders by a freshness-aware <code>rank_score</code> =
+    similarity × confidence (confirmed 1.15 · tentative 1.0 · deprecated 0.4) ×
+    expiry × recency (90-day half-life), so stale and deprecated memories sink while
+    re-verified ones rise — but only <em>within</em> results that already match your
+    query.
+  </p>
+
   <!-- ====================== MENTAL MODEL =========================== -->
   <h2 class="section">Mental model &amp; deeper docs</h2>
   <p style="margin:0 0 0.5rem">Two concepts cover almost everything you capture:</p>
