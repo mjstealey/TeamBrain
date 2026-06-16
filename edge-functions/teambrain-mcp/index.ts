@@ -193,12 +193,30 @@ const app = new Hono();
 // supabase-stack version (`/functions/v1/` may or may not be stripped).
 // We accept any GET as liveness and any POST as an MCP call rather than
 // pinning to a specific pathname.
-app.get('*', (c) => c.json({
-  status:  'ok',
-  service: 'teambrain-mcp',
-  version: '0.1.0-phase2-wiring',
-  path:    c.req.path,
-}));
+app.get('*', (c) => {
+  // Streamable HTTP: a POST-only MCP server must answer GET on the *message*
+  // endpoint with 405 (Allow: POST), so spec-strict clients skip the optional
+  // server->client SSE stream and fall back to POST instead of trying to read
+  // an event-stream out of this JSON liveness body. Keyed on the `/mcp` suffix
+  // rather than a pinned path so that if a future supabase-stack rewrite drops
+  // the suffix, this degrades to liveness (the status quo) instead of 405-ing
+  // every probe.
+  if (c.req.path.endsWith('/mcp')) {
+    return c.json(
+      { error:  'method_not_allowed',
+        detail: 'MCP endpoint is POST-only; no server-initiated SSE stream' },
+      405,
+      { Allow: 'POST' },
+    );
+  }
+  // Liveness probe for non-/mcp GETs (function root, docker health checks).
+  return c.json({
+    status:  'ok',
+    service: 'teambrain-mcp',
+    version: '0.1.0-phase2-wiring',
+    path:    c.req.path,
+  });
+});
 
 // Single MCP entry point. The `Authorization` header is captured
 // per-request and threaded into each tool handler via closure on
