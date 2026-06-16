@@ -580,7 +580,13 @@ curl -sS -X POST \
   }
   $('sign-out').addEventListener('click', signOut);
 
-  /* ---- mcp command (byte-identical to index.html's builder) --------- */
+  /* ---- token-bearing snippets --------------------------------------- */
+  // Each builder takes the current JWT so a freshly-renewed token (after
+  // refreshSession) re-renders current. mcpCommand is byte-identical to
+  // index.html's. The codex/rest builders pre-fill the
+  // `export TEAMBRAIN_JWT='…'` line when signed in, so a developer never has
+  // to round-trip to Home for the token. codex-toml / cursor-json stay as
+  // ${TEAMBRAIN_JWT} env-var references by design (source by name, not value).
   const mcpCommand = (jwt) => [
     'claude mcp remove teambrain 2>/dev/null',
     'claude mcp add \\',
@@ -591,7 +597,30 @@ curl -sS -X POST \
     `  -H "Authorization: Bearer ${jwt}" \\`,
     `  -H "apikey: ${ANON_KEY}"`,
   ].join('\n');
-  $('mcp-cmd-box').textContent = mcpCommand(jwtFor());
+  const codexExport = (jwt) => `export TEAMBRAIN_JWT='${jwt}'\ncodex`;
+  const restCurl = (jwt) => [
+    `export TEAMBRAIN_JWT='${jwt}'`,
+    'curl -sS -X POST \\',
+    '  https://pr.fabric-testbed.net/functions/v1/teambrain-rest/thoughts/search \\',
+    '  -H "Authorization: Bearer $TEAMBRAIN_JWT" \\',
+    '  -H "Content-Type: application/json" \\',
+    `  -d '{"query":"how do we handle timestamps?","project_slug":"fabric-testbed/TeamBrain","limit":5}'`,
+  ].join('\n');
+
+  // Builders keyed by element id; copy handlers re-derive from these so a
+  // renewed token is always current, exactly as the MCP box already did.
+  const tokenBoxes = {
+    'mcp-cmd-box': mcpCommand,
+    'codex-export': codexExport,
+    'rest-curl': restCurl,
+  };
+  const renderTokenBoxes = () => {
+    for (const [id, build] of Object.entries(tokenBoxes)) {
+      const el = $(id);
+      if (el) el.textContent = build(jwtFor());
+    }
+  };
+  renderTokenBoxes();
 
   /* ---- connect tabs ------------------------------------------------- */
   const tabs = $('connect-tabs');
@@ -604,13 +633,13 @@ curl -sS -X POST \
   });
 
   /* ---- copy buttons ------------------------------------------------- */
-  // Copy the live textContent of the referenced code block; for the MCP box
-  // re-derive from the builder so a freshly-renewed token is always current.
+  // For a token-bearing box re-derive from its builder so a freshly-renewed
+  // token is always current; otherwise copy the live textContent as-is.
   for (const btn of document.querySelectorAll('.copy-btn')) {
     btn.addEventListener('click', async () => {
       const target = btn.dataset.target;
-      const text = target === 'mcp-cmd-box'
-        ? mcpCommand(jwtFor())
+      const text = tokenBoxes[target]
+        ? tokenBoxes[target](jwtFor())
         : ($(target)?.textContent || '');
       const status = document.querySelector(`.status[data-status-for="${target}"]`);
       try {
@@ -636,7 +665,7 @@ curl -sS -X POST \
     refreshToken = body.refresh_token;
     sessionStorage.setItem('tb_access_token',  accessToken);
     sessionStorage.setItem('tb_refresh_token', refreshToken);
-    $('mcp-cmd-box').textContent = mcpCommand(jwtFor());
+    renderTokenBoxes();
     return true;
   }
 
