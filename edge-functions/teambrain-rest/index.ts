@@ -431,6 +431,35 @@ app.get('/thoughts', async (c) => {
   });
 });
 
+// --- GET /project (server-side project config the workflow reads) ----------
+// Minimal, RLS-filtered read of a project's server-side settings. The
+// capture-on-merge GitHub Action calls this right after its token exchange and
+// clean-skips when capture_on_merge_enabled is false — a central kill switch
+// (toggled by an admin from the /repos dashboard, migration 0026) that needs no
+// edit to the committed workflow file. Visibility is the caller's: projects are
+// member-readable (RLS, 0002), so a non-member gets 404, never the row. Not
+// tool-gated — a benign members-only read, like /health — so it works under any
+// capture-on-merge API token regardless of its allowed-tools set.
+app.get('/project', async (c) => {
+  const { userClient } = requireAuth(c.req.header('Authorization') ?? null);
+  const slug = c.req.query('project_slug') || Deno.env.get('TEAMBRAIN_DEFAULT_PROJECT_SLUG');
+  if (!slug) {
+    throw new HttpError(400, 'project_slug not provided and TEAMBRAIN_DEFAULT_PROJECT_SLUG not set on the server');
+  }
+  const { data, error } = await userClient
+    .from('projects')
+    .select('repo_slug, capture_on_merge_enabled')
+    .eq('repo_slug', slug)
+    .maybeSingle();
+  if (error) throw new HttpError(502, `project lookup failed: ${error.message} (code=${error.code ?? 'n/a'})`);
+  if (!data) throw new HttpError(404, `project not found or not accessible to caller: ${slug}`);
+  const row = data as { repo_slug: string; capture_on_merge_enabled: boolean };
+  return c.json({
+    project_slug:             row.repo_slug,
+    capture_on_merge_enabled: row.capture_on_merge_enabled,
+  });
+});
+
 // --- PATCH /thoughts/:id/stale (mirrors `mark_stale`) ----------------------
 const StaleBody = z.object({
   confidence: z.enum(['tentative', 'deprecated']).default('deprecated'),

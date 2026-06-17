@@ -79,6 +79,47 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { $ref: "#/components/responses/UpstreamError" }
 
+  /teambrain-rest/project:
+    get:
+      operationId: getProject
+      tags: [system]
+      summary: Read a project's server-side settings
+      description: |
+        Returns the caller-visible server-side configuration for one project
+        (RLS-filtered: a non-member gets `404`, never the row). The
+        capture-on-merge GitHub Action calls this right after its token
+        exchange and clean-skips when `capture_on_merge_enabled` is `false` — a
+        central kill switch toggled from the /repos dashboard, so a noisy repo
+        can be silenced without editing its committed workflow file.
+      parameters:
+        - name: project_slug
+          in: query
+          required: false
+          schema: { type: string }
+          description: The `owner/repo` slug. Falls back to the server default.
+          example: fabric-testbed/fabric-core-api
+      responses:
+        "200":
+          description: The project's server-side settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project_slug, capture_on_merge_enabled]
+                properties:
+                  project_slug:
+                    type: string
+                    example: fabric-testbed/fabric-core-api
+                  capture_on_merge_enabled:
+                    type: boolean
+                    description: >-
+                      Whether the capture-on-merge Action should run for this
+                      repo. The workflow clean-skips when `false`.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/ProjectNotFound" }
+        "502": { $ref: "#/components/responses/UpstreamError" }
+
   /teambrain-rest/thoughts:
     post:
       operationId: captureThought

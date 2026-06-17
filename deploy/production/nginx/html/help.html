@@ -489,6 +489,11 @@ curl -sS -X POST \
     <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/docs/capture-on-merge-adoption.md" target="_blank" rel="noopener">capture-on-merge-adoption.md</a>
     for the full walkthrough.
   </p>
+  <p style="margin:0.5rem 0 0">
+    Need to pause it — say, to conserve GitHub Actions minutes? A repo admin can toggle
+    capture off from <a href="/repos">Repositories</a> without removing the workflow file,
+    or set the repo variable <code>TEAMBRAIN_CAPTURE=off</code> for a zero-minute hard stop.
+  </p>
 
   <!-- ======================= LIFECYCLE ============================= -->
   <h2 class="section">Memory lifecycle: stale, re-verify, deprecate, promote</h2>

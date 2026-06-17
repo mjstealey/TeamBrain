@@ -523,6 +523,43 @@ app.post('/sync-now', async (c) => {
   return c.json({ ok: true, report });
 });
 
+// --- capture-toggle: enable/disable capture-on-merge (admin) ----------------
+// Central, slug-keyed kill switch for the capture-on-merge GitHub Action
+// (migration 0026). projects has NO update grant to `authenticated` (0002), so
+// the service client is the only write path — admin gating is enforced here in
+// app code, exactly like sync-now. The committed workflow reads the flag via
+// GET /teambrain-rest/project and clean-skips when it is false, so an admin can
+// silence a minute-hungry repo without touching its workflow file.
+app.post('/capture-toggle', async (c) => {
+  let userId: string;
+  try { userId = auth(c); } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+  const service = serviceClient();
+  let body: { slug?: unknown; enabled?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'request body must be JSON' }, 400); }
+  if (typeof body.enabled !== 'boolean') return c.json({ error: 'enabled (boolean) is required' }, 400);
+
+  let project: ProjectRow, role: string, slug: string;
+  try {
+    ({ slug } = parseSlug(body.slug));
+    ({ project, role } = await requireMember(service, slug, userId));
+    requireAdminRole(role, slug);
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+
+  const { error } = await service
+    .from('projects')
+    .update({ capture_on_merge_enabled: body.enabled, updated_at: new Date().toISOString() })
+    .eq('id', project.id);
+  if (error) return c.json({ error: `capture-toggle failed: ${error.message}` }, 502);
+
+  return c.json({ ok: true, slug, capture_on_merge_enabled: body.enabled });
+});
+
 app.all('*', (c) => c.json({ error: `no route: ${c.req.method} ${c.req.path}` }, 404));
 
 Deno.serve(app.fetch);

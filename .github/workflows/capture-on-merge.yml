@@ -28,6 +28,17 @@
 # text flows into the approval-issue body as data (the action calls the GitHub
 # API), not through a shell, so it is not an injection vector.
 #
+# Disabling capture WITHOUT removing this file (decision C-D9): two switches,
+# neither of which edits this committed workflow.
+#   * Zero Actions minutes — set the repo VARIABLE TEAMBRAIN_CAPTURE to `off`.
+#     The `propose` job's `if:` then skips before a runner starts, and the
+#     dependent `capture` job skips with it. Unset (or any other value) = on.
+#   * Central, per-repo, no repo change — flip the toggle for this repo on the
+#     TeamBrain /repos dashboard. The `propose` job reads that server-side flag
+#     right after its token exchange (step 3a) and clean-skips when it is off;
+#     this still spends ~1 runner-minute per merge, but never starts the costly
+#     human-approval `capture` job.
+#
 # To adopt:
 #   1. Register the repo as a TeamBrain project (its owner/repo slug must equal
 #      github.repository), then have a project admin issue a token:
@@ -61,7 +72,14 @@ jobs:
   # render them for review. No gate, no writes.
   # ---------------------------------------------------------------------------
   propose:
-    if: github.event.pull_request.merged == true
+    # Disable without editing this file (C-D9): the repo VARIABLE
+    # TEAMBRAIN_CAPTURE=off skips this job before a runner starts (0 Actions
+    # minutes); the dependent `capture` job skips with it. Unset / any other
+    # value = on. The complementary CENTRAL switch is the server flag read in
+    # step 3a (which costs ~1 runner-minute but is toggled from the dashboard).
+    if: >-
+      github.event.pull_request.merged == true &&
+      vars.TEAMBRAIN_CAPTURE != 'off'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -127,6 +145,33 @@ jobs:
             echo "::error::token exchange failed (no access_token returned)"; exit 1
           fi
           echo "::add-mask::${access_token}"
+
+          # 3a. Central kill switch (server-side, keyed by repo slug). Read this
+          #     project's capture flag with the JWT just minted. If an admin has
+          #     disabled capture-on-merge from the /repos dashboard, stop here —
+          #     no LLM call, no approval issue — so the human-approval `capture`
+          #     job (the real Actions-minute cost) never starts. FAIL-OPEN: only
+          #     an explicit `false` disables; any error/timeout proceeds, because
+          #     a missed disable wastes one run while a false-disable would
+          #     silently drop capture. (jq `//` can't supply this default — it
+          #     treats the literal `false` as empty — so test it explicitly.)
+          enabled=$(curl -sS "${CURL_RETRY[@]}" -G "${TEAMBRAIN_BASE}/teambrain-rest/project" \
+            --data-urlencode "project_slug=${PROJECT_SLUG}" \
+            -H "Authorization: Bearer ${access_token}" \
+            | jq -r 'if .capture_on_merge_enabled == false then "false" else "true" end' 2>/dev/null || echo "true")
+          if [ "${enabled}" = "false" ]; then
+            echo "capture-on-merge is disabled for ${PROJECT_SLUG} on the server; skipping (no proposal, no approval issue)."
+            {
+              echo "## TeamBrain — capture-on-merge disabled for PR #${PR_NUMBER}"
+              echo ""
+              echo "Server-side capture is **disabled** for \`${PROJECT_SLUG}\`. Re-enable it from the TeamBrain /repos dashboard."
+            } >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "has_proposals=false"
+              echo "already_captured=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           # 3b. Dedup BEFORE the gate (C-D7, now exact via linked_pr_url): if
           #     this PR's captures already exist, stop here — no LLM call, no

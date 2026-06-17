@@ -687,11 +687,25 @@
       ),
     ]));
 
-    // 5. Capture-on-merge
-    const cmState = gh.has_capture_workflow === true ? 'done' : 'todo';
-    const cmLabel = !ghOk ? 'unknown' : (gh.has_capture_workflow ? 'installed' : 'not installed');
+    // 5. Capture-on-merge. Two distinct facts: whether the workflow FILE is
+    //    installed (a GitHub fact) and whether server-side capture is enabled
+    //    (migration 0026). A repo can have the file committed but capture toggled
+    //    off to save Actions minutes. capEnabled is null on instances whose
+    //    detail RPC predates 0026 — the toggle UI simply hides then.
+    const capEnabled = (det && typeof det.capture_on_merge_enabled === 'boolean') ? det.capture_on_merge_enabled : null;
+    const cmState = gh.has_capture_workflow === true ? (capEnabled === false ? 'warn' : 'done') : 'todo';
+    const cmLabel = !ghOk ? 'unknown'
+      : (gh.has_capture_workflow ? (capEnabled === false ? 'installed · disabled' : 'installed') : 'not installed');
     steps.appendChild(stepEl(n++, 'Capture-on-merge workflow', cmState, cmLabel, [
       el('p', { class: 'muted', text: 'Merged PRs propose TeamBrain memories (human-approved). Needs the workflow file plus two repo secrets the GitHub App cannot set.' }),
+      isAdmin && capEnabled !== null ? el('p', { class: 'muted', html:
+        'Server-side capture is <strong>' + (capEnabled ? 'enabled' : 'disabled') + '</strong> for this repo. ' +
+        'Disabling stops merged-PR capture without removing the workflow file — useful when GitHub Actions minutes are tight. ' +
+        'For a hard, zero-minute stop, also set the repo variable <code>TEAMBRAIN_CAPTURE=off</code>.' }) : null,
+      isAdmin && capEnabled !== null ? actionsRow(
+        el('button', { class: 'btn btn-sm ' + (capEnabled ? 'btn-secondary' : ''),
+          text: capEnabled ? 'Disable capture' : 'Enable capture',
+          onclick: (e) => toggleCapture(slug, !capEnabled, e.target) })) : null,
       isAdmin ? el('p', { class: 'muted', html: 'After the PR merges, set two repo entries: <code>gh secret set TEAMBRAIN_TOKEN</code> (the <strong>secret</strong> — issue one below) and <code>gh variable set TEAMBRAIN_ANON_KEY</code> (the public <strong>variable</strong> — use “Show anon key” below).' }) : null,
       isAdmin ? actionsRow(
         el('button', { class: 'btn btn-sm btn-secondary', text: 'Issue API token', onclick: (e) => issueToken(slug, e.target) }),
@@ -947,6 +961,14 @@
     const res = await jsonPost(`${FN}/teambrain-console/sync-now`, { slug });
     btn.disabled = false; btn.textContent = orig;
     if (res.ok) reloadDetail(slug); else openOut('Sync failed', errMsg(res), el('span'));
+  }
+  // Central enable/disable for capture-on-merge (migration 0026). Admin-only;
+  // the workflow reads the new state on its next merge. Reload to reflect it.
+  async function toggleCapture(slug, enabled, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = enabled ? 'Enabling…' : 'Disabling…';
+    const res = await jsonPost(`${FN}/teambrain-console/capture-toggle`, { slug, enabled });
+    btn.disabled = false; btn.textContent = orig;
+    if (res.ok) reloadDetail(slug); else openOut('Capture toggle failed', errMsg(res), el('span'));
   }
   async function generateAgents(slug) {
     const res = await jsonPost(`${FN}/teambrain-console/agents-md`, { slug });
