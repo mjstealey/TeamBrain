@@ -428,6 +428,8 @@ In **SQL Editor → New query**, paste each migration's full contents from `~/Te
 
 After each, run the verification queries from `docs/phase-1-checklist.md` § B/C/D/E and `docs/phase-2-checklist.md` § B/L as a check. Expect Studio's **Security Advisor: 0 errors / 0 warnings** and **Performance Advisor: 0 issues** after `0003`. If anything else is red, stop and triage.
 
+> **Migrations beyond `0011`.** The batch above is the Phase 1–4 core. The later migrations (`0012`–`0026`) are applied the same way — Studio SQL editor — as each feature is deployed: `0012` (API tokens, § 11b), `0013`/`0015` (sync-health, § 12), `0014`/`0016`–`0022` (staleness + dashboard, Phase 6), `0023` (Slack, § 11c), and `0024`–`0026` (the `/repos` console + the capture-on-merge enable/disable toggle). For a fresh deploy, apply the full set `0001`→`0026` in order per `migrations/README.md` § "Apply order" (its `[production only]` rows gate the cron-dependent ones). Re-running the `teambrain-console` + `teambrain-rest` rsync in § 8 plus the static-UI pull is all the capture-toggle deploy (`0026`) needs beyond the migration itself.
+
 ---
 
 ## 8. Deploy the edge functions
@@ -446,7 +448,7 @@ git -C ~/TeamBrain log -1 --oneline    # record the SHA being deployed
 #    (removes files that have been deleted upstream).
 for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project \
           teambrain-rest teambrain-token teambrain-summarize \
-          teambrain-staleness teambrain-slack; do
+          teambrain-staleness teambrain-slack teambrain-console; do
   rsync -av --delete \
     ~/TeamBrain/edge-functions/"$fn"/ \
     ~/supabase-stack/volumes/functions/"$fn"/
@@ -464,7 +466,7 @@ If you'd rather push *from your laptop* (e.g., to deploy an in-flight branch wit
 # From your laptop. Substitutes for steps 1–2 above.
 for fn in teambrain-mcp teambrain-membership-sync teambrain-register-project \
           teambrain-rest teambrain-token teambrain-summarize \
-          teambrain-staleness teambrain-slack; do
+          teambrain-staleness teambrain-slack teambrain-console; do
   rsync -av --delete \
     --rsync-path='sudo -u nrig-service rsync' \
     ~/GitHub/mjstealey/TeamBrain/edge-functions/"$fn"/ \
@@ -475,7 +477,7 @@ done
 
 (Absolute path on the right side of the `:` is required — `~` would expand to the SSH-login user's home, not `nrig-service`'s.)
 
-> **Note.** Two functions import from siblings via relative paths, so the import only resolves when both are deployed under the same `volumes/functions/` root (the loops above do this): `teambrain-register-project` imports the GitHub-App token mint + per-project sync from `teambrain-membership-sync`, and `teambrain-rest` imports `embedding.ts` from `teambrain-mcp`. Removing or renaming `teambrain-membership-sync` breaks registration; removing or renaming `teambrain-mcp` breaks the REST capture/search endpoints.
+> **Note.** Three functions import from siblings via relative paths, so the import only resolves when all are deployed under the same `volumes/functions/` root (the loops above do this): `teambrain-register-project` imports the GitHub-App token mint + per-project sync from `teambrain-membership-sync`; `teambrain-rest` imports `embedding.ts` from `teambrain-mcp`; and `teambrain-console` imports the GitHub-App + per-project-sync helpers from `teambrain-membership-sync` and the PR-commit helper from `teambrain-mcp`. Removing or renaming `teambrain-membership-sync` breaks registration and the `/repos` console; removing or renaming `teambrain-mcp` breaks the REST capture/search endpoints and the console's setup-PR.
 
 Verify the functions container picked up the TeamBrain env vars:
 

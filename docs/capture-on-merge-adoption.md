@@ -345,6 +345,33 @@ org owner.
 
 ---
 
+## 9. Pausing or disabling capture
+
+You can turn capture-on-merge off **without removing the workflow file** — two
+independent switches, neither of which edits the committed workflow:
+
+- **Zero Actions minutes (repo variable).** Set the repo *variable*
+  `TEAMBRAIN_CAPTURE` to `off` — *Settings → Secrets and variables → Actions*, or
+  `gh variable set TEAMBRAIN_CAPTURE -R <owner/repo> --body off`. The `propose`
+  job's `if:` then skips it before a runner starts, and the dependent `capture`
+  job skips with it — **no GitHub Actions minutes consumed**. Unset it (or set
+  any other value) to re-enable.
+- **Central toggle (no repo change).** A project admin can flip capture off for
+  the repo from the TeamBrain **`/repos` dashboard** (the Capture-on-merge step).
+  This sets `projects.capture_on_merge_enabled`; the `propose` job reads it via
+  `GET /teambrain-rest/project` right after its token exchange (step 3a) and
+  clean-skips when it's off — no LLM call, no approval issue, so the costly
+  human-approval `capture` job never starts. This still spends ~1 runner-minute
+  per merge (the check has to run), but it needs no repo-side change and takes
+  effect instantly.
+
+Reach for the variable when you want a hard, free stop; reach for the dashboard
+toggle for central, per-repo control. Both leave the workflow file in place, so
+re-enabling is a single flip. The read is **fail-open**: if the check can't reach
+the server it proceeds, so a transient outage never silently drops capture.
+
+---
+
 ## Reference
 
 - Workflow: `examples/github-actions/capture-on-merge.yml`

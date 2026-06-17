@@ -8,7 +8,7 @@ TeamBrain gives a team of developers the same persistent context for a codebase 
 
 ## Status
 
-**Phases 0–6 shipped and live on `https://pr.fabric-testbed.net` (since 2026-05-27).** Phase 5 (capture integrations): § A (API tokens) + § C (PR-merge capture) shipped and prod-verified; § D (slash commands) shipped for Claude Code + Codex; § B (Slack `/tb` bot) is server-side shipped & deployed, awaiting the FABRIC Slack-app install for live in-channel verification. Phase 6 (staleness & promotion): § A–§ D all shipped + smoke-verified — sync-health paydown (§ A), search-ranking decay (§ B), commit-triggered staleness flagging (§ C, `pg_cron` poller live), and `promote_to_docs` → real ADR/docs PR (§ D); only § E (migration-baseline consolidation) remains, deferred to production cutover. A post-Phase-6 **`/repos` management dashboard** (the `teambrain-console` edge function + `repo_status_*` RPCs, `migrations/0024`) adds self-service repo onboarding and per-repo feature status. Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot (readiness gate cleared).
+**Phases 0–6 shipped and live on `https://pr.fabric-testbed.net` (since 2026-05-27).** Phase 5 (capture integrations): § A (API tokens) + § C (PR-merge capture) shipped and prod-verified; § D (slash commands) shipped for Claude Code + Codex; § B (Slack `/tb` bot) is server-side shipped & deployed, awaiting the FABRIC Slack-app install for live in-channel verification. Phase 6 (staleness & promotion): § A–§ D all shipped + smoke-verified — sync-health paydown (§ A), search-ranking decay (§ B), commit-triggered staleness flagging (§ C, `pg_cron` poller live), and `promote_to_docs` → real ADR/docs PR (§ D); only § E (migration-baseline consolidation) remains, deferred to production cutover. A post-Phase-6 **`/repos` management dashboard** (the `teambrain-console` edge function + `repo_status_*` RPCs, `migrations/0024`–`0026`) adds self-service repo onboarding, per-repo feature status, and a central capture-on-merge enable/disable toggle (so an admin can pause a noisy repo's auto-capture without editing its workflow file). Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot (readiness gate cleared).
 
 Per-phase artifacts (each with a `Done when` acceptance criterion):
 
@@ -31,6 +31,7 @@ See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/00
 | Landing / MCP setup (GitHub OAuth sign-in + JWT) | `https://pr.fabric-testbed.net/` |
 | Activity dashboard (your thought heatmap) | `https://pr.fabric-testbed.net/dashboard` |
 | Repository console (onboarding + per-repo status) | `https://pr.fabric-testbed.net/repos` |
+| Public usage guide (connect / slash / Slack / capture-on-merge) | `https://pr.fabric-testbed.net/help` |
 | OpenAPI 3.1 spec | `https://pr.fabric-testbed.net/openapi.yaml` |
 | MCP endpoint | `https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp` |
 | REST surface | `https://pr.fabric-testbed.net/functions/v1/teambrain-rest/*` |
@@ -39,7 +40,7 @@ See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/00
 | PR-merge capture summarizer (LLM proposals) | `https://pr.fabric-testbed.net/functions/v1/teambrain-summarize/propose` |
 | Slack `/tb` slash command + channel links | `https://pr.fabric-testbed.net/functions/v1/teambrain-slack/*` |
 | Commit-triggered staleness scan + health | `https://pr.fabric-testbed.net/functions/v1/teambrain-staleness/*` |
-| Repo console API (discover / setup-pr / sync-now / AGENTS.md) | `https://pr.fabric-testbed.net/functions/v1/teambrain-console/*` |
+| Repo console API (discover / setup-pr / sync-now / capture-toggle / AGENTS.md) | `https://pr.fabric-testbed.net/functions/v1/teambrain-console/*` |
 
 Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`](examples/curl.md)), an OpenAI function-calling Python client, and a runnable PR-merge GitHub Action. To add the PR-merge capture Action to your own `fabric-testbed` repo, see the step-by-step [capture-on-merge adoption guide](docs/capture-on-merge-adoption.md).
 
@@ -54,7 +55,7 @@ Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`
   - *In TeamBrain (living, ephemeral, cross-developer):* in-flight debugging notes, gotchas not yet promoted to docs, recent decisions still being validated, dev preferences, cross-repo context.
   - *Promotion workflow:* memories that stabilize get promoted into the repo via PR. That is the governance loop — `promote_to_docs` opens a real ADR/docs PR via the GitHub App (Phase 6 § D).
 - **Transport:** single backend → two thin **custom** edge functions: `teambrain-mcp` (MCP/JSON-RPC, 6 tools) and `teambrain-rest` (HTTP/JSON mirror of the same tools). PostgREST remains available under the hood but is intentionally not the documented surface — see Phase 4 § A1 for the uniform-custom-vs-PostgREST-hybrid decision. Adding a new AI client = config entry, not adapter code. Seven further edge functions support the system: `teambrain-membership-sync`, `teambrain-register-project`, `teambrain-token`, `teambrain-summarize`, `teambrain-slack`, `teambrain-staleness`, and `teambrain-console` (the `/repos` dashboard backend) — nine in total.
-- **Web UI (static, nginx-served):** a landing / MCP-setup page (`/`), an activity dashboard (`/dashboard`, the caller's RLS-scoped thought heatmap), and a repository console (`/repos`, per-repo onboarding + feature status + one-click setup PRs). All three share one GitHub-OAuth session and have the public `ANON_KEY` injected via nginx `sub_filter`.
+- **Web UI (static, nginx-served):** a landing / MCP-setup page (`/`), an activity dashboard (`/dashboard`, the caller's RLS-scoped thought heatmap), a repository console (`/repos`, per-repo onboarding + feature status + one-click setup PRs), and a public usage guide (`/help` — connect, slash commands, Slack, capture-on-merge). The first three sit behind one GitHub-OAuth session; `/help` is public (no auth gate) but personalizes its snippets when signed in. All have the public `ANON_KEY` injected via nginx `sub_filter`.
 
 ## Phased Roadmap
 

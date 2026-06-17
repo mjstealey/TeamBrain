@@ -384,6 +384,31 @@ synthetic signed smoke lives in `deploy/production/README.md` § 11c.
 
 ---
 
+## 11. Read a project's settings — `GET /teambrain-rest/project`
+
+Returns a project's server-side settings (currently the capture-on-merge switch).
+RLS-filtered — a non-member gets `404`. The capture-on-merge Action calls this
+right after its token exchange to decide whether to skip; an admin flips the flag
+from the `/repos` dashboard (see the
+[adoption guide](../docs/capture-on-merge-adoption.md) § 9).
+
+```bash
+curl -sS "${AUTH[@]}" -G "$BASE/teambrain-rest/project" \
+  --data-urlencode "project_slug=fabric-testbed/fabric-core-api" | jq .
+```
+
+```json
+{
+  "project_slug": "fabric-testbed/fabric-core-api",
+  "capture_on_merge_enabled": true
+}
+```
+
+`project_slug` is optional; it falls back to the server's
+`TEAMBRAIN_DEFAULT_PROJECT_SLUG` when omitted.
+
+---
+
 ## Error shape
 
 All errors return a JSON body:

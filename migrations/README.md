@@ -31,12 +31,13 @@ Numbered SQL files that, applied in order via Studio's SQL editor, produce a wor
 | 0023 | `0023_slack_channels.sql`               | 5B  | `public.slack_channels` — (workspace, channel) → project mapping backing the Slack `/tb` slash command; service_role-only + explicit deny-all policy. | always |
 | 0024 | `0024_repo_status_rpcs.sql`             | console | `public.repo_status_overview()` / `repo_status_detail(text)` — per-repo onboarding/feature status for the `/repos` dashboard. SECURITY DEFINER cores in `app` (read the service_role-only `api_tokens`/`slack_channels`/`staleness_poll_state` tables) behind SECURITY INVOKER `public` wrappers. | always |
 | 0025 | `0025_repo_status_detail_slack_linked.sql` | console | Adds a member-visible `slack_linked` boolean to `app.repo_status_detail` (un-gated `exists` over `slack_channels`) so the `/repos` step-6 "Slack channel linked" check shows for every project member; the channel inventory + count stay admin-only. `CREATE OR REPLACE` keeps 0024's owner/grants/wrapper. | always |
+| 0026 | `0026_capture_on_merge_toggle.sql`         | console | Server-side enable/disable for the capture-on-merge Action, keyed by repo slug: adds `projects.capture_on_merge_enabled` (default true) + surfaces it member-visibly in `app.repo_status_detail` (mirrors 0025/slack_linked). The workflow reads it via `GET /teambrain-rest/project` and clean-skips when false; a project admin toggles it from `/repos` (`POST /teambrain-console/capture-toggle`). `CREATE OR REPLACE` keeps 0024's owner/grants/wrapper. | always |
 | —   | `seed.sql`                   | 1   | Hand-seeded pilot project + `project_members` rows. Resolved by GitHub handle from `auth.users.raw_user_meta_data`; gracefully skips users not yet logged in. Re-runnable. Phase 3's sync function takes over once deployed; `seed.sql` remains useful for fresh deploys before the first sync. | always (apply last) |
 
 ## Apply order
 
 ```
-0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014  →  [0015 in production]  →  0016  →  0017  →  0018  →  [0019 in production]  →  0020  →  0021  →  [0022 in production]  →  0023  →  0024
+0001  →  0002  →  0003  →  0004  →  [0005 if non-1536 dim]  →  0006  →  seed.sql  →  0007  →  0008  →  0009  →  [0010 in production]  →  0011  →  0012  →  [0013 in production]  →  0014  →  [0015 in production]  →  0016  →  0017  →  0018  →  [0019 in production]  →  0020  →  0021  →  [0022 in production]  →  0023  →  0024  →  0025  →  0026
 ```
 
 `0005` and `0006` can be reordered between themselves (both apply on top of 0004) but the canonical order is `0005` first so anyone tracing the file numbers reads them in the same sequence they apply in.

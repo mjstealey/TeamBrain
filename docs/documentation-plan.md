@@ -30,7 +30,7 @@ surface's guide until that surface exists.
 |---|---|---|
 | Getting Started (§ 1) | ✅ **shipped 2026-06-08** ([`getting-started.md`](getting-started.md)) | onboarding prerequisite; mechanics are settled |
 | Best Practices (§ 2) | seed at Phase 7 kickoff (🟡), harden at Phase 7 wrap | needs pilot evidence to be authoritative |
-| "Connect from every surface" reference (§ 3) | after **§ B (Slack) + § D (slash commands)** ship | a "from any tool" guide is incomplete until all surfaces exist |
+| "Connect from every surface" reference (§ 3) | ✅ **unblocked 2026-06-15** — § B (Slack) + § D (slash commands) both shipped; not yet written | a "from any tool" guide is incomplete until all surfaces exist |
 | Staleness + promotion best practices (§ 2.5, 2.6) | with **Phase 6** | can't document mechanisms that don't exist yet |
 | Operator/admin docs (§ 4) | mostly **done** (`deploy/production/README.md`) | already covered; only needs an index entry |
 
@@ -46,7 +46,7 @@ Audience: a developer who wants to read/write team memory from their AI tool.
 3. **Connect your AI tool** — copy-paste config per client:
    - Claude Code / Claude Desktop (remote MCP) · Cursor (MCP) · gemini-cli ·
      Copilot / VS Code · ChatGPT / OpenAI function calling (REST/OpenAPI).
-   - ☐ Slack *[§ B]* · ☐ slash commands *[§ D]* (placeholders until those ship).
+   - ✅ Slack *[§ B]* · ✅ slash commands *[§ D]* (both shipped — Slack live since 2026-06-15, slash commands since 2026-06-09).
 4. **The mental model**
    - **Scopes:** `personal` | `project` | `project_private` (who sees what).
    - **Types:** `decision | convention | gotcha | context | preference | runbook`.
@@ -76,14 +76,14 @@ Mark the whole doc **provisional/living** until pilot evidence lands.
 8. **Auto-capture tuning** — proposal count, `TEAMBRAIN_APPROVERS`, dedup, model.
 9. **Team governance** — review cadence, who curates, handling "AI told me wrong".
 
-## 3. Reference: connect & capture from every surface — ☐ *[after § B + § D]*
+## 3. Reference: connect & capture from every surface — ☐ *[unblocked 2026-06-15 — § B + § D shipped; not yet written]*
 
 - **MCP** — endpoint (`/functions/v1/teambrain-mcp/mcp`) + per-client config.
 - **REST / OpenAPI** — `/openapi.yaml` + `examples/curl.md`.
 - **GitHub Action** — `examples/github-actions/capture-on-merge.yml` (shipped § C);
   adoption guide [`capture-on-merge-adoption.md`](capture-on-merge-adoption.md)
   (written ahead of the rest of § 3 — the per-repo "add capture-on-merge" recipe).
-- ☐ **Slack** *[§ B]* · ☐ **Slash commands** *[§ D]*.
+- ✅ **Slack** *[§ B]* · ✅ **Slash commands** *[§ D]* (both shipped).
 - **Non-interactive API tokens** — `teambrain-token` for CI/automation (shipped § A).
 
 ## 4. Operator / Admin — ✅ *(mostly exists)*
