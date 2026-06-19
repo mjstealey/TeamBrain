@@ -210,6 +210,38 @@ async function getDefaultBranch(owner: string, repo: string, token: string): Pro
 const WORKFLOW_PATH = '.github/workflows/capture-on-merge.yml';
 const AGENTS_MD_PATH = 'AGENTS.md';
 
+// GitHub Contents API → decoded UTF-8 text on `ref`, or null on 404 / non-file /
+// too-large-for-inline (the 1MB cap; the workflow is ~24KB). Local to the console
+// — only the drift check below needs file *content*, so the shared github.ts (and
+// teambrain-membership-sync) stay untouched and this deploys as a single function.
+async function repoFileContent(
+  owner: string, repo: string, path: string, token: string, ref?: string,
+): Promise<string | null> {
+  const q = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+  const resp = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURI(path)}${q}`,
+    { headers: {
+      'Authorization':        `Bearer ${token}`,
+      'Accept':               'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    } },
+  );
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new HttpError(502, `contents fetch for ${path} on ${owner}/${repo} failed: ${resp.status}`);
+  const json = await resp.json() as { content?: string; encoding?: string; type?: string };
+  if (json.type !== 'file' || json.encoding !== 'base64' || typeof json.content !== 'string') return null;
+  const bin = atob(json.content.replace(/\s+/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+// Tolerant compare for workflow drift: the setup-PR writes captureOnMergeYml()
+// verbatim, so an up-to-date file matches exactly modulo trailing newline / CRLF.
+function normalizeYml(s: string): string {
+  return s.replace(/\r\n/g, '\n').replace(/\s+$/, '');
+}
+
 // AGENTS.md lead/reviewers from the project's admins (best-effort).
 async function leadAndReviewers(
   service: SupabaseClient, project: ProjectRow,
@@ -318,14 +350,21 @@ app.get('/repo', async (c) => {
   try {
     const token = await getInstallationToken();
     const defaultBranch = await getDefaultBranch(owner, repo, token);
-    const [hasWorkflow, hasAgents] = await Promise.all([
-      repoFileExists(owner, repo, WORKFLOW_PATH, token, defaultBranch),
+    const [workflowContent, hasAgents] = await Promise.all([
+      repoFileContent(owner, repo, WORKFLOW_PATH, token, defaultBranch),
       repoFileExists(owner, repo, AGENTS_MD_PATH, token, defaultBranch),
     ]);
+    const hasWorkflow = workflowContent !== null;
+    // Drift: file present but its content differs from the current embedded
+    // template (e.g. an old blocking-gate workflow vs the event-driven one).
+    // Drives the "update available" badge + Update-workflow button on /repos.
+    const captureWorkflowOutdated = hasWorkflow &&
+      normalizeYml(workflowContent as string) !== normalizeYml(captureOnMergeYml());
     return c.json({
       slug, project_name: project.name, role, is_admin: role === 'admin',
       default_branch: defaultBranch,
       has_capture_workflow: hasWorkflow,
+      capture_workflow_outdated: captureWorkflowOutdated,
       has_agents_md: hasAgents,
     });
   } catch (err) {

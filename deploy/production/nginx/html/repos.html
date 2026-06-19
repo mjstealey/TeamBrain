@@ -695,11 +695,24 @@
     //    off to save Actions minutes. capEnabled is null on instances whose
     //    detail RPC predates 0026 — the toggle UI simply hides then.
     const capEnabled = (det && typeof det.capture_on_merge_enabled === 'boolean') ? det.capture_on_merge_enabled : null;
-    const cmState = gh.has_capture_workflow === true ? (capEnabled === false ? 'warn' : 'done') : 'todo';
+    // Drift: the workflow FILE is present but its content differs from the current
+    // embedded template (e.g. still the old blocking gate). The /repo endpoint
+    // returns capture_workflow_outdated; absent on older instances → undefined → no nag.
+    const cmOutdated = gh.has_capture_workflow === true && gh.capture_workflow_outdated === true;
+    const cmFlags = [];
+    if (gh.has_capture_workflow === true) {
+      if (capEnabled === false) cmFlags.push('disabled');
+      if (cmOutdated) cmFlags.push('update available');
+    }
+    const cmState = gh.has_capture_workflow === true ? (cmFlags.length ? 'warn' : 'done') : 'todo';
     const cmLabel = !ghOk ? 'unknown'
-      : (gh.has_capture_workflow ? (capEnabled === false ? 'installed · disabled' : 'installed') : 'not installed');
+      : (gh.has_capture_workflow ? ('installed' + (cmFlags.length ? ' · ' + cmFlags.join(' · ') : '')) : 'not installed');
     steps.appendChild(stepEl(n++, 'Capture-on-merge workflow', cmState, cmLabel, [
       el('p', { class: 'muted', text: 'Merged PRs propose TeamBrain memories (human-approved). Needs the workflow file plus two repo secrets the GitHub App cannot set.' }),
+      isAdmin && cmOutdated ? el('p', { class: 'muted', html:
+        'This repo’s workflow is <strong>behind the current template</strong> — e.g. still the blocking approval gate rather than the event-driven, zero-idle flow. Update opens a PR replacing <code>.github/workflows/capture-on-merge.yml</code> in place (your AGENTS.md is untouched).' }) : null,
+      isAdmin && cmOutdated ? actionsRow(
+        el('button', { class: 'btn btn-sm', text: 'Update workflow', onclick: (e) => setupPr(slug, ['workflow'], e.target, true) })) : null,
       isAdmin && capEnabled !== null ? el('p', { class: 'muted', html:
         'Server-side capture is <strong>' + (capEnabled ? 'enabled' : 'disabled') + '</strong> for this repo. ' +
         'Disabling stops merged-PR capture without removing the workflow file — useful when GitHub Actions minutes are tight. ' +
