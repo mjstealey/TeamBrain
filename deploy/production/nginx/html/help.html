@@ -482,10 +482,12 @@ curl -sS -X POST \
   <!-- ======================= CAPTURE-ON-MERGE ====================== -->
   <h2 class="section">Auto-capture on PR merge</h2>
   <p style="margin:0">
-    A GitHub Action can capture a memory automatically every time a PR merges, so
-    review decisions land in TeamBrain without anyone remembering to. Wiring it up
-    (issue a token, set repo secrets, open the workflow PR) is a per-repo admin task
-    — do it from <a href="/repos">Repositories</a>, or read
+    A GitHub Action proposes memories every time a PR merges and opens an approval
+    issue listing them; an approver comments <code>/approve</code> (or <code>/deny</code>)
+    whenever they get to it — there's no time limit, and <strong>zero GitHub Actions
+    minutes</strong> are spent while the issue waits. Wiring it up (issue a token, set repo
+    secrets, open the workflow PR) is a per-repo admin task — do it from
+    <a href="/repos">Repositories</a>, or read
     <a href="https://github.com/fabric-testbed/TeamBrain/blob/main/docs/capture-on-merge-adoption.md" target="_blank" rel="noopener">capture-on-merge-adoption.md</a>
     for the full walkthrough.
   </p>

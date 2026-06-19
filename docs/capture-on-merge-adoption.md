@@ -31,7 +31,7 @@ and adoption is **fully self-service**: Komal can do all four steps in
 [§ 2](#2-adoption-the-four-steps) herself — no code changes, no operator
 involvement. Being **private doesn't matter** — the approval gate is issue-based,
 which works on any plan or visibility (see
-[§ 4](#4-the-approver-gate-public-vs-private)).
+[§ 4](#4-the-approver-gate)).
 
 | Eligibility gate | Status for `fabric-testbed/loomai-dev` |
 |---|---|
@@ -57,33 +57,45 @@ PR merges
    │
    ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ job: propose            (permissions: contents+PRs read)       │
+│ job: propose       on pull_request[closed, merged]            │
 │  1. gather PR METADATA   title · body · commit msgs ·          │
 │       (NO diffs)            changed-file PATHS                 │
 │  2. exchange tbk_ token → 15-min JWT                           │
 │  3. dedup: already captured for this PR? → stop, no LLM call   │
 │  4. POST /teambrain-summarize/propose  → 0–3 proposals         │
-│  5. render proposals into the run summary + job outputs        │
+│  5. OPEN an approval ISSUE (proposals + a hidden machine        │
+│       payload), labeled `teambrain-capture` — then EXIT.       │
 └────────────────────────────────────────────────────────────────┘
-   │ has_proposals == true
+   │  the issue now sits open at ZERO Actions cost — no timer
+   ▼
+   … whenever someone gets to it: an approver comments /approve …
+   │
    ▼
 ┌───────────────────────────────────────────────────────────────┐
-│ job: capture            (permissions: issues write)           │
-│  1. open an APPROVAL ISSUE listing the proposals,             │
-│       @-mention the approver(s) — BLOCKS here                 │
-│  2. approver comments "approved"  (or "denied" → discard all) │
-│  3. exchange a FRESH tbk_ → JWT  (the propose job's expired)  │
-│  4. dedup again, then write each proposal to                  │
-│       /teambrain-rest/thoughts  with provenance + tags        │
+│ job: capture       on issue_comment[created]                  │
+│  1. authorize the commenter (allowlist / push access)         │
+│  2. /deny → comment + close, no write                         │
+│  3. /approve → parse the payload, exchange a FRESH JWT,        │
+│       dedup, write each proposal to /teambrain-rest/thoughts   │
+│  4. comment the captured IDs + close the issue                │
 └───────────────────────────────────────────────────────────────┘
 ```
 
+There is **no blocking job and no timer.** The merge opens an issue and the
+runner stops; nothing runs (and nothing is billed) while the issue waits. A
+`/approve` comment later starts a separate, short run that does the writes —
+"I'll get to it when I get to it." List pending approvals any time with the GitHub
+search `label:teambrain-capture is:open`.
+
 Key design points (all already settled — you don't choose these):
 
-- **Two jobs, a fresh JWT each.** The minted JWT lives only 15 minutes — far
-  shorter than a human-approval wait — so the `capture` job re-exchanges its own
-  token *after* the gate. The durable credential is the opaque `tbk_` token held
-  as a repo secret.
+- **Event-driven, zero idle cost.** The earlier design blocked a runner on a
+  polling action for up to GitHub's 6-hour limit; an un-actioned backlog once
+  burned ~2,520 Actions minutes for zero captures. This redesign costs ~1 runner-
+  minute at merge (propose) and ~1 at approval (capture), and **nothing** between.
+- **A fresh JWT each run.** The minted JWT lives only 15 minutes — far shorter
+  than an approval wait — so the `capture` run re-exchanges its own token. The
+  durable credential is the opaque `tbk_` token held as a repo secret.
 - **Server-side summarization.** The AI key and the proposal prompt live in the
   `teambrain-summarize` edge function. **Your workflow carries no AI key and no
   prompt.** It just POSTs PR metadata and renders what comes back.
@@ -91,9 +103,10 @@ Key design points (all already settled — you don't choose these):
   changed-file *paths* are sent to the model. Diff contents never leave your repo
   through this path.
 - **Human approval is the security backstop.** PR titles/bodies are untrusted
-  input to the LLM; nothing is written until an approver sees the exact
-  proposals and approves. PR-controlled strings reach the shell only via
-  `env:` + `jq --arg`, never spliced into a script.
+  input to the LLM; nothing is written until an approver sees the exact proposals
+  and comments `/approve`. PR/LLM/comment-controlled strings reach the shell only
+  via `env:` + `jq --arg` (or a `--body-file` / stdin parse), never spliced into a
+  script.
 
 ---
 
@@ -170,7 +183,7 @@ In the repo: **Settings → Secrets and variables → Actions**.
 |---|---|---|---|
 | `TEAMBRAIN_TOKEN` | **Secret** | the `tbk_…` from Step 2 | the durable credential the workflow exchanges for short-lived JWTs |
 | `TEAMBRAIN_ANON_KEY` | **Variable** | the public anon key (see below) | gateway pass-through only — *not* a secret; it's the same key the landing page ships to browsers |
-| `TEAMBRAIN_APPROVERS` | **Variable** *(optional)* | comma/newline list of GitHub usernames | who may approve a capture; defaults to the PR merger |
+| `TEAMBRAIN_APPROVERS` | **Variable** *(optional)* | comma/newline list of GitHub usernames | who may approve a capture; if unset, anyone with push/maintain/admin on the repo may approve |
 
 **Where to get the anon key:** open <https://pr.fabric-testbed.net/>, view the
 "copy curl" snippet (or page source) — it's the value in the `apikey:` header /
@@ -209,60 +222,47 @@ merge a small PR to smoke-test (see [§ 5](#5-verify-it-works)).
 The file is `examples/github-actions/capture-on-merge.yml`. You don't edit it,
 but here's what it relies on so nothing is a black box:
 
-- **Trigger:** `on: pull_request: [closed]`, guarded by
-  `if: github.event.pull_request.merged == true` (so close-without-merge is a
-  no-op).
+- **Triggers:** `on: pull_request: [closed]` (the `propose` job, guarded by
+  `merged == true` + the `TEAMBRAIN_CAPTURE` switch) **and** `on: issue_comment:
+  [created]` (the `capture` job, which fires only on a `/approve`|`/deny` comment
+  to an open `teambrain-capture`-labeled issue). Each event runs exactly one job;
+  the other's `if:` is false, so GitHub skips it for **0 billed minutes**.
 - **Least privilege:** top-level `permissions: {}`; `propose` opts into
-  `contents: read` + `pull-requests: read`, `capture` into `issues: write`.
-- **Idempotency:** both jobs skip if a capture already exists for the PR's URL,
-  so a re-run never duplicates.
+  `contents: read` + `pull-requests: read` + `issues: write` (to open the issue),
+  `capture` into `contents: read` + `issues: write` (to comment + close).
+- **Idempotency:** both the propose and the capture run skip if a capture already
+  exists for the PR's URL, so a re-merge or a double `/approve` never duplicates.
+- **No timer:** neither job waits; the approval issue persists until someone acts
+  (there is deliberately no auto-close).
 - **Project slug = `github.repository`** — this is why the registered slug must
   match the repo exactly (`fabric-testbed/loomai-dev`).
 
 ---
 
-## 4. The approver gate: public vs private
+## 4. The approver gate
 
-This is the only place the public/private question actually matters — and the
-shipped default already handles both.
+When the `propose` job finds proposals it opens an issue titled
+`TeamBrain: approve N capture(s) for PR #…`, labeled `teambrain-capture`, that
+**renders the proposals inline** (plus a hidden machine-readable payload the
+capture run parses). The issue then waits — open, with no timer, costing nothing
+— until someone acts:
 
-### Default (shipped): issue-based gate — works everywhere
+- **`/approve`** (also `approve` / `approved`) → the `capture` job writes the
+  proposals and closes the issue.
+- **`/deny`** (also `deny` / `denied`) → it discards them and closes the issue as
+  *not planned*. No captures.
 
-The workflow uses [`trstringer/manual-approval`](https://github.com/trstringer/manual-approval)
-(SHA-pinned). The `capture` job opens an issue that **renders the proposals
-inline**, @-mentions the approver(s), and blocks until someone comments
-`approved` (writes) or `denied` (discards all).
+**Who may approve.** If you set the `TEAMBRAIN_APPROVERS` variable (comma/newline
+usernames), only those logins are honored. If it's unset, anyone with **push,
+maintain, or admin** on the repo may approve. An unauthorized comment gets a
+polite "not authorized" reply and the issue stays open for a real approver.
 
-This works on **any repository — public or private — on any GitHub plan.** No
-extra setup beyond `issues: write` (already in the workflow) and optionally the
-`TEAMBRAIN_APPROVERS` variable.
-
-> **For `loomai-dev` (private, `fabric-testbed` Team plan), this is your gate** —
-> use the workflow as-is. The native-reviewers alternative below is **not
-> available** for this repo (private + non-Enterprise → GitHub returns `422`), so
-> there's nothing to change.
-
-### Optional alternative: native GitHub Environment required-reviewers
-
-GitHub's built-in deployment-protection "required reviewers" rule is an
-alternative gate, but its availability is plan-dependent:
-
-| Repo visibility | Native required-reviewers available? |
-|---|---|
-| **Public** | ✅ Yes, on all plans (free). |
-| **Private** | ⚠️ Needs **GitHub Enterprise**. On `fabric-testbed`'s current Team plan the API returns `422 — billing plan does not support the required reviewers protection rule`. |
-
-Because the issue-based gate already covers every case and renders proposals
-inline, there's **no reason to switch** unless you specifically want GitHub's
-native approval UI on a **public** (or Enterprise) repo. If you do:
-
-1. Create an Environment named `teambrain-capture` with yourself as a
-   *Required reviewer* (Settings → Environments).
-2. In the `capture` job, replace the `trstringer/manual-approval` step with
-   `environment: teambrain-capture` on the job and drop `issues: write`.
-
-That swap is a local edit to your copy of the workflow; the rest of the flow is
-identical.
+This works on **any repository — public or private — on any GitHub plan**, with
+no extra setup beyond the `issues: write` permission the workflow already
+requests. (The earlier design used `trstringer/manual-approval`, which held a
+runner open for the entire wait; native GitHub Environment required-reviewers
+were unavailable on this private repo's plan. The comment-driven gate replaces
+both — the same issue-based review UX, none of the idle cost.)
 
 ---
 
@@ -270,10 +270,13 @@ identical.
 
 1. Open a small PR in the repo and merge it.
 2. **Actions tab** → the `propose` job's summary shows *N* proposed captures
-   (or "No durable memories proposed" — a no-op is a valid outcome).
-3. If there were proposals, an **approval issue** opens titled
-   `TeamBrain: approve N capture(s) for PR #…`. Comment **approved**.
-4. The `capture` job writes them. Confirm via search:
+   (or "No durable memories proposed" — a no-op is a valid outcome). The job
+   finishes in ~1 minute; **no runner stays open.**
+3. If there were proposals, an **approval issue** opens (label `teambrain-capture`)
+   titled `TeamBrain: approve N capture(s) for PR #…`. It sits open until you act —
+   there is no time limit. Comment **`/approve`** (or `/deny` to discard).
+4. The comment triggers the `capture` job, which writes the proposals, comments
+   the captured IDs, and closes the issue. Confirm via search:
 
    ```bash
    curl -sS "${AUTH[@]}" -G "$BASE/teambrain-rest/thoughts/search" \
@@ -282,8 +285,10 @@ identical.
    ```
 
    Captures carry tags `pr-merge`, `auto-capture`, and `owner/repo#N`.
-5. **Re-run** the workflow on the same PR → it writes **0** duplicates (the dedup
-   guard fires).
+5. **Idempotency:** re-open the issue and comment `/approve` again → the dedup
+   guard fires and **0** duplicates are written.
+6. **Cost check:** the span between the issue opening and your `/approve` shows no
+   running job in the Actions tab — zero minutes consumed while it waited.
 
 ---
 
@@ -323,8 +328,11 @@ org owner.
 | Dashboard **Open setup PR** → `403 … file commit (.github/workflows/…)` | The App lacks the **Workflows** permission (separate from Contents) | an org owner adds **Workflows: Read & write** to the App and accepts it on the install — `docs/deployment.md` § "Repository permissions" |
 | `propose` job warns and skips | `TEAMBRAIN_TOKEN`/`TEAMBRAIN_ANON_KEY` unset | re-check Step 3 (secret vs variable) |
 | `token exchange failed` | token revoked/expired, or wrong anon key | re-issue the `tbk_`; confirm the anon-key variable |
-| No approval issue appears | `propose` found 0 proposals, or `has_proposals=false` | expected for low-signal PRs; check the run summary |
-| Captures don't show in search | wrong `project_slug`, or still awaiting approval | confirm slug = `github.repository`; approve the issue |
+| No approval issue appears | `propose` found 0 proposals (a valid no-op), or capture is disabled (`TEAMBRAIN_CAPTURE=off` / the `/repos` toggle) | expected for low-signal PRs; check the run summary and the toggle |
+| `/approve` comment does nothing (no `capture` run, or it's skipped) | commented on the **PR** instead of the **issue**, or the issue lacks the `teambrain-capture` label | comment on the approval **issue** the propose job opened |
+| `capture` replies "not authorized" | commenter lacks push/maintain/admin and isn't in `TEAMBRAIN_APPROVERS` | comment from an authorized account, or add the login to `TEAMBRAIN_APPROVERS` |
+| `capture` replies "could not find the capture payload" | the issue body's `<!-- tb-capture … -->` marker was edited/removed | don't edit the marker; re-merge the PR to regenerate the issue |
+| Captures don't show in search | wrong `project_slug`, or still awaiting approval | confirm slug = `github.repository`; comment `/approve` on the issue |
 
 ---
 
@@ -353,17 +361,16 @@ independent switches, neither of which edits the committed workflow:
 - **Zero Actions minutes (repo variable).** Set the repo *variable*
   `TEAMBRAIN_CAPTURE` to `off` — *Settings → Secrets and variables → Actions*, or
   `gh variable set TEAMBRAIN_CAPTURE -R <owner/repo> --body off`. The `propose`
-  job's `if:` then skips it before a runner starts, and the dependent `capture`
-  job skips with it — **no GitHub Actions minutes consumed**. Unset it (or set
-  any other value) to re-enable.
+  job's `if:` then skips it before a runner starts — **no GitHub Actions minutes
+  consumed**, no approval issue opened (so there is nothing to approve). Unset it
+  (or set any other value) to re-enable.
 - **Central toggle (no repo change).** A project admin can flip capture off for
   the repo from the TeamBrain **`/repos` dashboard** (the Capture-on-merge step).
   This sets `projects.capture_on_merge_enabled`; the `propose` job reads it via
   `GET /teambrain-rest/project` right after its token exchange (step 3a) and
-  clean-skips when it's off — no LLM call, no approval issue, so the costly
-  human-approval `capture` job never starts. This still spends ~1 runner-minute
-  per merge (the check has to run), but it needs no repo-side change and takes
-  effect instantly.
+  clean-skips when it's off — no LLM call and no approval issue, so nothing reaches
+  the capture path. This still spends ~1 runner-minute per merge (the check has to
+  run), but it needs no repo-side change and takes effect instantly.
 
 Reach for the variable when you want a hard, free stop; reach for the dashboard
 toggle for central, per-repo control. Both leave the workflow file in place, so

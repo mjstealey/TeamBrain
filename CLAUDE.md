@@ -27,7 +27,7 @@ Self-hosted Supabase docker-compose: Postgres 17 + pgvector, GoTrue (GitHub OAut
 - TLS cert is the institutional **InCommon/UNC SAN cert** renewed out-of-band, NOT Let's Encrypt; cert lives at `/etc/nginx/cert/` in the nginx container.
 - `pr.fabric-testbed.net` box expects sibling layout `~/supabase-stack/` + `~/TeamBrain/`; nginx overlay bind-mounts `../TeamBrain/deploy/production/nginx/conf.d`.
 - Edge Runtime ships `volumes/functions/` with NO type-check — a TS error reaches prod silently. Hence `deno-check.sh`.
-- GitHub Action PR-approval gate uses `trstringer/manual-approval` (native Environment reviewers are 422 on this private repo's plan).
+- GitHub Action capture-on-merge gate is **event-driven** (no blocking runner, no timer): the merge opens a `teambrain-capture` approval issue and exits; an approver's `/approve` comment triggers a separate `issue_comment` job that writes the captures. Replaced the old `trstringer/manual-approval` blocking gate, which idled runners for up to 6 h. See `examples/github-actions/capture-on-merge.yml`.
 - Slack app: signing-secret-only (no bot token); webhook JWT injected by nginx on that path. Migration `0023` maps channels→projects.
 
 ## Don't
