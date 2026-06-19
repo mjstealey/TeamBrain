@@ -674,6 +674,8 @@
     steps.appendChild(stepEl(n++, 'Connect your AI tool (MCP / REST)', 'done', 'available', [
       el('p', { class: 'muted', html: 'Each developer connects their own client. Grab a 30-day JWT from the <a href="/" class="plain">landing page</a>, then:' }),
       el('pre', { text: mcpCmd }),
+      el('p', { class: 'muted', html: 'Optional: add the slash commands / skills (no TeamBrain checkout needed) — run from your repo root, or just ask your connected agent to <em>"install the TeamBrain slash commands"</em>:' }),
+      el('pre', { text: 'curl -fsSL ' + location.origin + '/install.sh | sh' }),
     ]));
 
     // 4. AGENTS.md

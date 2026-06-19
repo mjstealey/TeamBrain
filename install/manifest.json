@@ -1,0 +1,37 @@
+{
+  "schema": "teambrain.client-commands.v1",
+  "repo": "mjstealey/TeamBrain",
+  "ref": "main",
+  "raw_base": "https://raw.githubusercontent.com/mjstealey/TeamBrain/main",
+  "note": "Credential-free prompt templates over the connected `teambrain` MCP server. Connect the MCP first (https://pr.fabric-testbed.net/help) — without it the commands have nothing to call. Write each file to its `dest` path relative to your repo root.",
+  "clients": [
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "files": [
+        { "src": ".claude/commands/tb-remember.md", "dest": ".claude/commands/tb-remember.md" },
+        { "src": ".claude/commands/tb-recall.md", "dest": ".claude/commands/tb-recall.md" },
+        { "src": ".claude/commands/tb-recent.md", "dest": ".claude/commands/tb-recent.md" }
+      ]
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "files": [
+        { "src": ".agents/skills/tb-remember/SKILL.md", "dest": ".agents/skills/tb-remember/SKILL.md" },
+        { "src": ".agents/skills/tb-recall/SKILL.md", "dest": ".agents/skills/tb-recall/SKILL.md" },
+        { "src": ".agents/skills/tb-recent/SKILL.md", "dest": ".agents/skills/tb-recent/SKILL.md" }
+      ]
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "untested": true,
+      "files": [
+        { "src": "examples/slash-commands/cursor/tb-remember.md", "dest": ".cursor/commands/tb-remember.md" },
+        { "src": "examples/slash-commands/cursor/tb-recall.md", "dest": ".cursor/commands/tb-recall.md" },
+        { "src": "examples/slash-commands/cursor/tb-recent.md", "dest": ".cursor/commands/tb-recent.md" }
+      ]
+    }
+  ]
+}

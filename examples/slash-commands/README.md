@@ -27,6 +27,26 @@ hotkey.
 
 ## Install
 
+### From the deployment &nbsp;✅ no TeamBrain checkout needed
+
+The fastest path when you've cloned a *registered* repo (not this one). The files are
+pulled from this repo on `pr.fabric-testbed.net`, so there's nothing to clone or sync.
+
+- **Ask your agent** (best): with the `teambrain` MCP connected, say *"install the
+  TeamBrain slash commands"* — the **`get_client_commands`** MCP tool returns each
+  file's destination path and content and the agent writes them in place.
+- **One-liner**, from your repo root:
+  ```bash
+  curl -fsSL https://pr.fabric-testbed.net/install.sh | sh
+  # scope / preview:
+  curl -fsSL https://pr.fabric-testbed.net/install.sh | sh -s -- --client claude-code
+  curl -fsSL https://pr.fabric-testbed.net/install.sh | sh -s -- --list
+  ```
+- **Manifest** for tooling: [`/install/manifest.json`](https://pr.fabric-testbed.net/install/manifest.json)
+  (`{ client, src, dest }` per file). See [`install/README.md`](../../install/README.md).
+
+The per-client sections below cover the layout and what each command does.
+
 ### Claude Code &nbsp;✅ tested
 
 Project-committed and auto-discovered. The working copies live in this repo at

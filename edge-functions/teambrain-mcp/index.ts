@@ -34,6 +34,7 @@ import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@^2.45.0'
 
 import { embed, vectorLiteral, currentEmbeddingModelTag } from './embedding.ts';
 import { promoteThoughtToDocs, PromoteError } from './promote.ts';
+import { getClientCommands, ClientCommandsError } from './client-commands.ts';
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -769,6 +770,46 @@ app.post('*', async (c) => {
         const msg = e instanceof PromoteError ? e.message : (e as Error).message;
         return {
           content: [{ type: 'text', text: `promote_to_docs ERROR: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // Tool: get_client_commands
+  // Hand a connected agent the TeamBrain slash-command / Codex-skill / Cursor-
+  // command files so it can install them into the *current* repo — the gap when
+  // you've cloned a registered repo but not TeamBrain itself, which otherwise
+  // sends the agent crawling the TeamBrain source to reconstruct them. Fetches
+  // the manifest + files from the public repo's GitHub raw at request time:
+  // single source of truth, always current, no credentials. The files are prompt
+  // templates over THIS MCP server, so there's nothing sensitive to gate beyond
+  // the endpoint's own JWT; no DB / RLS round-trip is needed.
+  const clientCommandsSchema = z.object({
+      client: z.enum(['claude-code', 'codex', 'cursor', 'all']).default('all')
+        .describe('Which AI client to fetch command/skill files for. Default "all".'),
+      ref: z.string().default('main')
+        .describe('Git ref in the public TeamBrain repo (mjstealey/TeamBrain) to pull from. Default "main".'),
+  });
+  server.tool(
+    'get_client_commands',
+    'Fetch the TeamBrain slash-command (Claude Code) / skill (Codex) / command ' +
+    '(Cursor) files so you can INSTALL them into the current repo. Returns each ' +
+    "file's destination path and content — write them to disk relative to the repo " +
+    'root, creating dirs as needed. Use this instead of searching the TeamBrain ' +
+    'source. Credential-free; the teambrain MCP must already be connected for the ' +
+    'commands to work.',
+    clientCommandsSchema.shape,
+    async (args: z.infer<typeof clientCommandsSchema>) => {
+      const denied = toolDenied(caps, 'get_client_commands');
+      if (denied) return denied;
+      try {
+        const result = await getClientCommands({ client: args.client, ref: args.ref });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        const msg = e instanceof ClientCommandsError ? e.message : (e as Error).message;
+        return {
+          content: [{ type: 'text', text: `get_client_commands ERROR: ${msg}` }],
           isError: true,
         };
       }

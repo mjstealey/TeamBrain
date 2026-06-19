@@ -110,6 +110,11 @@ same MCP doorway, not a separate path. Claude Code commands are committed at
 Cursor template lives under [`examples/slash-commands/`](examples/slash-commands/); see its
 [README](examples/slash-commands/README.md) for per-client install notes.
 
+Cloned a *registered* repo that doesn't carry these files? You don't need a TeamBrain
+checkout. With the MCP connected, call the **`get_client_commands`** tool and write the
+returned files into the repo — or run `curl -fsSL https://pr.fabric-testbed.net/install.sh | sh`
+from the repo root. Details: [`install/README.md`](install/README.md).
+
 ## Capture conventions
 
 **Capture:** architecture/design decisions made on a branch; conventions

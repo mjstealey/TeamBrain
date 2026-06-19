@@ -397,9 +397,10 @@ curl -sS -X POST \
   </table>
   <p class="muted" style="margin:0 0 0.5rem">
     <strong>Claude Code</strong>: committed at <code>.claude/commands/</code> —
-    auto-discovered, no install. Copy that folder into any repo to reuse.
-    <strong>Cursor</strong>: copy-anywhere templates under
-    <code>examples/slash-commands/cursor/</code> (community, untested).
+    auto-discovered, no install. <strong>Cursor</strong>: templates under
+    <code>examples/slash-commands/cursor/</code> (community, untested). To add them
+    to <em>another</em> repo, see <a href="#install-anyrepo">Install into any repo</a>
+    below — no TeamBrain checkout needed.
   </p>
   <div class="panel panel-warn">
     <p style="margin:0">
@@ -419,8 +420,38 @@ curl -sS -X POST \
     <code>tb-remember</code>) — repo-discovered, no install. They're the Codex
     equivalent of the Claude Code slash commands: trigger them with
     <code>/skills</code> or a <code>$</code>-mention, or just ask Codex to remember
-    or recall and it picks the right one. Copy the directories into another repo's
-    <code>.agents/skills/</code> (or <code>~/.agents/skills/</code>) to share.
+    or recall and it picks the right one. To add them to another repo, see
+    <a href="#install-anyrepo">Install into any repo</a> below.
+  </p>
+
+  <!-- ===================== INSTALL INTO ANY REPO ==================== -->
+  <h2 class="section" id="install-anyrepo">Install into any repo</h2>
+  <p style="margin:0 0 0.5rem">
+    Cloned a registered repo but it doesn't carry the commands? You don't need a
+    TeamBrain checkout — pull them straight from here. They're credential-free prompt
+    templates, so <strong>connect the MCP (above) first</strong> or they have nothing
+    to call.
+  </p>
+  <p style="margin:0 0 0.5rem">
+    <strong>Ask your agent.</strong> If TeamBrain is connected, just say
+    <em>"install the TeamBrain slash commands"</em> — the
+    <code>get_client_commands</code> MCP tool returns the files and the agent writes
+    them into this repo. No URLs, no copying, no crawling the TeamBrain source.
+  </p>
+  <p style="margin:0 0 0.25rem">
+    <strong>Or run the installer</strong> from your repo root:
+  </p>
+  <pre class="code" id="install-sh">curl -fsSL https://pr.fabric-testbed.net/install.sh | sh</pre>
+  <div class="copy-row">
+    <button type="button" class="btn btn-secondary btn-sm copy-btn" data-target="install-sh">Copy</button>
+    <span class="status" data-status-for="install-sh"></span>
+  </div>
+  <p class="muted" style="margin:0">
+    Installs all three clients by default; scope with
+    <code>… | sh -s -- --client claude-code</code> (<code>claude-code</code>,
+    <code>codex</code>, or <code>cursor</code>), or preview with <code>--list</code>.
+    The machine-readable file list is at
+    <a href="/install/manifest.json">/install/manifest.json</a>.
   </p>
 
   <!-- ============================= SLACK ============================ -->
@@ -565,6 +596,39 @@ curl -sS -X POST \
       if it was flagged.
     </p>
   </div>
+  <h3 class="sub">When an already-<em>confirmed</em> thought flags again</h3>
+  <p style="margin:0.25rem 0 0.5rem">
+    A <code>confirmed</code> memory turning up flagged is not a contradiction — confidence
+    and the stale flag are <strong>orthogonal</strong>. Confidence is a trust verdict; the
+    flag is a "re-check this" badge tripped by a heuristic (a commit touched a pinned
+    <code>path</code>, or <code>expires_at</code> passed). A confirmed thought <em>can</em>
+    flag, by design. Usually that's the system working: if a reviewer re-raises something
+    the thought already settled, surfacing it (with its <code>promoted_pr_url</code>) is the
+    answer — clear the flag once you've reconfirmed the decision still holds. If the change
+    actually invalidated it, fix the source of truth (update the <code>docs/</code> markdown
+    by PR) and <strong>deprecate</strong> the thought.
+  </p>
+  <p style="margin:0 0 0.5rem">
+    One wrinkle for the still-true case: <code>mark_stale</code> only accepts
+    <code>tentative</code> or <code>deprecated</code> — there is no "re-verify and stay
+    confirmed" in a single call. So re-verifying a confirmed thought <strong>downgrades it
+    to <code>tentative</code></strong> (rank multiplier 1.15 → 1.0, minor), and
+    <code>promote_to_docs</code> re-stamps <code>confirmed</code> but does not bump
+    <code>last_verified_at</code>, so it won't clear the flag on its own. To land a thought
+    both <em>unflagged and confirmed</em>, order matters:
+  </p>
+  <ol style="margin:0.25rem 0 0.75rem; padding-left:1.2rem">
+    <li><code>mark_stale(thought_id, confidence: 'tentative')</code> — the
+      <code>thoughts_clear_stale_flag_on_verify</code> trigger clears the flag the moment
+      <code>last_verified_at</code> advances.</li>
+    <li><code>promote_to_docs(thought_id)</code> — idempotent; re-stamps
+      <code>confirmed</code>.</li>
+  </ol>
+  <p class="muted" style="margin:0 0 0.75rem">
+    In practice most people stop at step 1: once a thought is promoted, the markdown in
+    <code>docs/</code> is the real source of truth, so letting the thought ride as
+    <code>tentative</code> is fine — only re-promote if the "confirmed" badge matters to you.
+  </p>
   <p class="muted" style="margin:0">
     Under the hood, search orders by a freshness-aware <code>rank_score</code> =
     similarity × confidence (confirmed 1.15 · tentative 1.0 · deprecated 0.4) ×

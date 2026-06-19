@@ -159,6 +159,21 @@ server {
         try_files    /openapi.yaml =404;
     }
 
+    # Client-commands installer + manifest. The slash-command / Codex-skill /
+    # Cursor-command files live in the public repo; we 302 to GitHub raw rather
+    # than serve a bind-mounted copy, so there is one source of truth and nothing
+    # to keep in sync. `/install.sh` is the human one-liner
+    # (`curl -fsSL https://pr.fabric-testbed.net/install.sh | sh`); the manifest is
+    # the machine-readable file list (the get_client_commands MCP tool fetches the
+    # same content). Exact-match locations outrank the prefix `location /` below,
+    # and don't match the `^/(auth|rest|functions|storage|realtime)/` API regex.
+    location = /install.sh {
+        return 302 https://raw.githubusercontent.com/mjstealey/TeamBrain/main/install/install-commands.sh;
+    }
+    location = /install/manifest.json {
+        return 302 https://raw.githubusercontent.com/mjstealey/TeamBrain/main/install/manifest.json;
+    }
+
     # Anything else under / that we don't explicitly route is a 404.
     # (The named API paths above are still matched first by their
     # location regex; this block only fires for non-API, non-root paths.)
