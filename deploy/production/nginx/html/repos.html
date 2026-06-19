@@ -678,11 +678,17 @@
       el('pre', { text: 'curl -fsSL ' + location.origin + '/install.sh | sh' }),
     ]));
 
-    // 4. AGENTS.md
-    const agState = gh.has_agents_md === true ? 'done' : (gh.has_agents_md === false ? 'todo' : 'todo');
-    const agLabel = !ghOk ? 'unknown' : (gh.has_agents_md ? 'present' : 'missing');
+    // 4. AGENTS.md. Drift is version-based: the committed file's template-version
+    //    marker vs the current template (agents_md_outdated from /repo). Present-but-
+    //    outdated -> warn + update PR; absent on older instances -> undefined -> no nag.
+    const agOutdated = gh.has_agents_md === true && gh.agents_md_outdated === true;
+    const agState = gh.has_agents_md === true ? (agOutdated ? 'warn' : 'done') : 'todo';
+    const agLabel = !ghOk ? 'unknown'
+      : (gh.has_agents_md ? (agOutdated ? 'present · update available' : 'present') : 'missing');
     steps.appendChild(stepEl(n++, 'AGENTS.md committed to the repo', agState, agLabel, [
       el('p', { class: 'muted', text: 'A per-repo orientation file for AI agents, generated from your project details.' }),
+      isAdmin && agOutdated ? el('p', { class: 'muted', html:
+        'A newer AGENTS.md template is available (e.g. it now documents installing the TeamBrain slash commands / skills). “Open update PR” regenerates this repo’s AGENTS.md from the current template — <strong>review the PR before merging</strong>, since local edits to AGENTS.md would be replaced.' }) : null,
       actionsRow(
         el('button', { class: 'btn btn-sm btn-secondary', text: 'Generate AGENTS.md', onclick: () => generateAgents(slug) }),
         isAdmin ? el('button', { class: 'btn btn-sm', text: gh.has_agents_md ? 'Open update PR' : 'Add via PR', onclick: (e) => setupPr(slug, ['agents_md'], e.target, gh.has_agents_md === true) }) : null,

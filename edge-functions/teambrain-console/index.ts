@@ -35,7 +35,10 @@ import {
 } from '../teambrain-membership-sync/github.ts';
 import { syncOneProject, SyncReport } from '../teambrain-membership-sync/sync.ts';
 import { commitFilesAndOpenPR, GitHubPrError } from '../teambrain-mcp/github-pr.ts';
-import { renderAgentsMd, captureOnMergeYml } from './agents-md.ts';
+import {
+  renderAgentsMd, captureOnMergeYml,
+  currentAgentsMdVersion, parseAgentsMdVersion,
+} from './agents-md.ts';
 
 // ---------------------------------------------------------------------------
 // Env
@@ -350,22 +353,29 @@ app.get('/repo', async (c) => {
   try {
     const token = await getInstallationToken();
     const defaultBranch = await getDefaultBranch(owner, repo, token);
-    const [workflowContent, hasAgents] = await Promise.all([
+    const [workflowContent, agentsContent] = await Promise.all([
       repoFileContent(owner, repo, WORKFLOW_PATH, token, defaultBranch),
-      repoFileExists(owner, repo, AGENTS_MD_PATH, token, defaultBranch),
+      repoFileContent(owner, repo, AGENTS_MD_PATH, token, defaultBranch),
     ]);
     const hasWorkflow = workflowContent !== null;
-    // Drift: file present but its content differs from the current embedded
-    // template (e.g. an old blocking-gate workflow vs the event-driven one).
-    // Drives the "update available" badge + Update-workflow button on /repos.
+    const hasAgents   = agentsContent !== null;
+    // Workflow drift: file present but its content differs from the current
+    // embedded template (e.g. an old blocking-gate workflow vs the event-driven
+    // one). The workflow is slug-agnostic/verbatim, so an exact compare is right.
     const captureWorkflowOutdated = hasWorkflow &&
       normalizeYml(workflowContent as string) !== normalizeYml(captureOnMergeYml());
+    // AGENTS.md drift: compare the committed file's template version marker to the
+    // current template version. Version (not content) compare because AGENTS.md is
+    // rendered per-repo and human-editable — absent/older marker => update available.
+    const agentsMdOutdated = hasAgents &&
+      parseAgentsMdVersion(agentsContent as string) < currentAgentsMdVersion();
     return c.json({
       slug, project_name: project.name, role, is_admin: role === 'admin',
       default_branch: defaultBranch,
       has_capture_workflow: hasWorkflow,
       capture_workflow_outdated: captureWorkflowOutdated,
       has_agents_md: hasAgents,
+      agents_md_outdated: agentsMdOutdated,
     });
   } catch (err) {
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status);

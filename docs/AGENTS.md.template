@@ -53,6 +53,24 @@ claude mcp add --transport http teambrain {TEAMBRAIN_URL}/functions/v1/teambrain
 
 JWTs expire after 30 days. Re-grab from the OAuth round-trip when prompted.
 
+## Slash commands & skills (optional)
+
+One-keystroke shortcuts over the connected MCP — `/tb-remember <text>`,
+`/tb-recall <query>`, `/tb-recent [N]` — committed as Claude Code commands
+(`.claude/commands/`) and Codex skills (`.agents/skills/`): repo-discovered,
+no install. They carry no credentials; they're sugar over the same MCP doorway.
+
+If this repo doesn't have them yet, you don't need a TeamBrain checkout. Ask
+your connected agent to *"install the TeamBrain slash commands"* — it calls the
+`get_client_commands` MCP tool and writes the files into this repo — or run from
+the repo root:
+
+```bash
+curl -fsSL {TEAMBRAIN_URL}/install.sh | sh
+```
+
+See **{TEAMBRAIN_URL}/help** → "Install into any repo" for per-client details.
+
 ## The 5 tools at a glance
 
 | Tool | When to call it |
@@ -145,3 +163,6 @@ recent reviewer feedback:
 
 *This file is owned by humans. AI agents may suggest edits via PR but
 should not silently rewrite it.*
+
+<!-- teambrain:agents-md-template v2 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
+
