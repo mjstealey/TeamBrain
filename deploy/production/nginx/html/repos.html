@@ -834,6 +834,48 @@
     const tok = await req(`${FN}/teambrain-token/token?project=${encodeURIComponent(slug)}`);
     renderTokens(slug, tokWrap, tok);
     renderSlack(slug, slkWrap, slkRes || await req(`${FN}/teambrain-slack/links?project=${encodeURIComponent(slug)}`));
+
+    wrap.appendChild(el('h2', { class: 'section', text: 'Repository name' }));
+    renderRename(slug, wrap);
+  }
+
+  // Re-home a project onto a new owner/repo after a GitHub rename. The project
+  // keeps its UUID, so memories/members/tokens/Slack links carry over; only the
+  // slug (the GitHub join key) changes. Admin-only; the server additionally
+  // requires the caller be a GitHub admin on the new repo, in the org.
+  function renderRename(slug, wrap) {
+    wrap.appendChild(el('p', { class: 'muted',
+      text: 'Renamed this repo on GitHub? Re-home the project onto its new owner/repo — memories, members, tokens, and Slack links carry over (the project keeps its internal id). You must be a GitHub admin on the new repo.' }));
+    const input = el('input', { type: 'text', value: slug, placeholder: 'owner/repo',
+      autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': 'New owner/repo' });
+    const btn = el('button', { class: 'btn', text: 'Re-home', onclick: () => renameRepo(slug, input.value, btn) });
+    wrap.appendChild(el('div', { class: 'addbox' }, input, btn));
+  }
+
+  async function renameRepo(slug, newSlug, btn) {
+    newSlug = (newSlug || '').trim();
+    if (!newSlug || newSlug === slug) { openOut('Nothing to do', 'Enter the new owner/repo, different from the current name.', el('span')); return; }
+    if (!/^[^/\s]+\/[^/\s]+$/.test(newSlug)) { openOut('Invalid name', 'Use the "owner/repo" format, e.g. fabric-testbed/fabric-core-api-dev.', el('span')); return; }
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Re-homing…';
+    const res = await jsonPost(`${FN}/teambrain-console/rename`, { slug, new_slug: newSlug });
+    btn.disabled = false; btn.textContent = orig;
+    if (!res.ok) {
+      openOut('Re-home failed', errMsg(res), el('p', { class: 'muted', text: 'The new repo must be in the org, not already registered, and you must be a GitHub admin on it.' }));
+      return;
+    }
+    // capture-on-merge needs no change (it sends github.repository, already the
+    // new name). The in-repo AGENTS.md / .claude config still carry the old
+    // slug, so point the admin at the re-homed project, where the
+    // capture-on-merge step offers the setup PR to regenerate them. A plain
+    // link (full navigation) avoids re-opening this <dialog> — showModal()
+    // throws if called while it is already open.
+    const body = el('div', {},
+      el('p', { text: `Re-homed ${slug} → ${newSlug}. Memories, members, tokens, and Slack links carried over.` }),
+      el('ul', { style: 'margin:0.5rem 0; padding-left:1.2rem' },
+        el('li', { html: '<strong>capture-on-merge:</strong> no change needed — the workflow reads <code>github.repository</code>, already the new name.' }),
+        el('li', { html: '<strong>In-repo config:</strong> AGENTS.md / <code>.claude/</code> / slash commands still name the old slug. Re-run the setup PR on the re-homed project below.' })),
+      el('p', {}, el('a', { href: `/repos?slug=${encodeURIComponent(newSlug)}`, text: `Open the re-homed project (${newSlug}) →` })));
+    openOut('Project re-homed', '', body);
   }
 
   function renderTokens(slug, wrap, res) {

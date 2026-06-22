@@ -609,6 +609,119 @@ app.post('/capture-toggle', async (c) => {
   return c.json({ ok: true, slug, capture_on_merge_enabled: body.enabled });
 });
 
+// --- rename: re-home a project onto a new owner/repo (admin) -----------------
+// A GitHub repo rename leaves projects.repo_slug stale. The project's identity
+// is its UUID (thoughts/members/api_tokens/slack_channels all FK on project_id),
+// so re-homing is a single repo_slug UPDATE — no data moves, tokens survive
+// (the bot JWT is scoped by project_id, not the slug). Two gates, one from each
+// existing precedent: the caller must be a TeamBrain admin of the EXISTING
+// project (owns the memories) AND a GitHub admin of the NEW repo in the org
+// (proves the new identity is theirs and the App can see it) — without the
+// latter, an admin could aim the project at a repo they don't control and pull
+// in that repo's collaborators on the follow-up sync. After the swap we
+// reconcile membership against the new repo, exactly like sync-now/register.
+app.post('/rename', async (c) => {
+  let userId: string;
+  try { userId = auth(c); } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+  const service = serviceClient();
+  let body: { slug?: unknown; new_slug?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'request body must be JSON' }, 400); }
+
+  // Resolve the existing project + require TeamBrain admin on it; parse + org-gate the new slug.
+  let project: ProjectRow, role: string, slug: string;
+  let newSlug: string, newOwner: string, newRepo: string;
+  try {
+    ({ slug } = parseSlug(body.slug));
+    ({ slug: newSlug, owner: newOwner, repo: newRepo } = parseSlug(body.new_slug));
+    ({ project, role } = await requireMember(service, slug, userId));
+    requireAdminRole(role, slug);
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+
+  if (newSlug.toLowerCase() === project.repo_slug.toLowerCase()) {
+    return c.json({ error: `new_slug equals the current slug (${project.repo_slug})` }, 400);
+  }
+  if (!GITHUB_ORG) return c.json({ error: 'server misconfigured: TEAMBRAIN_GITHUB_ORG not set' }, 500);
+  if (newOwner.toLowerCase() !== GITHUB_ORG.toLowerCase()) {
+    return c.json({ error: `new repo owner must be the "${GITHUB_ORG}" GitHub org` }, 403);
+  }
+
+  // Reject if the new slug already belongs to another project (the repo_slug
+  // UNIQUE constraint would 23505 anyway; pre-check for a clean message).
+  const existing = await resolveProject(service, newSlug);
+  if (existing && existing.id !== project.id) {
+    return c.json({ error: `"${newSlug}" is already registered as another project` }, 409);
+  }
+
+  // GitHub repo-admin gate on the NEW repo.
+  const callerLogin = await githubLoginSafe(service, userId);
+  if (!callerLogin) return c.json({ error: 'no GitHub identity on your account (user_metadata.user_name absent)' }, 403);
+  let perm: string | null;
+  try {
+    const token = await getInstallationToken();
+    perm = await getUserRepoPermission(newOwner, newRepo, callerLogin, token);
+  } catch (err) {
+    return c.json({ error: `GitHub permission check on ${newSlug} failed: ${(err as Error).message}` }, 502);
+  }
+  if (perm === null) {
+    return c.json({ error: `repo "${newSlug}" not found or not accessible to the TeamBrain GitHub App` }, 404);
+  }
+  if (perm !== 'admin') {
+    return c.json({ error: `re-homing onto ${newSlug} requires admin permission on that repo; ${callerLogin} has "${perm}"` }, 403);
+  }
+
+  // Swap the slug. Carry the display name along only when it still mirrors the
+  // old slug (the register default) — an explicit custom name is left untouched.
+  const newName = project.name === project.repo_slug ? newSlug : project.name;
+  const { error: updErr } = await service
+    .from('projects')
+    .update({ repo_slug: newSlug, name: newName, updated_at: new Date().toISOString() })
+    .eq('id', project.id);
+  if (updErr) {
+    if ((updErr as { code?: string }).code === '23505') {
+      return c.json({ error: `"${newSlug}" is already registered as another project` }, 409);
+    }
+    return c.json({ error: `rename failed: ${updErr.message}` }, 502);
+  }
+
+  // Reconcile membership against the new repo (its collaborators may differ);
+  // record the run like sync-now/register so the overview RPC's last_sync reads it.
+  const startedAt = new Date().toISOString();
+  let report: SyncReport | null = null;
+  let syncError: string | null = null;
+  try {
+    report = await syncOneProject(service, {
+      project_id:        project.id,
+      repo_slug:         newSlug,
+      github_team_slugs: project.github_team_slugs ?? [],
+    });
+  } catch (err) {
+    syncError = (err as Error).message;
+  }
+  const { error: runErr } = await service.from('sync_runs').insert({
+    project_id:  project.id,
+    started_at:  startedAt,
+    finished_at: new Date().toISOString(),
+    ok:          syncError === null,
+    report,
+    error:       syncError,
+  });
+  if (runErr) console.error(`sync_runs insert failed: ${runErr.message}`);
+
+  return c.json({
+    ok:       true,
+    old_slug: slug,
+    new_slug: newSlug,
+    project:  { id: project.id, repo_slug: newSlug, name: newName },
+    sync:     syncError === null ? report : { error: syncError, note: 'renamed; team sync will retry on next scheduled run' },
+  });
+});
+
 app.all('*', (c) => c.json({ error: `no route: ${c.req.method} ${c.req.path}` }, 404));
 
 Deno.serve(app.fetch);
