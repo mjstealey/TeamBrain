@@ -181,6 +181,11 @@
   .flag-item .when { color: var(--color-grey); margin-left: auto; }
   .flag-item .content { margin: 0; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .flag-item .content.expanded { display: block; -webkit-line-clamp: unset; overflow: visible; }
+  .flag-item .toggle { display: none; background: none; border: 0; padding: 0; margin: 0.35rem 0 0;
+    font-size: 0.78rem; color: var(--color-primary-dark); cursor: pointer; }
+  .flag-item .toggle.show { display: inline-block; }
+  .flag-item .toggle:hover { text-decoration: underline; }
   .flag-item .paths { font-size: 0.78rem; color: var(--color-grey); margin-top: 0.4rem; word-break: break-all; }
   .flag-item .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.55rem; }
 
@@ -914,7 +919,15 @@
     const when = relTime(t.stale_flagged_at);
     meta.appendChild(el('span', { class: 'when', title: when.title, text: 'flagged ' + when.text }));
     item.appendChild(meta);
-    item.appendChild(el('p', { class: 'content', text: t.content || '' }));
+    // Content is clamped to 3 lines so the panel stays scannable; reveal a
+    // Show full memory / Show less toggle only when it actually overflows, so a
+    // reviewer can read the whole thought before deciding how to resolve it.
+    const content = el('p', { class: 'content', text: t.content || '' });
+    const toggle = el('button', { class: 'toggle', type: 'button', text: 'Show full memory',
+      onclick: () => { toggle.textContent = content.classList.toggle('expanded') ? 'Show less' : 'Show full memory'; } });
+    item.appendChild(content);
+    item.appendChild(toggle);
+    requestAnimationFrame(() => { if (content.scrollHeight - content.clientHeight > 2) toggle.classList.add('show'); });
     if ((t.paths || []).length) item.appendChild(el('div', { class: 'paths', text: 'pinned paths: ' + t.paths.join('  ') }));
     if (t.linked_pr_url) item.appendChild(el('div', { class: 'paths' },
       el('a', { href: t.linked_pr_url, target: '_blank', rel: 'noopener', text: t.linked_pr_url })));
