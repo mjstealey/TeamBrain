@@ -49,9 +49,12 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const GITHUB_ORG                = Deno.env.get('TEAMBRAIN_GITHUB_ORG');
 // {TEAMBRAIN_URL} for generated AGENTS.md. Prefer an explicit override, else
 // reuse the stack's public URL (already passed to the functions container).
+// Use `||`, not `??`: SUPABASE_PUBLIC_URL is frequently present-but-empty in
+// the self-hosted .env, and `'' ?? next` keeps the empty string — which renders
+// a hostless AGENTS.md (broken connect URL). `||` skips empty strings too.
 const PUBLIC_URL                = Deno.env.get('TEAMBRAIN_PUBLIC_URL')
-  ?? Deno.env.get('SUPABASE_PUBLIC_URL')
-  ?? 'https://pr.fabric-testbed.net';
+  || Deno.env.get('SUPABASE_PUBLIC_URL')
+  || 'https://pr.fabric-testbed.net';
 
 // Bound discovery so a large installation can't fan out into hundreds of
 // per-repo permission checks on one request.
@@ -266,9 +269,13 @@ async function leadAndReviewers(
   let lead = project.created_by ? await githubLoginSafe(service, project.created_by) : null;
   if (!lead && logins.length) lead = logins[0];
   const reviewers = logins.filter((l) => l !== lead);
+  // Fall back to a literal 'TBD', never the raw {PROJECT_LEAD}/{PILOT_REVIEWERS}
+  // placeholders — a generated file must never look un-instantiated. A project
+  // can legitimately have no non-lead admin reviewer yet (e.g. a solo repo); the
+  // /repos "update available" signal is the version marker, not placeholder text.
   return {
-    lead:      lead ?? '{PROJECT_LEAD}',
-    reviewers: reviewers.length ? reviewers.join(', ') : '{PILOT_REVIEWERS}',
+    lead:      lead || 'TBD',
+    reviewers: reviewers.length ? reviewers.join(', ') : 'TBD',
   };
 }
 

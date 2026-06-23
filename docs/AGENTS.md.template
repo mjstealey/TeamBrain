@@ -118,10 +118,10 @@ A memory that has been:
 2. Stable across at least two PRs (no contradiction surfaced), and
 3. General enough to be useful outside the immediate PR context
 
-…should be **promoted** to repo docs via `promote_to_docs`. In Phase 6
-that will open a PR; for now it returns a preview that a human can
-hand-translate into a `docs/adr/` entry or a section of `AGENTS.md`
-(this file) itself.
+…should be **promoted** to repo docs via `promote_to_docs`. It opens a
+PR adding a generated doc (type-aware default path — decisions→`docs/adr/`,
+else `docs/…`; override with `target_path`) and marks the memory
+`confirmed`; review and merge the PR to land it.
 
 The promotion loop is the governance contract: TeamBrain holds
 ephemeral, fast-moving knowledge; the repo holds curated, reviewed
@@ -164,5 +164,5 @@ recent reviewer feedback:
 *This file is owned by humans. AI agents may suggest edits via PR but
 should not silently rewrite it.*
 
-<!-- teambrain:agents-md-template v2 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
+<!-- teambrain:agents-md-template v3 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
 

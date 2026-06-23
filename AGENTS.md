@@ -7,7 +7,7 @@ or comment.
 ## What TeamBrain is, in this repo's context
 
 TeamBrain is a multi-tenant, project-scoped, AI-agnostic shared memory
-service. It lives at **** and stores team knowledge that
+service. It lives at **https://pr.fabric-testbed.net** and stores team knowledge that
 isn't worth committing to the repo (yet) but is worth not losing:
 in-flight debugging notes, recent decisions still being validated,
 conventions, gotchas, cross-developer context.
@@ -22,7 +22,7 @@ The TeamBrain MCP server is reachable as a **remote HTTP MCP server**
 (no stdio, no local Node, no per-developer config files):
 
 ```
-URL:           /functions/v1/teambrain-mcp/mcp
+URL:           https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp
 Authorization: Bearer <your-github-oauth-jwt>
 ```
 
@@ -30,7 +30,7 @@ Each AI tool has its own way of registering remote MCP servers — see
 that tool's docs. For **Claude Code**, the equivalent of:
 
 ```bash
-claude mcp add --transport http teambrain /functions/v1/teambrain-mcp/mcp \
+claude mcp add --transport http teambrain https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp \
   --header "Authorization: Bearer <jwt>"
 ```
 
@@ -49,10 +49,10 @@ your connected agent to *"install the TeamBrain slash commands"* — it calls th
 the repo root:
 
 ```bash
-curl -fsSL /install.sh | sh
+curl -fsSL https://pr.fabric-testbed.net/install.sh | sh
 ```
 
-See **/help** → "Install into any repo" for per-client details.
+See **https://pr.fabric-testbed.net/help** → "Install into any repo" for per-client details.
 
 ## The 5 tools at a glance
 
@@ -101,10 +101,10 @@ A memory that has been:
 2. Stable across at least two PRs (no contradiction surfaced), and
 3. General enough to be useful outside the immediate PR context
 
-…should be **promoted** to repo docs via `promote_to_docs`. In Phase 6
-that will open a PR; for now it returns a preview that a human can
-hand-translate into a `docs/adr/` entry or a section of `AGENTS.md`
-(this file) itself.
+…should be **promoted** to repo docs via `promote_to_docs`. It opens a
+PR adding a generated doc (type-aware default path — decisions→`docs/adr/`,
+else `docs/…`; override with `target_path`) and marks the memory
+`confirmed`; review and merge the PR to land it.
 
 The promotion loop is the governance contract: TeamBrain holds
 ephemeral, fast-moving knowledge; the repo holds curated, reviewed
@@ -139,7 +139,7 @@ recent reviewer feedback:
 
 - **Project lead (commits + reviews):** mjstealey
 - **Pilot reviewers:** paul-ruth, kthare10
-- **TeamBrain ops:** report tool errors at /oauth-test/
+- **TeamBrain ops:** report tool errors at https://pr.fabric-testbed.net/oauth-test/
   for live debugging, or open an issue at the TeamBrain repo.
 
 ---
@@ -147,5 +147,5 @@ recent reviewer feedback:
 *This file is owned by humans. AI agents may suggest edits via PR but
 should not silently rewrite it.*
 
-<!-- teambrain:agents-md-template v2 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
+<!-- teambrain:agents-md-template v3 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
 
