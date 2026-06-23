@@ -30,7 +30,7 @@
 --   * The cosine `match_threshold` cutoff is UNCHANGED — freshness re-ranks
 --     within the relevant set and never resurrects an irrelevant row.
 --
--- DECISIONS baked in (see docs/phase-6-checklist.md § B):
+-- DECISIONS baked in (see docs/development/phase-6-checklist.md § B):
 --   * Decay shape: exponential, 90-day half-life, bounded below by a
 --     `decay_floor` (0.5) so freshness breaks near-ties but cannot override a
 --     much stronger cosine match. half_life_days / decay_floor are parameters

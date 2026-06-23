@@ -42,5 +42,5 @@ OpenAPI 3.1 spec at `/openapi.yaml`; curl recipes in `examples/curl.md` § 8; ru
 - captured: 2026-05-30T00:17:16.211579+00:00
 - last verified: 2026-06-15T12:31:51.962+00:00
 - linked commit: `88bb3ce`
-- paths: `migrations/0012_api_tokens.sql`, `edge-functions/teambrain-token/`, `edge-functions/teambrain-mcp/index.ts`, `edge-functions/teambrain-rest/index.ts`, `edge-functions/teambrain-membership-sync/sync.ts`, `examples/github-actions/capture-on-merge.yml`, `examples/curl.md`, `deploy/production/nginx/html/openapi.yaml`, `docs/phase-5-checklist.md`
+- paths: `migrations/0012_api_tokens.sql`, `edge-functions/teambrain-token/`, `edge-functions/teambrain-mcp/index.ts`, `edge-functions/teambrain-rest/index.ts`, `edge-functions/teambrain-membership-sync/sync.ts`, `examples/github-actions/capture-on-merge.yml`, `examples/curl.md`, `deploy/production/nginx/html/openapi.yaml`, `docs/development/phase-5-checklist.md`
 - tags: `phase-5`, `api-token`, `milestone`, `shipped`, `teambrain-token`

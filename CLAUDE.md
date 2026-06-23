@@ -1,7 +1,7 @@
 # TeamBrain
 
 ## What this is
-Multi-tenant, project-scoped, AI-agnostic shared memory for dev teams. Read/write via **MCP** (primary) and a parallel **REST/OpenAPI** surface. Live at `https://pr.fabric-testbed.net`. Phases 0–6 shipped (only Phase 6 § E, migration-baseline consolidation, deferred to cutover). Detailed history: `README.md` + `docs/phase-*-checklist.md`.
+Multi-tenant, project-scoped, AI-agnostic shared memory for dev teams. Read/write via **MCP** (primary) and a parallel **REST/OpenAPI** surface. Live at `https://pr.fabric-testbed.net`. Phases 0–6 shipped (only Phase 6 § E, migration-baseline consolidation, deferred to cutover). Detailed history & provenance: `docs/development/` (phased build record + per-phase `phase-*-checklist.md`).
 
 ## Pilot / evaluation
 Phase 7 evaluation pilot repo is `fabric-testbed/fabric-core-api` (refactor done solo by Michael with Claude Code; **Komal Thareja — GitHub `kthare10` — is primary reviewer**). The value under test is **multi-developer commentary on a single-committer's changes**, not multi-committer coordination. Falsification target: every review comment that triggers a "we already discussed this" response is a TeamBrain miss. A live second-developer proof already exists on `fabric-testbed/loomai-dev` (Komal's repo, running capture-on-merge in production); adoption guide `docs/capture-on-merge-adoption.md`.

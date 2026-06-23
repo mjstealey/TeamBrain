@@ -386,4 +386,4 @@ the server it proceeds, so a transient outage never silently drops capture.
 - Token issuance/exchange: `edge-functions/teambrain-token/` · curl recipes in `examples/curl.md` §§ 8–9
 - Registration: `edge-functions/teambrain-register-project/`
 - OpenAPI contract: <https://pr.fabric-testbed.net/openapi.yaml>
-- Design rationale: `docs/phase-5-checklist.md` § C (decisions C-D1 … C-D9)
+- Design rationale: `docs/development/phase-5-checklist.md` § C (decisions C-D1 … C-D9)

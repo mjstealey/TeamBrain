@@ -13,7 +13,7 @@
 // access checks live in this file.
 //
 // Why a separate function rather than PostgREST (decision A1 in
-// docs/phase-4-checklist.md): the published OpenAPI is meant for LLM
+// docs/development/phase-4-checklist.md): the published OpenAPI is meant for LLM
 // tool-callers and CI; PostgREST's auto-generated surface (every table,
 // column, filter operator, Prefer headers) is the wrong contract to hand
 // them. This function is the curated, slug-friendly surface; PostgREST

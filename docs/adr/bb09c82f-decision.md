@@ -21,11 +21,11 @@ One-keystroke interactive shortcuts over the **already-connected** `teambrain` M
 
 **Smoke:** this capture is itself the § D5 Claude-driven tool-path smoke — derived the slug from the origin remote, ran `search_project_thoughts` (dedup, no prior § D-shipped memory), then this `capture_project_thought` — the exact sequence `/tb-remember` drives. The `/`-keystroke confirmation in Claude Code + the Codex copy-and-run remain Michael-driven.
 
-Adoption kit + per-client install: `examples/slash-commands/README.md`. Detail + Done-when: `docs/phase-5-checklist.md` § D. **Remaining in Phase 5: § B (Slack).**
+Adoption kit + per-client install: `examples/slash-commands/README.md`. Detail + Done-when: `docs/development/phase-5-checklist.md` § D. **Remaining in Phase 5: § B (Slack).**
 
 ## Provenance
 
 - scope: `project`
 - captured: 2026-06-09T16:28:08.533232+00:00
-- paths: `.claude/commands/tb-remember.md`, `.claude/commands/tb-recall.md`, `.claude/commands/tb-recent.md`, `examples/slash-commands/README.md`, `docs/phase-5-checklist.md`, `.gitignore`
+- paths: `.claude/commands/tb-remember.md`, `.claude/commands/tb-recall.md`, `.claude/commands/tb-recent.md`, `examples/slash-commands/README.md`, `docs/development/phase-5-checklist.md`, `.gitignore`
 - tags: `phase-5`, `milestone`, `shipped`, `slash-commands`, `tb-remember`, `claude-code`, `codex`, `cursor`

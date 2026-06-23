@@ -45,12 +45,12 @@ Three doc edits sit unstaged in the working tree from Section A → B decision-c
 
 - `CLAUDE.md` — added "Local Reference Forks" section (OB1 + supabase forks at `~/github/mjstealey/`); promoted pilot-repo decision (`fabric-core-api`) into Settled Decisions; cleared Open Decisions.
 - `docs/deployment.md` — Stack section now points at the local supabase fork as the canonical source for `docker/` artifacts.
-- `docs/phase-0-checklist.md` — D1 rewritten to copy from the local fork; B1 rewritten as "Pilot reviewer buy-in" with five sub-questions for Komal Thareja; Section A rewritten as "status: complete".
+- `docs/development/phase-0-checklist.md` — D1 rewritten to copy from the local fork; B1 rewritten as "Pilot reviewer buy-in" with five sub-questions for Komal Thareja; Section A rewritten as "status: complete".
 
 Suggested commit (run manually — git operations stay user-driven per the A3 convention):
 
 ```bash
-git add CLAUDE.md docs/deployment.md docs/phase-0-checklist.md
+git add CLAUDE.md docs/deployment.md docs/development/phase-0-checklist.md
 git commit -m "Phase 0: capture pilot decision (fabric-core-api), local reference forks, Section A status"
 git push personal main
 git push origin main           # only if you also want the canonical org remote updated now

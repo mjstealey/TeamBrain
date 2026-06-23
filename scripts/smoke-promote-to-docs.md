@@ -3,7 +3,7 @@
 Repeatable check that promoting a thought opens a real PR in the project's repo with the
 generated ADR-style markdown, stamps the source thought (`promoted_pr_url` +
 `confidence: confirmed`), is idempotent on a re-promote, and refuses a non-writer / a
-`personal`-scope thought. This is the "Done when" for `docs/phase-6-checklist.md` § D.
+`personal`-scope thought. This is the "Done when" for `docs/development/phase-6-checklist.md` § D.
 
 Operator-run (you hold the GitHub-OAuth JWT). **Prereqs:**
 

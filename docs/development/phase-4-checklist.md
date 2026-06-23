@@ -2,7 +2,7 @@
 
 Concrete, ordered tasks for Phase 4 — publish a **REST + OpenAPI surface** that mirrors the MCP tool set 1:1 over the same backend (same Postgres, same RLS, same GitHub-OAuth JWT), so non-MCP-native clients (curl, OpenAI function calling, GitHub Actions) can read and write TeamBrain memory. Each item has an explicit **Done when** acceptance criterion.
 
-Phase 4 entry preconditions (from `docs/phase-3-checklist.md` § I and the current state of `main`):
+Phase 4 entry preconditions (from `docs/development/phase-3-checklist.md` § I and the current state of `main`):
 
 - ✅ Phases 0–3 complete on `main`; `migrations/0001`–`0010` + `seed.sql` applied to production (`pr.fabric-testbed.net`).
 - ✅ MCP edge function deployed; 6 tools register and round-trip cleanly (`ping`, `capture_project_thought`, `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`).

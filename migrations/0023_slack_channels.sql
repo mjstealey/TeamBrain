@@ -3,7 +3,7 @@
 -- Apply via Studio SQL editor (or docker exec psql as supabase_admin) on the
 -- target instance, after 0001-0022.
 --
--- Background (docs/phase-5-checklist.md § B):
+-- Background (docs/development/phase-5-checklist.md § B):
 --   The `teambrain-slack` edge function exposes a `/tb` slash command
 --   (remember / recall / recent / status) inside Slack. The channel the
 --   command is typed in resolves the TeamBrain project through this table:

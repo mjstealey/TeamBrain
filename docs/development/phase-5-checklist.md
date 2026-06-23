@@ -4,7 +4,7 @@ Concrete, ordered tasks for Phase 5 — **capture integrations**: a long-lived n
 
 Section A is detailed because it is the gate: the runnable GitHub Action (§ C) cannot land until A is green. Sections B and D had **no dependency on A**; § D shipped 2026-06-09 and § B shipped 2026-06-15 (built 2026-06-11; live smoke B5/B6 verified on production). **Phase 5 is complete.**
 
-Phase 5 entry preconditions (from `docs/phase-4-checklist.md` § I and the current state of `main`):
+Phase 5 entry preconditions (from `docs/development/phase-4-checklist.md` § I and the current state of `main`):
 
 - ✅ Phases 0–4 complete on `main`; deployed and live on `pr.fabric-testbed.net`.
 - ✅ MCP surface live — 6 tools round-trip (`ping`, `capture_project_thought`, `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`).

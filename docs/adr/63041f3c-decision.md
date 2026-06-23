@@ -14,11 +14,11 @@
 - (a) **Lighter governance step, no re-embed:** point `OPENAI_BASE_URL` at the FABRIC ai-renci gateway so the key/billing is FABRIC-owned — only if it serves a 1536-dim model (else the `vector(1536)` column won't match). Stays OpenAI-backed.
 - (b) **Full zero-egress self-host:** switch to ollama — apply `0005` (1536→768 nulls all embeddings) then re-embed every existing thought. For a fresh deployment, apply `0005` before the first capture (no re-embed).
 
-**Doc reconciliation (PR #25):** `docs/deployment.md` + the override example had described production as the ollama 768 variant (the original ADR-0001 § Decision 5 plan); corrected to OpenAI 1536 as the default with ollama as the retained option. `docs/phase-6-checklist.md` § E + `migrations/README.md` now state `v1_baseline.sql` encodes the 1536 path and `0005` stays a standalone optional overlay (not folded in; the byte-identical baseline check excludes it). `CLAUDE.md` already correctly says "1536-dim OpenAI default in production; optional 768-dim Ollama variant via 0005."
+**Doc reconciliation (PR #25):** `docs/deployment.md` + the override example had described production as the ollama 768 variant (the original ADR-0001 § Decision 5 plan); corrected to OpenAI 1536 as the default with ollama as the retained option. `docs/development/phase-6-checklist.md` § E + `migrations/README.md` now state `v1_baseline.sql` encodes the 1536 path and `0005` stays a standalone optional overlay (not folded in; the byte-identical baseline check excludes it). `CLAUDE.md` already correctly says "1536-dim OpenAI default in production; optional 768-dim Ollama variant via 0005."
 
 ## Provenance
 
 - scope: `project`
 - captured: 2026-06-09T17:24:46.738489+00:00
-- paths: `docs/deployment.md`, `edge-functions/teambrain-mcp/embedding.ts`, `migrations/0005_resize_embedding_768.sql`, `docs/phase-6-checklist.md`, `edge-functions/teambrain-mcp/docker-compose.override.yml.example`
+- paths: `docs/deployment.md`, `edge-functions/teambrain-mcp/embedding.ts`, `migrations/0005_resize_embedding_768.sql`, `docs/development/phase-6-checklist.md`, `edge-functions/teambrain-mcp/docker-compose.override.yml.example`
 - tags: `decision`, `embedding-provider`, `openai`, `ollama`, `data-path`, `retained-option`, `phase-7`, `v1-baseline`

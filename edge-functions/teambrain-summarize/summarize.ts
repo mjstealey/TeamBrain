@@ -1,7 +1,7 @@
 // summarize.ts — Phase 5 § C1: merged PR -> 0–3 capture proposals via Claude.
 //
 // Server-side summarization for the capture-on-merge GitHub Action
-// (docs/phase-5-checklist.md § C). The AI key and the proposal prompt live
+// (docs/development/phase-5-checklist.md § C). The AI key and the proposal prompt live
 // HERE, on the server, so every adopting repo's workflow stays AI-key-free and
 // prompt-free (decision C‑D2). This module WRITES NOTHING — it only turns
 // merged-PR metadata into candidate captures. A human approves them (GitHub

@@ -2,7 +2,7 @@
 
 Concrete, ordered tasks for Phase 1 — multi-tenant schema, RLS for the three scopes, hand-seeded membership, and an end-to-end RLS isolation smoke test on the scratch Supabase. Each item has an explicit **Done when** acceptance criterion.
 
-Phase 1 entry preconditions (from `docs/phase-0-checklist.md` Section E):
+Phase 1 entry preconditions (from `docs/development/phase-0-checklist.md` Section E):
 
 - A1–A4 complete (clean repo, Apache-2.0, initial commit, remotes configured) ✅
 - B1 — pilot repo decided (`fabric-core-api`); Komal's buy-in not blocking schema work ✅
@@ -274,7 +274,7 @@ After applying, record the SHA256 of each migration file at the top of this file
 ### F3. Commit
 
 ```bash
-git add migrations/ docs/phase-1-checklist.md docs/deployment.md
+git add migrations/ docs/development/phase-1-checklist.md docs/deployment.md
 git commit -m "Phase 1: multi-tenant schema + RLS + pilot seed"
 git push personal main
 git push origin main   # if syncing canonical
@@ -299,7 +299,7 @@ If all four are checked, Phase 2 (port OB1's `shared-mcp` edge function to multi
 
 ## Notes for the next session
 
-- Read order on session start: `CLAUDE.md` → `docs/adr/0001-teambrain-architecture.md` → `docs/phase-0-checklist.md` (for environment context) → this file.
+- Read order on session start: `CLAUDE.md` → `docs/adr/0001-teambrain-architecture.md` → `docs/development/phase-0-checklist.md` (for environment context) → this file.
 - All DDL is applied via Studio SQL editor on scratch (`http://127.0.0.1:3000`), not via `psql -U postgres`. The `postgres` role is not a superuser on self-hosted Supabase.
 - Functions defined in this phase use `set search_path = ''` and fully qualified references (`pg_catalog.now()`, `public.is_project_member`, etc.). Studio Security Advisor will flag any that don't.
 - Decisions and blockers go to Open Brain with prefix `PROJECT: TeamBrain — `.

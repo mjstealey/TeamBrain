@@ -2,7 +2,7 @@
 
 Concrete, ordered tasks for Phase 3 — replace `seed.sql`'s hand-seeded `project_members` rows with an automated sync edge function that pulls the source-of-truth (GitHub repo collaborators + GitHub org-team membership) and reconciles `public.project_members` via `service_role`. Each item has an explicit **Done when** acceptance criterion.
 
-Phase 3 entry preconditions (from `docs/phase-2-checklist.md` § L):
+Phase 3 entry preconditions (from `docs/development/phase-2-checklist.md` § L):
 
 - ✅ `migrations/0004_match_thoughts.sql` applied; verification RPC returns 0 rows without error.
 - ✅ MCP edge function deployed; 5 tools register and round-trip cleanly.
@@ -295,7 +295,7 @@ git add migrations/0007_projects_github_teams.sql \
         migrations/0009_sync_runs.sql \
         migrations/0010_pg_cron_membership_sync.sql \
         edge-functions/teambrain-membership-sync/ \
-        docs/phase-3-checklist.md \
+        docs/development/phase-3-checklist.md \
         docs/deployment.md \
         docs/adr/0001-teambrain-architecture.md \
         migrations/README.md
@@ -330,7 +330,7 @@ If green, Phase 4 (REST/OpenAPI surface mirroring the MCP tools) can begin. The 
 
 ## Notes for the next session
 
-- Read order: `CLAUDE.md` → `docs/adr/0001-teambrain-architecture.md` → `docs/phase-2-checklist.md` (for the MCP transport context) → this file.
+- Read order: `CLAUDE.md` → `docs/adr/0001-teambrain-architecture.md` → `docs/development/phase-2-checklist.md` (for the MCP transport context) → this file.
 - Phase 3's edge function is **not** a tool surface — it's a backend reconciler triggered via HTTP or pg_cron. Don't add MCP tools to it.
 - Service-role usage is acceptable here (and only here) because membership writes have no policy permitting `authenticated`. The MCP edge function from Phase 2 should never call into Phase 3's service-role-only paths.
 - Decisions and blockers go to Open Brain with prefix `PROJECT: TeamBrain — `.

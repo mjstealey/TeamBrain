@@ -10,7 +10,7 @@ an explicit **Done when** acceptance criterion.
 
 > **Status legend:** ☐ not started · 🟡 in progress / code-complete, deploy pending · ✅ done.
 
-Phase 6 entry preconditions (from `docs/phase-5-checklist.md` § "Phase 6 readiness gate"):
+Phase 6 entry preconditions (from `docs/development/phase-5-checklist.md` § "Phase 6 readiness gate"):
 
 - ✅ Phase 5 § A (long-lived API token) shipped + smoke-green on `pr.fabric-testbed.net`.
 - ✅ Phase 5 § C (PR-merge capture, LLM-proposed/human-approved) shipped end-to-end on the `fabric-testbed/TeamBrain` dogfood repo — **the readiness gate** (≥1 working capture path).
@@ -130,7 +130,7 @@ Per `migrations/README.md` § "Baseline consolidation": freeze `0001`–`0014` a
 
 ## Phase 7 readiness gate
 
-Phase 7 (pilot evaluation) can begin when § A is deployed (the sync a pilot depends on is now self-watching), the **Getting Started** doc exists (`docs/documentation-plan.md` § 1 — a hard onboarding prerequisite), and Komal's buy-in is secured (`docs/phase-0-checklist.md` B1). Staleness/promotion (§ B–D) deepen the pilot but do not block its start.
+Phase 7 (pilot evaluation) can begin when § A is deployed (the sync a pilot depends on is now self-watching), the **Getting Started** doc exists (`docs/documentation-plan.md` § 1 — a hard onboarding prerequisite), and Komal's buy-in is secured (`docs/development/phase-0-checklist.md` B1). Staleness/promotion (§ B–D) deepen the pilot but do not block its start.
 
 ---
 

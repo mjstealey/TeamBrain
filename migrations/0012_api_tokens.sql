@@ -3,7 +3,7 @@
 -- Apply via Studio SQL editor (or docker exec psql as supabase_admin) on the
 -- target instance, after 0001-0011.
 --
--- Background (docs/phase-5-checklist.md § A):
+-- Background (docs/development/phase-5-checklist.md § A):
 --   Non-interactive callers (the Phase 5 PR-merge GitHub Action, cron jobs,
 --   CI) cannot run the interactive GitHub-OAuth browser flow. This migration
 --   backs a refresh/access token split:

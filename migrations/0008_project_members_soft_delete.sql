@@ -3,7 +3,7 @@
 --
 -- Apply via Studio SQL editor on the scratch instance, after 0007.
 --
--- Background (from `docs/phase-3-checklist.md` § A4):
+-- Background (from `docs/development/phase-3-checklist.md` § A4):
 --   Phase 3's sync edge function reconciles `project_members` against
 --   GitHub. When a user is removed from GitHub, the sync needs to revoke
 --   their access in TeamBrain. Two reasonable shapes:

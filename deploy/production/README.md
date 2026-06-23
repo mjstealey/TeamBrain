@@ -426,7 +426,7 @@ In **SQL Editor → New query**, paste each migration's full contents from `~/Te
 
 `0011_project_registration.sql` (Phase 4) drops the placeholder `projects_insert_authenticated` policy so the only path to create a project is the gated `teambrain-register-project` function (§8). Apply it together with the batch above.
 
-After each, run the verification queries from `docs/phase-1-checklist.md` § B/C/D/E and `docs/phase-2-checklist.md` § B/L as a check. Expect Studio's **Security Advisor: 0 errors / 0 warnings** and **Performance Advisor: 0 issues** after `0003`. If anything else is red, stop and triage.
+After each, run the verification queries from `docs/development/phase-1-checklist.md` § B/C/D/E and `docs/development/phase-2-checklist.md` § B/L as a check. Expect Studio's **Security Advisor: 0 errors / 0 warnings** and **Performance Advisor: 0 issues** after `0003`. If anything else is red, stop and triage.
 
 > **Migrations beyond `0011`.** The batch above is the Phase 1–4 core. The later migrations (`0012`–`0026`) are applied the same way — Studio SQL editor — as each feature is deployed: `0012` (API tokens, § 11b), `0013`/`0015` (sync-health, § 12), `0014`/`0016`–`0022` (staleness + dashboard, Phase 6), `0023` (Slack, § 11c), and `0024`–`0026` (the `/repos` console + the capture-on-merge enable/disable toggle). For a fresh deploy, apply the full set `0001`→`0026` in order per `migrations/README.md` § "Apply order" (its `[production only]` rows gate the cron-dependent ones). Re-running the `teambrain-console` + `teambrain-rest` rsync in § 8 plus the static-UI pull is all the capture-toggle deploy (`0026`) needs beyond the migration itself.
 
@@ -515,7 +515,7 @@ The `Accept: application/json, text/event-stream` header is mandated by the MCP 
 
 The MCP function rejects requests authenticated only by the anon key for any tool that touches RLS-scoped data — that's expected. The `tools/list` method is auth-light.
 
-For an end-to-end RLS smoke test, sign in once via the web at `https://pr.fabric-testbed.net/auth/v1/authorize?provider=github`. The landing page renders your user JWT plus a ready-to-paste `claude mcp add` command pre-filled for this deployment — copy + run on your laptop, then restart Claude Code and verify the `teambrain` server appears in `/mcp`. See `docs/phase-2-checklist.md` § H for the full curl matrix and for direct CLI client wiring without the landing-page convenience.
+For an end-to-end RLS smoke test, sign in once via the web at `https://pr.fabric-testbed.net/auth/v1/authorize?provider=github`. The landing page renders your user JWT plus a ready-to-paste `claude mcp add` command pre-filled for this deployment — copy + run on your laptop, then restart Claude Code and verify the `teambrain` server appears in `/mcp`. See `docs/development/phase-2-checklist.md` § H for the full curl matrix and for direct CLI client wiring without the landing-page convenience.
 
 > **`claude mcp add` flag-order gotcha.** When wiring TeamBrain into Claude Code by hand, put the positional arguments (`<name>` and `<url>`) **before** any `-H/--header` flags. The `--header` option is variadic (`<header...>`), so any positionals appearing after it are greedily consumed as additional header values, and you'll get `error: missing required argument 'name'`. The landing page's pre-filled command is already correctly ordered.
 
@@ -857,7 +857,7 @@ Keep at least 14 days of dumps; PITR via pgBackRest or Barman is a Phase-7+ upgr
 2. Test the upgrade against scratch first.
 3. `pg_dump` immediately before upgrading prod.
 4. Pull new images, re-deploy: `docker compose pull && docker compose up -d`.
-5. Run all migration verification queries from scratch (`docs/phase-{1,2,3}-checklist.md` verification sections) against prod after upgrade.
+5. Run all migration verification queries from scratch (`docs/development/phase-{1,2,3}-checklist.md` verification sections) against prod after upgrade.
 
 ### Rollback (Phase 3 sync)
 
@@ -1003,9 +1003,9 @@ curl -sS --max-time 20 -H "Authorization: Bearer $ANON_KEY" \
 |---|---|
 | Architectural decisions (ADR) | `docs/adr/0001-teambrain-architecture.md` |
 | Phase-by-phase deploy notes | `docs/deployment.md` |
-| Phase 1 verification matrix | `docs/phase-1-checklist.md` § B/C/D/E |
-| Phase 2 verification matrix | `docs/phase-2-checklist.md` § H/L |
-| Phase 3 verification matrix | `docs/phase-3-checklist.md` § G |
+| Phase 1 verification matrix | `docs/development/phase-1-checklist.md` § B/C/D/E |
+| Phase 2 verification matrix | `docs/development/phase-2-checklist.md` § H/L |
+| Phase 3 verification matrix | `docs/development/phase-3-checklist.md` § G |
 | Production overrides (this dir) | `deploy/production/` |
 | Edge-function source | `edge-functions/{teambrain-mcp,teambrain-membership-sync,teambrain-register-project,teambrain-rest}/` |
 | OpenAPI spec (served at `/openapi.yaml`) | `deploy/production/nginx/html/openapi.yaml` |

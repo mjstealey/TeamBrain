@@ -2,7 +2,7 @@
 
 Repeatable end-to-end check that `match_thoughts` ranks a **fresh** thought above a
 **stale/deprecated** near-duplicate for the same query, and that `include_deprecated:false`
-drops deprecated rows entirely. This is the "Done when" for `docs/phase-6-checklist.md` § B.
+drops deprecated rows entirely. This is the "Done when" for `docs/development/phase-6-checklist.md` § B.
 
 Operator-run (you hold the GitHub-OAuth JWT). Prereqs: migration `0017` applied (+
 `NOTIFY pgrst, 'reload schema'`), the patched `teambrain-rest` deployed, and you are a

@@ -147,7 +147,7 @@ Switching providers post-data requires re-embedding every existing thought again
 
 ## Decision 6 — Phase 3 membership sync: GitHub App, soft-delete, team-as-policy
 
-(Resolved 2026-05-09 / 2026-05-10. Replaces the original Phase 3 sketch in `docs/phase-3-checklist.md` § A1/A4/A5, where the membership source was described as a *union* of direct collaborators and team members. The shipped policy is meaningfully different.)
+(Resolved 2026-05-09 / 2026-05-10. Replaces the original Phase 3 sketch in `docs/development/phase-3-checklist.md` § A1/A4/A5, where the membership source was described as a *union* of direct collaborators and team members. The shipped policy is meaningfully different.)
 
 ### Context
 
@@ -180,8 +180,8 @@ The semantic is "explicit GitHub action required" — onboarding to TeamBrain me
 - `fabric-testbed/fabric-core-api` is configured `github_team_slugs = {systemservicesteam}`. Membership tracks the 5 (now 4, after smoke-test cleanup of an inactive member) SystemServicesTeam members.
 - The `app.is_project_*` helpers each filter `removed_at IS NULL`. Any future RLS-touching code that introduces a *new* membership predicate must remember to do the same — captured as a "things to know" hazard for anyone editing `migrations/0002_rls.sql` or `0008_project_members_soft_delete.sql`.
 - Two GitHub Apps must be registered per pilot org (dev + prod), each installed separately. Operationally simple but doubles the App-management surface.
-- Sync invocations are audit-logged in `public.sync_runs` (jsonb `report`, admin-scoped RLS). Step 7 of the Phase 3 smoke matrix (pg_cron scheduled run) is production-only; everything else is verified on scratch (`docs/phase-3-checklist.md` § G).
-- The original checklist's "union" model is superseded — `docs/phase-3-checklist.md` § A1 reflects the C-plus shape. The original union semantics are recoverable for any project that wants them by leaving `github_team_slugs` empty.
+- Sync invocations are audit-logged in `public.sync_runs` (jsonb `report`, admin-scoped RLS). Step 7 of the Phase 3 smoke matrix (pg_cron scheduled run) is production-only; everything else is verified on scratch (`docs/development/phase-3-checklist.md` § G).
+- The original checklist's "union" model is superseded — `docs/development/phase-3-checklist.md` § A1 reflects the C-plus shape. The original union semantics are recoverable for any project that wants them by leaving `github_team_slugs` empty.
 
 ## Consequences
 

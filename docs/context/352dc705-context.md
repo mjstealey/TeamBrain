@@ -4,7 +4,7 @@
 
 ## Content
 
-**Phase 5 § B (Slack `/tb`) — progress checkpoint 2026-06-11 (afternoon). Resume here when the FABRIC Slack-app approval lands.** Updates the "Remaining" section of milestone `d38906b2` (design + decisions live there and in `docs/phase-5-checklist.md` § B; still accurate).
+**Phase 5 § B (Slack `/tb`) — progress checkpoint 2026-06-11 (afternoon). Resume here when the FABRIC Slack-app approval lands.** Updates the "Remaining" section of milestone `d38906b2` (design + decisions live there and in `docs/development/phase-5-checklist.md` § B; still accurate).
 
 **DONE since the milestone:**
 - PR #30 merged to `main` (`164cb6e`); feature branch deleted from both remotes; local + personal fork in sync.
@@ -22,7 +22,7 @@
 3. `/tb remember <real gotcha>` → in-channel confirmation; verify tags carry `slack` + `slack-user:` + `slack-channel:` and author = project bot; retrievable via `/tb recall` AND MCP `search_project_thoughts`.
 4. Negative checks: unlinked channel refuses with guidance; after `DELETE /teambrain-slack/links/:id` the channel refuses again.
 
-**THEN close out § B:** mark shipped in `docs/phase-5-checklist.md` § B (B5/B6 Done-whens) + `CLAUDE.md` Repository State; harden the § 11c extraction; mark_stale `d38906b2`'s pending framing; **Phase 5 complete** → the "connect & capture from every surface" docs trigger fires (`docs/documentation-plan.md` § 3, gated on § B + § D both shipped).
+**THEN close out § B:** mark shipped in `docs/development/phase-5-checklist.md` § B (B5/B6 Done-whens) + `CLAUDE.md` Repository State; harden the § 11c extraction; mark_stale `d38906b2`'s pending framing; **Phase 5 complete** → the "connect & capture from every surface" docs trigger fires (`docs/documentation-plan.md` § 3, gated on § B + § D both shipped).
 
 ## Provenance
 
@@ -30,5 +30,5 @@
 - captured: 2026-06-11T16:52:47.401676+00:00
 - last verified: 2026-06-15T16:08:25.04+00:00
 - linked PR: https://github.com/fabric-testbed/TeamBrain/pull/30
-- paths: `docs/phase-5-checklist.md`, `deploy/production/README.md`, `examples/slack/README.md`, `edge-functions/teambrain-slack/index.ts`
+- paths: `docs/development/phase-5-checklist.md`, `deploy/production/README.md`, `examples/slack/README.md`, `edge-functions/teambrain-slack/index.ts`
 - tags: `slash-capture`, `phase-5`, `slack`, `status`, `handoff`, `b5-verified`, `b6-pending`, `app-approval`

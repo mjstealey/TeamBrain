@@ -132,7 +132,7 @@ The self-hosted `postgres` role is **not a superuser** on the supabase docker st
 2. For each file in order — `0001`, `0002`, `0003`, `seed` — paste the entire file contents, click **Run**.
 3. Studio will warn for `0001` ("New tables will not have RLS enabled") — click **"Run without RLS"**. RLS is enabled in `0002`.
 4. Studio will warn for `0002` ("Query has destructive operations") because of the `drop policy if exists` re-runnability lines — expected, click through.
-5. After each file, run the verification queries in `docs/phase-1-checklist.md` (sections B2, C2, C3, D1).
+5. After each file, run the verification queries in `docs/development/phase-1-checklist.md` (sections B2, C2, C3, D1).
 
 ### Acceptance gate (Phase 1 → Phase 2)
 
@@ -255,7 +255,7 @@ Expected: a single non-null tag (`openai:text-embedding-3-small` or `ollama:nomi
 
 ### Acceptance gate (Phase 2 → Phase 3)
 
-The Phase 2 checklist's curl matrix passing is sufficient — see `docs/phase-2-checklist.md` § I. The 5 tools (`ping`, `capture_project_thought`, `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`) each return well-formed responses for a real GoTrue-issued JWT, and Phase 1 § E3 transitively proves non-member denial at the MCP layer.
+The Phase 2 checklist's curl matrix passing is sufficient — see `docs/development/phase-2-checklist.md` § I. The 5 tools (`ping`, `capture_project_thought`, `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`, `promote_to_docs`) each return well-formed responses for a real GoTrue-issued JWT, and Phase 1 § E3 transitively proves non-member denial at the MCP layer.
 
 ### Applying to `pr.fabric-testbed.net`
 
@@ -274,7 +274,7 @@ Production runs the **OpenAI variant** (`vector(1536)`) per the standing decisio
 
 ## Phase 3 — automated GitHub-collaborator membership sync
 
-Phase 3 replaces `seed.sql`'s hand-seeded `project_members` rows with an edge function that reconciles membership against GitHub. Inputs: direct repo collaborators ∪ org-team members. Output: insert/update/tombstone of `project_members` via `service_role`. See `docs/phase-3-checklist.md` for full rationale; this section is the deploy procedure.
+Phase 3 replaces `seed.sql`'s hand-seeded `project_members` rows with an edge function that reconciles membership against GitHub. Inputs: direct repo collaborators ∪ org-team members. Output: insert/update/tombstone of `project_members` via `service_role`. See `docs/development/phase-3-checklist.md` for full rationale; this section is the deploy procedure.
 
 Phase 3 ships four migrations and one edge function:
 
@@ -394,7 +394,7 @@ order by started_at desc
 limit 1;
 ```
 
-The full smoke matrix (steps 1-7) is in `docs/phase-3-checklist.md` § G.
+The full smoke matrix (steps 1-7) is in `docs/development/phase-3-checklist.md` § G.
 
 ### Production: pg_cron GUCs (one-time setup)
 

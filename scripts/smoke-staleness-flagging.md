@@ -3,7 +3,7 @@
 Repeatable check that a commit touching a path a thought pins flags that thought for
 re-verification (and **only** that thought — no false positive on an unrelated path), that
 the flag is surfaceable and cleared on re-verify, and that the pluggable interface also
-flags expired thoughts. This is the "Done when" for `docs/phase-6-checklist.md` § C.
+flags expired thoughts. This is the "Done when" for `docs/development/phase-6-checklist.md` § C.
 
 Operator-run (you hold the GitHub-OAuth JWT). Prereqs: `0018` applied (+ `NOTIFY pgrst,
 'reload schema'`) and the patched `teambrain-mcp` / `teambrain-rest` + new `teambrain-staleness`

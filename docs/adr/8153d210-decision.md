@@ -26,5 +26,5 @@ Commits: `b8fac12` (build), `faea62c` (gateway), `95c16b2` (issue gate), `1f9e26
 
 - scope: `project`
 - captured: 2026-05-31T01:28:05.823922+00:00
-- paths: `edge-functions/teambrain-summarize/`, `examples/github-actions/capture-on-merge.yml`, `.github/workflows/capture-on-merge.yml`, `deploy/production/docker-compose.override.yml`, `deploy/production/nginx/html/openapi.yaml`, `examples/curl.md`, `docs/phase-5-checklist.md`, `edge-functions/teambrain-mcp/embedding.ts`
+- paths: `edge-functions/teambrain-summarize/`, `examples/github-actions/capture-on-merge.yml`, `.github/workflows/capture-on-merge.yml`, `deploy/production/docker-compose.override.yml`, `deploy/production/nginx/html/openapi.yaml`, `examples/curl.md`, `docs/development/phase-5-checklist.md`, `edge-functions/teambrain-mcp/embedding.ts`
 - tags: `phase-5`, `milestone`, `shipped`, `teambrain-summarize`, `capture-on-merge`, `github-actions`, `ai-renci`, `litellm`

@@ -7,7 +7,7 @@
 # variant lives in). Both functions run in the same `functions`
 # container, so their env blocks merge.
 #
-# See `docs/phase-3-checklist.md` and `docs/deployment.md` § "Phase 3".
+# See `docs/development/phase-3-checklist.md` and `docs/deployment.md` § "Phase 3".
 
 # services:
 #   functions:

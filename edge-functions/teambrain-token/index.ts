@@ -1,7 +1,7 @@
 // teambrain-token/index.ts — Phase 5 § A2: long-lived, non-interactive API
 // tokens (the gating item for the PR-merge GitHub Action).
 //
-// Model — a refresh/access split (docs/phase-5-checklist.md § A):
+// Model — a refresh/access split (docs/development/phase-5-checklist.md § A):
 //   * The OPAQUE token (`tbk_<base64url(32 bytes)>`) is the durable,
 //     revocable credential. It is stored ONLY as a SHA-256 hash; the
 //     plaintext is returned once, at issuance, and never persisted.

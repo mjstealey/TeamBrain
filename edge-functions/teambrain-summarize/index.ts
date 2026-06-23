@@ -6,7 +6,7 @@
 // the proposals into the run summary, a human approves them via a GitHub
 // Environment gate, and only THEN does the Action write the approved set
 // through teambrain-rest under the project bot's short-lived JWT. See
-// docs/phase-5-checklist.md § C.
+// docs/development/phase-5-checklist.md § C.
 //
 // Auth: any valid `authenticated` JWT. The dispatcher (functions/main) verifies
 // the signature when VERIFY_JWT=true and forwards the Authorization header; we

@@ -2,7 +2,7 @@
 
 Concrete, ordered tasks for Phase 2 — port OB1's `shared-mcp` edge function pattern into a multi-tenant TeamBrain MCP server, and prove it works end-to-end from a real MCP client (Claude Code) against the scratch instance. Each item has an explicit **Done when** acceptance criterion.
 
-Phase 2 entry preconditions (from `docs/phase-1-checklist.md` § G):
+Phase 2 entry preconditions (from `docs/development/phase-1-checklist.md` § G):
 
 - ✅ `migrations/0001_init.sql` applied; tables/types/indexes verified.
 - ✅ `migrations/0002_rls.sql` applied; RLS enabled; policies + helpers in `app` schema.
@@ -286,7 +286,7 @@ Add a "Phase 2 — Edge function deployment" section: how to sync `edge-function
 ### K2. Commit
 
 ```bash
-git add migrations/0004_match_thoughts.sql edge-functions/ docs/phase-2-checklist.md docs/AGENTS.md.template docs/deployment.md
+git add migrations/0004_match_thoughts.sql edge-functions/ docs/development/phase-2-checklist.md docs/AGENTS.md.template docs/deployment.md
 git commit -m "Phase 2: multi-tenant MCP edge function + 5 tools + smoke-tested from Claude Code"
 git push personal main
 git push origin main   # if syncing canonical
@@ -313,7 +313,7 @@ If green, Phase 3 (membership sync edge function: poll GitHub collaborator/team 
 
 ## Notes for the next session
 
-- Read order: `CLAUDE.md` → `docs/adr/0001-teambrain-architecture.md` → `docs/phase-1-checklist.md` (for schema context) → this file.
+- Read order: `CLAUDE.md` → `docs/adr/0001-teambrain-architecture.md` → `docs/development/phase-1-checklist.md` (for schema context) → this file.
 - The edge function is mounted from `~/scratch/supabase-stack/volumes/functions/teambrain-mcp/` — that path is local to scratch and not under git. Source of truth is `edge-functions/teambrain-mcp/` in this repo.
 - All MCP tool calls go through PostgREST/SQL via the user's JWT — no `service_role` shortcuts in Phase 2 tools. If a tool needs admin escalation, pause and reconsider whether the schema is wrong.
 - Decisions and blockers go to Open Brain with prefix `PROJECT: TeamBrain — `.

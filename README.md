@@ -1,30 +1,26 @@
 # TeamBrain
 
-Multi-tenant, project-scoped, AI-agnostic shared memory for development teams.
+**Multi-tenant, project-scoped, AI-agnostic shared memory for development teams.**
 
-TeamBrain gives a team of developers the same persistent context for a codebase across whichever AI tools each developer uses (Claude Code, Cursor, Codex, ChatGPT, gemini-cli, Copilot). The primary transport is **MCP**; a parallel **REST/OpenAPI** surface covers non-MCP-native clients (GitHub Actions, OpenAI function calling, custom agents).
+TeamBrain gives everyone working on a repo the same persistent context —
+decisions, conventions, gotchas, in-flight debugging notes — regardless of which
+AI tool each developer uses (Claude Code, Cursor, Codex, ChatGPT, gemini-cli,
+Copilot). The primary transport is **MCP**; a parallel **REST/OpenAPI** surface
+covers anything that isn't MCP-native (GitHub Actions, OpenAI function calling,
+custom agents). Both talk to one backend and enforce the same row-level access
+rules.
 
-**New here?** → [**Getting Started**](docs/getting-started.md) — connect your AI tool and make your first capture in ~5 minutes.
+Live at **`https://pr.fabric-testbed.net`**. Phases 0–6 are shipped and in
+production (since 2026-05-27); a Phase 7 evaluation pilot runs on
+`fabric-testbed/fabric-core-api`. The full build record — phased roadmap, what
+each phase delivered, and the git/PR provenance — lives in
+[**docs/development/**](docs/development/README.md).
 
-## Status
+> **New here?** → [**Getting Started**](docs/getting-started.md) connects your AI
+> tool and walks your first capture in ~5 minutes. The live, signed-in-aware
+> version is at [`/help`](https://pr.fabric-testbed.net/help).
 
-**Phases 0–6 shipped and live on `https://pr.fabric-testbed.net` (since 2026-05-27).** Phase 5 (capture integrations): § A (API tokens) + § C (PR-merge capture) shipped and prod-verified; § D (slash commands) shipped for Claude Code + Codex; § B (Slack `/tb` bot) is server-side shipped & deployed, awaiting the FABRIC Slack-app install for live in-channel verification. Phase 6 (staleness & promotion): § A–§ D all shipped + smoke-verified — sync-health paydown (§ A), search-ranking decay (§ B), commit-triggered staleness flagging (§ C, `pg_cron` poller live), and `promote_to_docs` → real ADR/docs PR (§ D); only § E (migration-baseline consolidation) remains, deferred to production cutover. A post-Phase-6 **`/repos` management dashboard** (the `teambrain-console` edge function + `repo_status_*` RPCs, `migrations/0024`–`0026`) adds self-service repo onboarding, per-repo feature status, and a central capture-on-merge enable/disable toggle (so an admin can pause a noisy repo's auto-capture without editing its workflow file). Multiple projects registered, including the `fabric-testbed/TeamBrain` dogfood and the `fabric-testbed/fabric-core-api` Phase 7 pilot (readiness gate cleared).
-
-Per-phase artifacts (each with a `Done when` acceptance criterion):
-
-| Phase | Checklist | Key deliverables |
-|-------|-----------|------------------|
-| 0 | [phase-0-checklist.md](docs/phase-0-checklist.md) | Scratch Supabase stand-up, GitHub OAuth App, ADR 0001, pilot repo choice |
-| 1 | [phase-1-checklist.md](docs/phase-1-checklist.md) | Multi-tenant schema + RLS (`personal / project / project_private`) |
-| 2 | [phase-2-checklist.md](docs/phase-2-checklist.md) | MCP edge function (`teambrain-mcp`) — 6 tools |
-| 3 | [phase-3-checklist.md](docs/phase-3-checklist.md) | GitHub-App-driven `project_members` sync (`teambrain-membership-sync`, pg_cron) |
-| 4 | [phase-4-checklist.md](docs/phase-4-checklist.md) | REST mirror (`teambrain-rest`) + OpenAPI 3.1 spec + self-service registration (`teambrain-register-project`) |
-| 5 | [phase-5-checklist.md](docs/phase-5-checklist.md) | Capture integrations: API tokens (§ A ✅), PR-merge Action (§ C ✅), slash commands (§ D ✅ — Claude Code + Codex), Slack `/tb` bot (§ B — server-side shipped; Slack-app install pending) |
-| 6 | [phase-6-checklist.md](docs/phase-6-checklist.md) | Staleness & promotion: sync-health paydown (§ A ✅), search-ranking decay (§ B ✅), commit-triggered staleness flagging (§ C ✅), `promote_to_docs` → real ADR/docs PR (§ D ✅); migration-baseline consolidation (§ E, deferred to cutover) |
-
-See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) for the locked-in decisions, and [`docs/deployment.md`](docs/deployment.md) + [`deploy/production/`](deploy/production/) for the deploy topology.
-
-## Live surface (on `pr.fabric-testbed.net`)
+## Live surface (`pr.fabric-testbed.net`)
 
 | Resource | URL |
 |---|---|
@@ -35,55 +31,140 @@ See [`CLAUDE.md`](CLAUDE.md) for the current implementation state, [`docs/adr/00
 | OpenAPI 3.1 spec | `https://pr.fabric-testbed.net/openapi.yaml` |
 | MCP endpoint | `https://pr.fabric-testbed.net/functions/v1/teambrain-mcp/mcp` |
 | REST surface | `https://pr.fabric-testbed.net/functions/v1/teambrain-rest/*` |
-| Self-service project registration | `https://pr.fabric-testbed.net/functions/v1/teambrain-register-project/register` |
-| API token issue / list / revoke / exchange | `https://pr.fabric-testbed.net/functions/v1/teambrain-token/*` |
-| PR-merge capture summarizer (LLM proposals) | `https://pr.fabric-testbed.net/functions/v1/teambrain-summarize/propose` |
-| Slack `/tb` slash command + channel links | `https://pr.fabric-testbed.net/functions/v1/teambrain-slack/*` |
-| Commit-triggered staleness scan + health | `https://pr.fabric-testbed.net/functions/v1/teambrain-staleness/*` |
-| Repo console API (discover / setup-pr / sync-now / capture-toggle / AGENTS.md) | `https://pr.fabric-testbed.net/functions/v1/teambrain-console/*` |
 
-Example clients live under [`examples/`](examples/) — curl recipes ([`curl.md`](examples/curl.md)), an OpenAI function-calling Python client, and a runnable PR-merge GitHub Action. To add the PR-merge capture Action to your own `fabric-testbed` repo, see the step-by-step [capture-on-merge adoption guide](docs/capture-on-merge-adoption.md).
+## Usage
+
+End users connect their own AI tool — there is nothing to install server-side.
+Full walkthrough in [`docs/getting-started.md`](docs/getting-started.md); the
+in-app guide (with your token pre-filled when signed in) is at
+[`/help`](https://pr.fabric-testbed.net/help).
+
+- **Connect via MCP** — one endpoint for every client
+  (`…/functions/v1/teambrain-mcp/mcp`), authenticated with `Authorization:
+  Bearer <JWT>`. It exposes six tools: `capture_project_thought`,
+  `search_project_thoughts`, `list_recent_project_thoughts`, `mark_stale`,
+  `promote_to_docs`, and `ping`. Per-client config (Claude Code, Cursor,
+  gemini-cli, Copilot/VS Code) → [`docs/getting-started.md`](docs/getting-started.md).
+- **REST / OpenAPI alternative** — same backend, same access rules, same JWT,
+  under `…/functions/v1/teambrain-rest`. For non-MCP clients (ChatGPT/OpenAI
+  function calling, CI, custom agents). Spec at
+  [`/openapi.yaml`](https://pr.fabric-testbed.net/openapi.yaml); copy-paste
+  recipes in [`examples/curl.md`](examples/curl.md); worked client
+  [`examples/openai_function_calling.py`](examples/openai_function_calling.py).
+- **Capture surfaces:**
+  - **Slash commands** (Claude Code + Codex): `/tb-remember`, `/tb-recall`,
+    `/tb-recent` — thin prompt templates over the connected MCP. Install via the
+    `get_client_commands` MCP tool, `install.sh`, or the manifest →
+    [`examples/slash-commands/README.md`](examples/slash-commands/README.md),
+    [`install/README.md`](install/README.md).
+  - **Slack `/tb` bot** (shipped server-side; awaiting the FABRIC Slack-app
+    install): `remember` / `recall` / `recent` / `status` / `link` / `help`, one
+    channel ↔ one project → [`examples/slack/README.md`](examples/slack/README.md).
+  - **Capture-on-merge GitHub Action** — a merged PR proposes 0–3 memories via a
+    server-side LLM behind an event-driven, human-`/approve` issue gate (no idle
+    runner, no timer; PR metadata only, never diffs) →
+    [`docs/capture-on-merge-adoption.md`](docs/capture-on-merge-adoption.md),
+    [`examples/github-actions/capture-on-merge.yml`](examples/github-actions/capture-on-merge.yml).
+  - **Non-interactive API tokens** — opaque long-lived `tbk_` tokens
+    (capability-fenced to capture + read) exchanged for short-lived JWTs, for
+    CI/automation that can't do an interactive login →
+    [`examples/curl.md`](examples/curl.md).
+
+**Where memory lives — the hybrid model.** TeamBrain holds *living*,
+cross-developer notes (in-flight gotchas, decisions still being validated);
+*settled* knowledge belongs in the repo (`AGENTS.md`, `.claude/`, `docs/adr/`).
+The governance loop is `promote_to_docs`, which opens a real ADR/docs PR from a
+stabilized memory — so TeamBrain never becomes a second competing source of
+truth.
+
+## Deployment
+
+Self-hosted on a team-owned VM. The conceptual topology reference is
+[`docs/deployment.md`](docs/deployment.md); the step-by-step operational runbook
+(with verification at each step) is
+[`deploy/production/README.md`](deploy/production/README.md).
+
+- **Stack** — self-hosted [Supabase docker-compose](https://github.com/supabase/supabase/tree/master/docker)
+  (pinned, not `:latest`): Postgres 17 + pgvector, GoTrue (GitHub OAuth),
+  PostgREST, Edge Functions (Deno), Studio, Kong. → [`docs/deployment.md`](docs/deployment.md)
+- **Deploy target** — a FABRIC team-owned VMware VM at `pr.fabric-testbed.net`,
+  running as the `nrig-service` service account with sibling layout
+  `~/supabase-stack/` + `~/TeamBrain/`. → [`deploy/production/README.md`](deploy/production/README.md)
+- **TLS — "Path B"**: compose-managed nginx terminating with the institutional
+  **InCommon/UNC SAN cert**, renewed out-of-band — **not** Let's Encrypt. →
+  [`deploy/production/README.md`](deploy/production/README.md)
+- **Nine edge functions** (`edge-functions/`), deployed by rsync into
+  `volumes/functions/<name>/`:
+
+  | Function | Purpose |
+  |---|---|
+  | `teambrain-mcp` | MCP/JSON-RPC server — the six primary tools (primary transport) |
+  | `teambrain-rest` | HTTP/JSON mirror of the same tools (OpenAPI surface) |
+  | `teambrain-membership-sync` | Reconcile `project_members` against GitHub collaborators/teams |
+  | `teambrain-register-project` | Self-service repo→project registration (repo-admin gated) |
+  | `teambrain-token` | Long-lived `tbk_` API token issue / list / revoke + JWT exchange |
+  | `teambrain-summarize` | Server-side LLM that proposes memories from PR metadata |
+  | `teambrain-slack` | `/tb` Slack slash command, channel↔project scoped |
+  | `teambrain-staleness` | Commit-triggered staleness scan + health |
+  | `teambrain-console` | `/repos` dashboard backend (onboarding, status, setup PRs, capture toggle) |
+
+- **Migrations** applied via the **Studio SQL editor** (runs as `supabase_admin`,
+  the correct DDL identity — `psql -U postgres` is *not* superuser and DDL fails
+  confusingly). Apply order `0001`→`0026`. → [`migrations/README.md`](migrations/README.md)
+- **Environment / secrets** — `.env` (gitignored); must-edit values documented in
+  [`deploy/production/env.template`](deploy/production/env.template); TeamBrain
+  env passthrough lives in `docker-compose.override.yml`.
+- **Type-check before every deploy** — the Edge Runtime does **no** type-check, so
+  a TS error reaches prod silently; run `scripts/deno-check.sh [fn...]` first.
 
 ## Architecture
 
-- **Stack:** self-hosted [Supabase docker-compose](https://github.com/supabase/supabase/tree/master/docker) — Postgres 17 + pgvector, GoTrue, PostgREST, Realtime, Storage, Edge Functions (Deno), Studio, Kong.
-- **Deploy target:** team-owned VMware VM at `https://pr.fabric-testbed.net` (public IP). TLS terminated by nginx (Path B in [`deploy/production/`](deploy/production/)) using the institutional **InCommon/UNC SAN cert** — *not* Let's Encrypt; the cert is renewed out-of-band and TeamBrain consumes it.
-- **Auth:** GitHub OAuth via GoTrue. `project_members` rows reconciled against GitHub collaborators / org-teams by an org-scoped GitHub App on a 15-min `pg_cron` schedule. Self-service project registration is gated on the caller's GitHub repo-admin permission. Non-interactive callers (CI, GitHub Actions) use a long-lived opaque API token (Phase 5 § A) exchanged at `/teambrain-token/token/exchange` for a short-lived (15 min) JWT. The same org-scoped App also carries **Contents + Pull requests + Workflows** write (plus Metadata/Members read); the write scopes back `promote_to_docs`' ADR/docs PRs and the `teambrain-console` capture-on-merge setup PRs — committing a `.github/workflows/` file requires the separate Workflows scope. CILogon OIDC is supported by GoTrue and reserved for a later phase.
-- **Embedding:** OpenAI `text-embedding-3-small` (1536 dim) in production by default; a 768-dim Ollama variant is in-tree via `migrations/0005_resize_embedding_768.sql` for the no-third-party-vendor research-infra posture. Embeddings are model-tagged so a provider/model swap can be scoped at re-embed time.
-- **Storage model — hybrid:**
-  - *In repo (canonical, reviewed, versioned with code):* `AGENTS.md`, `.claude/CLAUDE.md`, `.cursor/rules/`, `docs/adr/`, `docs/context/`.
-  - *In TeamBrain (living, ephemeral, cross-developer):* in-flight debugging notes, gotchas not yet promoted to docs, recent decisions still being validated, dev preferences, cross-repo context.
-  - *Promotion workflow:* memories that stabilize get promoted into the repo via PR. That is the governance loop — `promote_to_docs` opens a real ADR/docs PR via the GitHub App (Phase 6 § D).
-- **Transport:** single backend → two thin **custom** edge functions: `teambrain-mcp` (MCP/JSON-RPC, 6 tools) and `teambrain-rest` (HTTP/JSON mirror of the same tools). PostgREST remains available under the hood but is intentionally not the documented surface — see Phase 4 § A1 for the uniform-custom-vs-PostgREST-hybrid decision. Adding a new AI client = config entry, not adapter code. Seven further edge functions support the system: `teambrain-membership-sync`, `teambrain-register-project`, `teambrain-token`, `teambrain-summarize`, `teambrain-slack`, `teambrain-staleness`, and `teambrain-console` (the `/repos` dashboard backend) — nine in total.
-- **Web UI (static, nginx-served):** a landing / MCP-setup page (`/`), an activity dashboard (`/dashboard`, the caller's RLS-scoped thought heatmap), a repository console (`/repos`, per-repo onboarding + feature status + one-click setup PRs), and a public usage guide (`/help` — connect, slash commands, Slack, capture-on-merge). The first three sit behind one GitHub-OAuth session; `/help` is public (no auth gate) but personalizes its snippets when signed in. All have the public `ANON_KEY` injected via nginx `sub_filter`.
+- **Auth** — GitHub OAuth via GoTrue. `project_members` is reconciled against
+  GitHub collaborators / org-teams by an org-scoped GitHub App on a 15-min
+  `pg_cron` schedule; project registration is gated on the caller's GitHub
+  repo-admin permission. Non-interactive callers exchange a long-lived opaque API
+  token for a short-lived JWT. The same App carries Contents + Pull-requests +
+  Workflows write, backing `promote_to_docs`' ADR/docs PRs and the console's
+  setup PRs. (CILogon OIDC is supported by GoTrue and reserved for a later phase.)
+- **Embeddings** — OpenAI `text-embedding-3-small` (1536-dim) in production,
+  model-tagged per row so a provider swap is scoped at re-embed; a 768-dim
+  Ollama/self-host variant is retained ready-to-use (`migrations/0005`).
+- **Transport** — one backend, two thin custom edge functions (`teambrain-mcp`
+  and `teambrain-rest`) exposing the same tools. PostgREST stays available under
+  the hood but is intentionally not the documented surface. Adding a new AI
+  client is a config entry, not adapter code.
+- **Web UI** (static, nginx-served): `/` (landing + MCP setup), `/dashboard`
+  (your RLS-scoped activity heatmap), `/repos` (onboarding + per-repo status +
+  one-click setup PRs), `/help` (public usage guide). All have the public
+  `ANON_KEY` injected via nginx `sub_filter`.
 
-## Phased Roadmap
+The locked-in decisions and rationale are in
+[`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md).
 
-| Phase | Scope | Status |
-|-------|-------|--------|
-| 0 | Prep — Supabase docker-compose on scratch host, GitHub OAuth App in `fabric-testbed` org, ADR 0001, pick pilot repo | ✅ complete |
-| 1 | Core multi-tenant schema — `projects`, `project_members`, extended `thoughts` columns, RLS for `personal / project / project_private`, manual member seeding | ✅ complete |
-| 2 | MCP server with project-aware tool surface — `capture / search / list_recent / mark_stale / promote_to_docs` (+ `ping`); validated from Claude Code, Cursor, Codex | ✅ complete |
-| 3 | Automated membership sync — GitHub collaborators + org-team members → `project_members`, pg_cron + manual trigger, `sync_runs` audit | ✅ complete |
-| 4 | REST handlers + OpenAPI 3.1 spec; example clients (OpenAI function calling, curl, illustrative GitHub Action); self-service project registration | ✅ complete |
-| 5 | Capture integrations — long-lived API token mechanism (§ A ✅), Slack bot (§ B), runnable PR-merge GitHub Action (§ C ✅, consumes § A), slash commands (§ D) | § A ✅, § C ✅, § D ✅ (Claude Code + Codex); § B server-side ✅ (Slack-app install pending) |
-| 6 | Staleness + promotion — sync-health paydown (§ A), `last_verified_at` decay in ranking (§ B), commit-triggered staleness flagging via `pg_cron` poll (§ C), `promote_to_docs` generating ADR/docs PRs (§ D) | ✅ § A–D shipped + smoke-verified; § E (migration baseline) deferred to cutover |
-| 7 | Pilot evaluation on 1 real repo (`fabric-testbed/fabric-core-api`), 2–3 devs — capture / retrieval / staleness / friction metrics | readiness gate cleared (Komal buy-in met 2026-06-09); kickoff ready |
-| Future | CILogon as second GoTrue OIDC provider when non-GitHub collaborators or research-compliance auditing requires it | deferred |
+## Documentation
 
-## Operational responsibilities (since we self-host)
-
-- **Backups:** `pg_dump` cron + offsite copy for v1; pgBackRest or Barman if PITR becomes a requirement.
-- **TLS:** institutional InCommon/UNC SAN cert under `/root/cert`, bind-mounted into the nginx container. Renewed out-of-band; no Let's Encrypt path is wired (deliberately, to match FABRIC's existing cert posture).
-- **Studio access:** SSH tunnel only — `ssh -L 3000:127.0.0.1:8000 fabric-pr` → `http://localhost:3000`. Kong is loopback-bound at `127.0.0.1:8000`. A vouch-proxy + CILogon admin-side path is the future plan, not yet wired.
-- **Upgrades:** track Supabase docker-compose releases; the upstream team ships coordinated version bumps. See `~/supabase-stack-sha.txt` on the production box for the pinned upstream SHA.
-
-See [`docs/deployment.md`](docs/deployment.md) for VM sizing, env-var contract, GitHub OAuth App configuration, and TLS specifics, and [`deploy/production/`](deploy/production/) for the production overlays (Path B nginx + `docker-compose.override.yml`).
+| Doc | What it covers |
+|---|---|
+| [`docs/getting-started.md`](docs/getting-started.md) | End-user onboarding: connect a tool, first capture |
+| [`/help`](https://pr.fabric-testbed.net/help) | Live public usage guide, personalized when signed in |
+| [`docs/deployment.md`](docs/deployment.md) | Deploy topology, stack, env, embedding-provider reference |
+| [`deploy/production/README.md`](deploy/production/README.md) | Step-by-step production deploy runbook |
+| [`migrations/README.md`](migrations/README.md) | Migration apply order + production-only gating |
+| [`docs/capture-on-merge-adoption.md`](docs/capture-on-merge-adoption.md) | Add PR-merge auto-capture to your repo |
+| [`examples/`](examples/) | curl recipes, OpenAI client, Slack/slash-command/Action setup |
+| [`docs/development/README.md`](docs/development/README.md) | **Development history & provenance** (phased build record) |
+| [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) | Locked-in architecture decisions |
+| [`CLAUDE.md`](CLAUDE.md) | Current implementation state, conventions, gotchas |
 
 ## Relationship to OB1
 
-TeamBrain ports two architectural patterns from [OB1 (Open Brain)](https://github.com/NateBJones-Projects/OB1) — the RLS scope policies and the shared-MCP edge-function pattern — but is a **parallel repo, not a fork**. See [`CREDITS.md`](CREDITS.md) for the acknowledgement and [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md) for the architectural rationale.
+TeamBrain ports two architectural patterns from [OB1 (Open Brain)](https://github.com/NateBJones-Projects/OB1)
+— the RLS scope policies and the shared-MCP edge-function pattern — but is a
+**parallel repo, not a fork**. The parallel-repo choice (rather than forking
+OB1's FSL-1.1-MIT) kept the license open. See [`CREDITS.md`](CREDITS.md) for the
+acknowledgement and [`docs/adr/0001-teambrain-architecture.md`](docs/adr/0001-teambrain-architecture.md)
+for the rationale.
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE). Permissive with an explicit patent grant; the parallel-repo decision (rather than forking OB1's FSL-1.1-MIT) was made specifically to keep this choice open.
+[Apache License 2.0](LICENSE) — permissive, with an explicit patent grant.

@@ -19,7 +19,7 @@ Three items surfaced from this dogfood corpus + `deno check`, hardening the foun
 
 **Validated in prod, including a live fire-drill of the 2026-05 outage:** a mis-paste of the service_role key into app_config caused a real auth gap (14:15–14:45 cron fires rejected) that the new healthcheck detected, logged a `health_events` stale row, and recovered from at 15:00 once corrected — the best validation A1 could get. MCP + REST both confirmed the linked_pr_url filter (count 3, all PR #1 captures).
 
-Provenance + the still-open Phase 6 deliverables (B staleness decay in ranking, C commit-triggered staleness webhook, D promote_to_docs → real PR, E v1_baseline consolidation) are in `docs/phase-6-checklist.md`. Closes the monitoring-todo on incident thought c49822d3. Phase 5 § B (Slack) / § D (slash commands) remain the next new surfaces.
+Provenance + the still-open Phase 6 deliverables (B staleness decay in ranking, C commit-triggered staleness webhook, D promote_to_docs → real PR, E v1_baseline consolidation) are in `docs/development/phase-6-checklist.md`. Closes the monitoring-todo on incident thought c49822d3. Phase 5 § B (Slack) / § D (slash commands) remain the next new surfaces.
 
 ## Provenance
 
@@ -27,5 +27,5 @@ Provenance + the still-open Phase 6 deliverables (B staleness decay in ranking, 
 - captured: 2026-06-01T15:26:15.23477+00:00
 - linked commit: `c2e53309a9e7ee3a04c05ca4c9882b961b7e720d`
 - linked PR: https://github.com/fabric-testbed/TeamBrain/pull/4
-- paths: `migrations/0013_sync_health_monitoring.sql`, `migrations/0014_thoughts_linked_pr_url_index.sql`, `edge-functions/teambrain-membership-sync/index.ts`, `edge-functions/teambrain-rest/index.ts`, `edge-functions/teambrain-mcp/index.ts`, `docs/phase-6-checklist.md`, `scripts/deno-check.sh`, `.github/workflows/capture-on-merge.yml`
+- paths: `migrations/0013_sync_health_monitoring.sql`, `migrations/0014_thoughts_linked_pr_url_index.sql`, `edge-functions/teambrain-membership-sync/index.ts`, `edge-functions/teambrain-rest/index.ts`, `edge-functions/teambrain-mcp/index.ts`, `docs/development/phase-6-checklist.md`, `scripts/deno-check.sh`, `.github/workflows/capture-on-merge.yml`
 - tags: `phase-6`, `milestone`, `shipped`, `sync-health-monitoring`, `app-config`, `linked-pr-url`, `deno-check`, `deferred-paydown`
