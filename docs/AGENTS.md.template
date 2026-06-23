@@ -156,13 +156,13 @@ recent reviewer feedback:
 
 - **Project lead (commits + reviews):** {PROJECT_LEAD}
 - **Pilot reviewers:** {PILOT_REVIEWERS}
-- **TeamBrain ops:** report tool errors at {TEAMBRAIN_URL}/oauth-test/
-  for live debugging, or open an issue at the TeamBrain repo.
+- **TeamBrain ops:** report tool errors by opening an issue on the
+  TeamBrain repo; {TEAMBRAIN_URL}/help has connection & usage docs.
 
 ---
 
 *This file is owned by humans. AI agents may suggest edits via PR but
 should not silently rewrite it.*
 
-<!-- teambrain:agents-md-template v3 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
+<!-- teambrain:agents-md-template v4 — bump on each meaningful template change; the /repos console flags repos whose committed AGENTS.md carries an older (or absent) version. Survives rendering (renderAgentsMd strips only the leading comment). -->
 
