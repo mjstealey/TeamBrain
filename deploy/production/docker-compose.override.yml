@@ -131,13 +131,13 @@ services:
       OPENAI_BASE_URL:                  ${OPENAI_BASE_URL:-https://api.openai.com/v1}
 
       # --- Phase 5 § C: PR-merge summarization (teambrain-summarize) ---
-      # FABRIC LiteLLM gateway (ai-renci) — exposes an Anthropic
+      # FABRIC LiteLLM gateway (ai-nrig.renci.unc.edu) — exposes an Anthropic
       # /v1/messages-compatible endpoint. Keeps the AI key + billing
       # FABRIC-owned. The catalog is OpenAI-backed (gpt-5.x), so this
       # centralizes governance, NOT egress (OpenAI is already in-path via the
       # embedding provider). Put the sk- gateway key in .env as
       # ANTHROPIC_AUTH_TOKEN (never commit it).
-      ANTHROPIC_BASE_URL:               ${ANTHROPIC_BASE_URL:-https://ai-renci.fabric-testbed.net/v1/}
+      ANTHROPIC_BASE_URL:               ${ANTHROPIC_BASE_URL:-https://ai-nrig.renci.unc.edu/v1}
       ANTHROPIC_AUTH_TOKEN:             ${ANTHROPIC_AUTH_TOKEN}
       TEAMBRAIN_SUMMARIZE_MODEL:        ${TEAMBRAIN_SUMMARIZE_MODEL:-gpt-5.4-mini}
 

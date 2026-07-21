@@ -90,7 +90,7 @@ export function currentEmbeddingModelTag(): string {
 // ---------------------------------------------------------------------------
 
 // Default = OpenAI direct. Set OPENAI_BASE_URL to an OpenAI-compatible gateway
-// (e.g. https://ai-renci.fabric-testbed.net/v1/) to keep the key + billing
+// (e.g. https://ai-nrig.renci.unc.edu/v1) to keep the key + billing
 // FABRIC-owned — but only if it serves a 1536-dim embedding model, or the
 // EMBEDDING_DIMS check below will reject every capture. Trailing slash and an
 // existing `/v1` suffix are both handled.

@@ -20,8 +20,8 @@
 # dev. The functions container needs OPENAI_API_KEY and an
 # EMBEDDING_PROVIDER=openai signal (default if unset, but explicit is
 # clearer in production). Optional OPENAI_BASE_URL routes via an
-# OpenAI-compatible gateway (e.g. FABRIC ai-renci) for FABRIC-owned key/
-# billing — only if it serves a 1536-dim model.
+# OpenAI-compatible gateway (e.g. FABRIC's ai-nrig.renci.unc.edu) for
+# FABRIC-owned key/billing — only if it serves a 1536-dim model.
 
 # services:
 #   functions:

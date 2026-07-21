@@ -11,9 +11,9 @@
 // Provider: any Anthropic-`/v1/messages`-compatible endpoint, via raw fetch
 // (same no-SDK idiom as teambrain-mcp/embedding.ts). Defaults to Anthropic
 // direct (claude-sonnet-4-6 over api.anthropic.com). Point ANTHROPIC_BASE_URL
-// at a gateway — e.g. FABRIC's LiteLLM proxy (ai-renci.fabric-testbed.net) —
+// at a gateway — e.g. FABRIC's LiteLLM proxy (ai-nrig.renci.unc.edu) —
 // with TEAMBRAIN_SUMMARIZE_MODEL set to a model it serves (e.g. gpt-5.4-mini)
-// to keep the key + billing FABRIC-owned. NOTE: the ai-renci catalog is
+// to keep the key + billing FABRIC-owned. NOTE: the gateway catalog is
 // OpenAI-backed (gpt-5.x), so this centralizes the key/billing/governance — it
 // does NOT remove third-party egress (OpenAI is already in TeamBrain's path via
 // the embedding provider). Auth: ANTHROPIC_AUTH_TOKEN (Bearer, gateway) or
@@ -34,7 +34,7 @@ const MAX_TOKENS        = 1500;
 
 // Resolve the Messages API endpoint. Default = Anthropic direct. Set
 // ANTHROPIC_BASE_URL to an Anthropic-`/v1/messages`-compatible gateway (e.g.
-// https://ai-renci.fabric-testbed.net/v1/) — then TEAMBRAIN_SUMMARIZE_MODEL
+// https://ai-nrig.renci.unc.edu/v1) — then TEAMBRAIN_SUMMARIZE_MODEL
 // MUST name a model that gateway serves (the claude-sonnet-4-6 default only
 // matches the Anthropic-direct endpoint). A trailing slash and an existing
 // `/v1` suffix are both handled.

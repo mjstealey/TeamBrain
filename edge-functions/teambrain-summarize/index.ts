@@ -26,8 +26,8 @@ import { proposeCaptures, SummarizeError, PrInput } from './summarize.ts';
 // truncates what is actually sent to the model; this only guards the ingress.
 const MAX_INPUT_CHARS = 200_000;
 
-if (!Deno.env.get('ANTHROPIC_API_KEY')) {
-  console.error('teambrain-summarize: ANTHROPIC_API_KEY is not set — /propose will fail until it is configured');
+if (!Deno.env.get('ANTHROPIC_AUTH_TOKEN') && !Deno.env.get('ANTHROPIC_API_KEY')) {
+  console.error('teambrain-summarize: neither ANTHROPIC_AUTH_TOKEN nor ANTHROPIC_API_KEY is set — /propose will fail until one is configured');
 }
 
 class HttpError extends Error {
