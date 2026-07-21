@@ -8,16 +8,23 @@
 // Environment gate) before the Action writes anything through teambrain-rest
 // under the project bot's short-lived JWT.
 //
-// Provider: any Anthropic-`/v1/messages`-compatible endpoint, via raw fetch
-// (same no-SDK idiom as teambrain-mcp/embedding.ts). Defaults to Anthropic
-// direct (claude-sonnet-4-6 over api.anthropic.com). Point ANTHROPIC_BASE_URL
-// at a gateway — e.g. FABRIC's LiteLLM proxy (ai-nrig.renci.unc.edu) —
-// with TEAMBRAIN_SUMMARIZE_MODEL set to a model it serves (e.g. gpt-5.4-mini)
-// to keep the key + billing FABRIC-owned. NOTE: the gateway catalog is
-// OpenAI-backed (gpt-5.x), so this centralizes the key/billing/governance — it
-// does NOT remove third-party egress (OpenAI is already in TeamBrain's path via
-// the embedding provider). Auth: ANTHROPIC_AUTH_TOKEN (Bearer, gateway) or
-// ANTHROPIC_API_KEY (x-api-key, Anthropic direct).
+// Provider: two wire formats, selected by TEAMBRAIN_SUMMARIZE_WIRE_API, both
+// via raw fetch (same no-SDK idiom as teambrain-mcp/embedding.ts):
+//   - "messages" (default): Anthropic `/v1/messages`. Defaults to Anthropic
+//     direct (claude-sonnet-4-6 over api.anthropic.com).
+//   - "responses": OpenAI `/v1/responses`. Required for the FABRIC LiteLLM
+//     gateway (ai-nrig.renci.unc.edu): its Azure-backed gpt-5.x groups reject
+//     the Anthropic-format request (LiteLLM fails to translate max_tokens ->
+//     max_completion_tokens, BerriAI/litellm#13714) while the Responses API
+//     works natively. Production selects this in the deploy override.
+// Either way ANTHROPIC_BASE_URL points at the gateway (e.g.
+// https://ai-nrig.renci.unc.edu/v1) and TEAMBRAIN_SUMMARIZE_MODEL names a
+// model it serves (e.g. gpt-5.4-mini) — key + billing stay FABRIC-owned. NOTE:
+// the gateway catalog is OpenAI-backed (gpt-5.x), so this centralizes the
+// key/billing/governance — it does NOT remove third-party egress (OpenAI is
+// already in TeamBrain's path via the embedding provider). Auth:
+// ANTHROPIC_AUTH_TOKEN (Bearer, gateway) or ANTHROPIC_API_KEY (x-api-key,
+// Anthropic direct); the same env names feed both wire formats.
 //
 // Egress boundary (decision C‑D4): only PR METADATA reaches Claude — title,
 // body, commit messages, and changed-file PATHS. Never diff contents, so
@@ -32,6 +39,25 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL     = 'claude-sonnet-4-6';
 const MAX_TOKENS        = 1500;
 
+// The Responses API output budget also covers hidden reasoning tokens on
+// gpt-5-class models — a 1500 cap can be exhausted before any visible output,
+// yielding status "incomplete". Budget generously; the visible output is small.
+const RESPONSES_MAX_OUTPUT_TOKENS = 4000;
+
+const WIRE_APIS = ['messages', 'responses'] as const;
+type WireApi = typeof WIRE_APIS[number];
+
+function wireApi(): WireApi {
+  const v = (Deno.env.get('TEAMBRAIN_SUMMARIZE_WIRE_API') ?? 'messages').toLowerCase();
+  if (!(WIRE_APIS as readonly string[]).includes(v)) {
+    throw new SummarizeError(
+      `TEAMBRAIN_SUMMARIZE_WIRE_API must be one of: ${WIRE_APIS.join(', ')} (got "${v}")`,
+      'config',
+    );
+  }
+  return v as WireApi;
+}
+
 // Resolve the Messages API endpoint. Default = Anthropic direct. Set
 // ANTHROPIC_BASE_URL to an Anthropic-`/v1/messages`-compatible gateway (e.g.
 // https://ai-nrig.renci.unc.edu/v1) — then TEAMBRAIN_SUMMARIZE_MODEL
@@ -43,6 +69,16 @@ function messagesUrl(): string {
   if (!base) return 'https://api.anthropic.com/v1/messages';
   const trimmed = base.replace(/\/+$/, '');
   return /\/v1$/.test(trimmed) ? `${trimmed}/messages` : `${trimmed}/v1/messages`;
+}
+
+// Same resolution for the OpenAI Responses API endpoint (wire_api=responses).
+// Default = OpenAI direct; ANTHROPIC_BASE_URL (the one gateway knob) redirects
+// it, with the same slash/`/v1` normalization as messagesUrl().
+function responsesUrl(): string {
+  const base = Deno.env.get('ANTHROPIC_BASE_URL');
+  if (!base) return 'https://api.openai.com/v1/responses';
+  const trimmed = base.replace(/\/+$/, '');
+  return /\/v1$/.test(trimmed) ? `${trimmed}/responses` : `${trimmed}/v1/responses`;
 }
 
 // The capture types the PR-merge token may write (mirrors C‑D6 / migration
@@ -162,46 +198,86 @@ export async function proposeCaptures(input: PrInput): Promise<Proposal[]> {
   }
   const baseUrl = Deno.env.get('ANTHROPIC_BASE_URL');
   const model   = Deno.env.get('TEAMBRAIN_SUMMARIZE_MODEL') ?? DEFAULT_MODEL;
+  const wire    = wireApi();
 
-  // Anthropic-direct authenticates via x-api-key; LiteLLM-style gateways via
-  // `Authorization: Bearer`. Add the Bearer header whenever a custom base URL is
-  // set so the same key works against the gateway (x-api-key is harmless there).
-  const headers: Record<string, string> = {
-    'x-api-key':         authToken,
-    'anthropic-version': ANTHROPIC_VERSION,
-    'content-type':      'application/json',
-  };
-  if (baseUrl) headers['authorization'] = `Bearer ${authToken}`;
-
-  const res = await fetch(messagesUrl(), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
+  let url: string;
+  let headers: Record<string, string>;
+  let body: Record<string, unknown>;
+  if (wire === 'responses') {
+    url     = responsesUrl();
+    headers = { 'authorization': `Bearer ${authToken}`, 'content-type': 'application/json' };
+    body    = {
+      model,
+      instructions:      SYSTEM_PROMPT,
+      input:             buildUserPrompt(input),
+      max_output_tokens: RESPONSES_MAX_OUTPUT_TOKENS,
+    };
+  } else {
+    url = messagesUrl();
+    // Anthropic-direct authenticates via x-api-key; LiteLLM-style gateways via
+    // `Authorization: Bearer`. Add the Bearer header whenever a custom base URL
+    // is set so the same key works against the gateway (x-api-key is harmless
+    // there).
+    headers = {
+      'x-api-key':         authToken,
+      'anthropic-version': ANTHROPIC_VERSION,
+      'content-type':      'application/json',
+    };
+    if (baseUrl) headers['authorization'] = `Bearer ${authToken}`;
+    body = {
       model,
       max_tokens: MAX_TOKENS,
       system:     SYSTEM_PROMPT,
       messages:   [{ role: 'user', content: buildUserPrompt(input) }],
-    }),
-  });
+    };
+  }
+
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '<no body>');
     throw new SummarizeError(
-      `Anthropic API returned HTTP ${res.status}: ${detail}`,
+      `AI provider returned HTTP ${res.status}: ${detail}`,
       'upstream',
       res.status,
     );
   }
 
-  const json = await res.json() as { content?: Array<{ type: string; text?: string }> };
-  const text = (json.content ?? [])
+  const json = await res.json() as Record<string, unknown>;
+  const text = wire === 'responses' ? extractResponsesText(json) : extractMessagesText(json);
+  if (!text) throw new SummarizeError('AI provider returned no text content', 'parse');
+
+  return sanitizeProposals(parseJsonArray(text));
+}
+
+function extractMessagesText(json: Record<string, unknown>): string {
+  const content = Array.isArray(json.content) ? json.content as Array<{ type: string; text?: string }> : [];
+  return content
     .filter((b) => b.type === 'text')
     .map((b) => b.text ?? '')
     .join('')
     .trim();
-  if (!text) throw new SummarizeError('Anthropic API returned no text content', 'parse');
+}
 
-  return sanitizeProposals(parseJsonArray(text));
+// Raw Responses API JSON: `output` is an item array — reasoning models emit a
+// `reasoning` item before the `message` item, and the SDKs' `output_text`
+// convenience property does not exist on the wire, so collect the message
+// items' output_text blocks ourselves. `status: "incomplete"` (e.g. the output
+// budget exhausted by reasoning tokens) is surfaced as an upstream error
+// rather than mis-read as "no proposals".
+function extractResponsesText(json: Record<string, unknown>): string {
+  if (json.status === 'incomplete') {
+    const reason = (json.incomplete_details as { reason?: string } | null | undefined)?.reason ?? 'unknown';
+    throw new SummarizeError(`Responses API returned an incomplete response (reason: ${reason})`, 'upstream');
+  }
+  const output = Array.isArray(json.output) ? json.output as Array<Record<string, unknown>> : [];
+  return output
+    .filter((item) => item?.type === 'message')
+    .flatMap((item) => Array.isArray(item.content) ? item.content as Array<Record<string, unknown>> : [])
+    .filter((b) => b?.type === 'output_text')
+    .map((b) => typeof b.text === 'string' ? b.text : '')
+    .join('')
+    .trim();
 }
 
 // Defensive: the model is asked for a bare JSON array, but strip a stray

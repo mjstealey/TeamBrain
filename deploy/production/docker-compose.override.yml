@@ -131,15 +131,19 @@ services:
       OPENAI_BASE_URL:                  ${OPENAI_BASE_URL:-https://api.openai.com/v1}
 
       # --- Phase 5 § C: PR-merge summarization (teambrain-summarize) ---
-      # FABRIC LiteLLM gateway (ai-nrig.renci.unc.edu) — exposes an Anthropic
-      # /v1/messages-compatible endpoint. Keeps the AI key + billing
-      # FABRIC-owned. The catalog is OpenAI-backed (gpt-5.x), so this
+      # FABRIC LiteLLM gateway (ai-nrig.renci.unc.edu). Keeps the AI key +
+      # billing FABRIC-owned. The catalog is OpenAI-backed (gpt-5.x), so this
       # centralizes governance, NOT egress (OpenAI is already in-path via the
       # embedding provider). Put the sk- gateway key in .env as
       # ANTHROPIC_AUTH_TOKEN (never commit it).
+      # wire_api=responses because the gateway's Azure-backed gpt-5.x groups
+      # reject the Anthropic /v1/messages format (LiteLLM does not translate
+      # max_tokens -> max_completion_tokens, BerriAI/litellm#13714); the OpenAI
+      # /v1/responses path works natively with the same Bearer key.
       ANTHROPIC_BASE_URL:               ${ANTHROPIC_BASE_URL:-https://ai-nrig.renci.unc.edu/v1}
       ANTHROPIC_AUTH_TOKEN:             ${ANTHROPIC_AUTH_TOKEN}
       TEAMBRAIN_SUMMARIZE_MODEL:        ${TEAMBRAIN_SUMMARIZE_MODEL:-gpt-5.4-mini}
+      TEAMBRAIN_SUMMARIZE_WIRE_API:     ${TEAMBRAIN_SUMMARIZE_WIRE_API:-responses}
 
       # --- Phase 5 § B: Slack slash-command surface (teambrain-slack) ---
       # Signing secret from the Slack app's Basic Information page; the ONLY
